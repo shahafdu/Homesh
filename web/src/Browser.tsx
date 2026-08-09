@@ -30,9 +30,10 @@ export default function Browser(props: {
   onViewChange: (v: View) => void;
   onOpenSettings: () => void;
   onPlay: (files: FileEntry[], index: number, folderPath: string) => void;
+  onView: (files: FileEntry[], index: number) => void;
   playingId: string | null;
 }) {
-  const { isAdmin, view, onViewChange, onOpenSettings, onPlay, playingId } = props;
+  const { isAdmin, view, onViewChange, onOpenSettings, onPlay, onView, playingId } = props;
 
   const [path, setPath] = useState("/");
   const [listing, setListing] = useState<Listing | null>(null);
@@ -153,6 +154,7 @@ export default function Browser(props: {
           view={view}
           onOpen={navigate}
           onPlay={onPlay}
+          onView={onView}
           playingId={playingId}
         />
       )}
@@ -202,9 +204,10 @@ function FileRow(props: {
   isPlaying?: boolean;
 }) {
   const { f, view, onPlay, isPlaying } = props;
-  // Only playable rows invite a click. Everything else stays inert until the
-  // viewer for its kind exists.
-  const playable = f.kind === "audio" && f.available;
+  // Audio goes to the player bar; photos, video and documents open the viewer.
+  // Anything else stays inert rather than pretending to be openable.
+  const openable = f.available && ["audio", "photo", "video", "doc"].includes(f.kind);
+  const playable = openable;
   const cls = [
     f.available ? "" : "offline",
     playable ? "playable" : "",
@@ -260,9 +263,10 @@ function Folder(props: {
   view: View;
   onOpen: (p: string) => void;
   onPlay: (files: FileEntry[], index: number, folderPath: string) => void;
+  onView: (files: FileEntry[], index: number) => void;
   playingId: string | null;
 }) {
-  const { listing, loading, view, onOpen, onPlay, playingId } = props;
+  const { listing, loading, view, onOpen, onPlay, onView, playingId } = props;
   if (!listing) return <p className="muted">{loading ? "Loading…" : ""}</p>;
 
   if (listing.dirs.length === 0 && listing.files.length === 0) {
@@ -328,7 +332,11 @@ function Folder(props: {
           f={f}
           view={view}
           isPlaying={playingId === f.item_id}
-          onPlay={() => onPlay(listing.files, i, listing.path)}
+          onPlay={() =>
+            f.kind === "audio"
+              ? onPlay(listing.files, i, listing.path)
+              : onView(listing.files, i)
+          }
         />
       ))}
     </ul>

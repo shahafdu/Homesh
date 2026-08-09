@@ -4,7 +4,9 @@ import { login, logout, passkeysSupported, register } from "./auth";
 import Browser from "./Browser";
 import Player from "./Player";
 import Settings from "./Settings";
+import Viewer from "./Viewer";
 import { usePlayer } from "./player";
+import type { FileEntry } from "./library";
 import { applyPrefs, DEFAULT_PREFS, getPrefs, savePrefs, type Prefs } from "./prefs";
 
 export default function App() {
@@ -13,6 +15,7 @@ export default function App() {
   const [prefs, setPrefs] = useState<Prefs>(DEFAULT_PREFS);
   const [showSettings, setShowSettings] = useState(false);
   const player = usePlayer();
+  const [viewing, setViewing] = useState<{ files: FileEntry[]; index: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -88,8 +91,28 @@ export default function App() {
           onViewChange={(view) => void changePrefs({ view })}
           onOpenSettings={() => setShowSettings(true)}
           onPlay={player.play}
+          onView={(files, index) => {
+            // Arrowing through a folder should stay within the kind you opened —
+            // stepping from a photo onto a PDF is never what was meant. Also drops
+            // unavailable files, which would only fail to load.
+            const clicked = files[index];
+            const peers = files.filter((f) => f.kind === clicked.kind && f.available);
+            setViewing({
+              files: peers,
+              index: Math.max(0, peers.findIndex((f) => f.item_id === clicked.item_id)),
+            });
+          }}
           playingId={player.current?.item_id ?? null}
         />
+
+        {viewing && (
+          <Viewer
+            files={viewing.files}
+            index={viewing.index}
+            onIndex={(index) => setViewing({ ...viewing, index })}
+            onClose={() => setViewing(null)}
+          />
+        )}
 
         {showSettings && (
           <Settings

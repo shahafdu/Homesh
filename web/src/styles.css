@@ -538,3 +538,72 @@ button.compact:hover { color: var(--ink); }
   .p-where, .p-count, .p-vol { display: none; }
   .player { gap: 10px; padding: 8px 12px; }
 }
+
+/* ── Viewer ─────────────────────────────────────────────────────────────────
+   Full-screen, because a photo or a film wants the whole screen and a document
+   wants a readable column. One shell for all three so navigation and the close
+   affordance behave identically. */
+
+.viewer {
+  position: fixed; inset: 0; z-index: 60;
+  display: flex; flex-direction: column;
+  background: color-mix(in srgb, var(--bg) 96%, black);
+}
+
+.v-bar {
+  display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  padding: 12px 16px; border-bottom: 1px solid var(--line);
+  background: var(--surface);
+}
+.v-title { display: flex; flex-direction: column; min-width: 0; }
+.v-name {
+  font-family: var(--mono); font-size: 13.5px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.v-meta { font-size: 11.5px; color: var(--muted); }
+.v-close {
+  flex: none; padding: 7px 12px;
+  background: transparent; color: var(--muted);
+  border: 1px solid var(--line); border-radius: 8px; cursor: pointer;
+}
+.v-close:hover { color: var(--ink); }
+
+.v-stage {
+  flex: 1; min-height: 0;
+  display: flex; align-items: center; gap: 8px; padding: 12px;
+}
+
+.v-nav {
+  flex: none; width: 44px; height: 64px;
+  background: transparent; color: var(--muted);
+  border: 1px solid var(--line); border-radius: 10px;
+  font-size: 24px; line-height: 1; cursor: pointer;
+}
+.v-nav:hover:not(:disabled) { color: var(--ink); background: var(--surface); }
+.v-nav:disabled { opacity: .3; cursor: not-allowed; }
+
+.v-content {
+  flex: 1; min-width: 0; height: 100%;
+  display: flex; align-items: center; justify-content: center;
+}
+
+.v-img, .v-video {
+  max-width: 100%; max-height: 100%;
+  object-fit: contain; border-radius: 8px;
+}
+.v-frame {
+  width: 100%; height: 100%;
+  border: 1px solid var(--line); border-radius: 8px; background: var(--surface);
+}
+.v-text {
+  width: 100%; max-width: 78ch; height: 100%; margin: 0;
+  overflow: auto; padding: 24px;
+  background: var(--surface); border: 1px solid var(--line); border-radius: 8px;
+  font-family: var(--mono); font-size: 13px; line-height: 1.6;
+  white-space: pre-wrap; word-break: break-word;
+}
+
+@media (max-width: 640px) {
+  .v-nav { width: 36px; height: 52px; font-size: 20px; }
+  .v-stage { padding: 8px; gap: 4px; }
+}
