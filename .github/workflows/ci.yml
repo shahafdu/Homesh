@@ -1,0 +1,115 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  server:
+    name: Server — lint & schema
+    runs-on: ubuntu-latest
+    services:
+      db:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: hearth
+          POSTGRES_PASSWORD: hearth
+          POSTGRES_DB: hearth_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U hearth -d hearth_test"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install
+        working-directory: server
+        run: pip install -e ".[dev]"
+
+      - name: Lint
+        working-directory: server
+        run: ruff check app tests
+
+      - name: Apply migrations against a real Postgres
+        working-directory: server
+        env:
+          DATABASE_URL: postgresql+psycopg://hearth:hearth@localhost:5432/hearth_test
+        run: python -c "from app.db import run_migrations; print('applied:', run_migrations())"
+
+      - name: Migrations are idempotent
+        working-directory: server
+        env:
+          DATABASE_URL: postgresql+psycopg://hearth:hearth@localhost:5432/hearth_test
+        run: |
+          python - <<'PY'
+          from app.db import run_migrations
+          again = run_migrations()
+          assert again == [], f"re-running migrations was not a no-op: {again}"
+          print("idempotent")
+          PY
+
+      - name: Tests
+        working-directory: server
+        env:
+          DATABASE_URL: postgresql+psycopg://hearth:hearth@localhost:5432/hearth_test
+          MASTER_KEY: "00000000000000000000000000000000000000000000="
+          SECRET_KEY: "11111111111111111111111111111111111111111111="
+        run: pytest tests -q
+
+  web:
+    name: Web — typecheck & build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install
+        working-directory: web
+        run: npm install
+      - name: Build (runs tsc)
+        working-directory: web
+        run: npm run build
+
+  image:
+    name: Image — multi-arch build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - name: Build for amd64 and arm64
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: server/Dockerfile
+          # Proves the Pi / Oracle Ampere target keeps working (ARCHITECTURE.md §3.4).
+          platforms: linux/amd64,linux/arm64
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  codeql:
+    name: CodeQL
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+    strategy:
+      matrix:
+        language: [python, javascript-typescript]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: github/codeql-action/init@v3
+        with:
+          language: ${{ matrix.language }}
+      - uses: github/codeql-action/analyze@v3
