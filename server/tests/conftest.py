@@ -122,6 +122,15 @@ def library(tmp_path: Path) -> Path:
         p = tmp_path / rel
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_bytes(b"x" * 16)
+
+    # One genuinely decodable image, so thumbnail generation has something real to
+    # work on. The rest are placeholder bytes, which is itself worth testing: a
+    # corrupt file must not break a folder listing.
+    from PIL import Image
+
+    real = tmp_path / "Photos" / "2019" / "Greece" / "real.png"
+    Image.new("RGB", (320, 240), (70, 110, 90)).save(real)
+
     return tmp_path
 
 

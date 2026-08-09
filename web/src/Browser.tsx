@@ -153,6 +153,37 @@ export default function Browser(props: {
   );
 }
 
+/** A thumbnail, falling back to the kind icon.
+ *
+ * Many files legitimately have no artwork — a track with no embedded cover, a
+ * document, an unreadable file. The server answers 404 for those, so a failed load
+ * is an expected outcome rather than an error worth surfacing.
+ */
+function Thumb(props: { item: { item_id: string; kind: Kind; available: boolean }; size: "small" | "large" }) {
+  const { item, size } = props;
+  const [failed, setFailed] = useState(false);
+
+  // No point requesting artwork for a file whose source is unreachable; the server
+  // would answer 503 and we would show the icon anyway.
+  const showImage = !failed && item.available && item.kind !== "doc" && item.kind !== "other";
+
+  return (
+    <div className="thumb">
+      {showImage ? (
+        <img
+          src={`/api/thumb/${item.item_id}?size=${size}`}
+          alt=""
+          loading="lazy"
+          decoding="async"
+          onError={() => setFailed(true)}
+        />
+      ) : (
+        <span className={`ic ${item.kind}`}>{GLYPH[item.kind]}</span>
+      )}
+    </div>
+  );
+}
+
 /** One file, rendered per view mode. Kept in one place so the four modes cannot
  *  drift apart in what they show. */
 function FileRow(props: { f: FileEntry; view: View }) {
@@ -171,9 +202,7 @@ function FileRow(props: { f: FileEntry; view: View }) {
   if (view.startsWith("tiles")) {
     return (
       <li className={cls}>
-        <div className="thumb">
-          <span className={`ic ${f.kind}`}>{GLYPH[f.kind]}</span>
-        </div>
+        <Thumb item={f} size={view === "tiles-large" ? "large" : "small"} />
         <span className="nm" title={f.filename}>
           {f.filename}
         </span>
@@ -297,9 +326,7 @@ function Results(props: {
         >
           {tiles ? (
             <>
-              <div className="thumb">
-                <span className={`ic ${h.kind}`}>{GLYPH[h.kind]}</span>
-              </div>
+              <Thumb item={h} size={view === "tiles-large" ? "large" : "small"} />
               <span className="nm" title={h.filename}>
                 {h.filename}
               </span>

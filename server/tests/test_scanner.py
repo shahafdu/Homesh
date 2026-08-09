@@ -11,9 +11,12 @@ from app.sources.local import LocalConnector
 
 def test_scan_indexes_every_file(db, source):
     sid, _prefix, root = source
+    # Derived, not hardcoded: the fixture grows as tests need new cases, and a
+    # literal here silently turns that into an unrelated failure.
+    expected = sum(1 for p in root.rglob("*") if p.is_file())
     result = scan_source(sid, LocalConnector(root))
 
-    assert result.added == 14
+    assert result.added == expected
     assert result.errors == []
     assert result.playlists == 1  # oldies.m3u
 
@@ -21,23 +24,24 @@ def test_scan_indexes_every_file(db, source):
         count = conn.execute(
             text("SELECT count(*) FROM replicas WHERE source_id = :s"), {"s": str(sid)}
         ).scalar_one()
-    assert count == 14
+    assert count == expected
 
 
 def test_rescan_creates_no_duplicates(db, source):
     """The scanner reconciles; running it twice must not double the catalog."""
     sid, _prefix, root = source
+    expected = sum(1 for p in root.rglob("*") if p.is_file())
     scan_source(sid, LocalConnector(root))
     again = scan_source(sid, LocalConnector(root))
 
     assert again.added == 0
-    assert again.updated == 14
+    assert again.updated == expected
 
     with db.connect() as conn:
         count = conn.execute(
             text("SELECT count(*) FROM replicas WHERE source_id = :s"), {"s": str(sid)}
         ).scalar_one()
-    assert count == 14
+    assert count == expected
 
 
 def test_vanished_files_are_marked_not_deleted(db, source):

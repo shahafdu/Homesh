@@ -348,6 +348,14 @@ input[type="text"], input:not([type]), input[type="search"] {
   border-radius: 9px; border: 1px solid var(--line);
   background: var(--surface);
   display: grid; place-items: center;
+  overflow: hidden;
+}
+.thumb img {
+  width: 100%; height: 100%;
+  /* Fill the square without distorting. Photos are rarely square, and letterboxing
+     every tile would waste most of a grid. */
+  object-fit: cover;
+  display: block;
 }
 .tiles.small .thumb { font-size: 20px; border-radius: 7px; }
 .tiles.large .thumb { font-size: 30px; }

@@ -18,6 +18,9 @@ dependencies = [
     "webauthn>=2.2",          # passkeys — primary auth factor
     "cryptography>=43.0",     # envelope encryption for OAuth tokens
     "python-multipart>=0.0.12",
+    "pillow>=11.0",            # thumbnails
+    "pillow-heif>=0.20",       # HEIC/HEIF, which iPhones produce by default
+    "mutagen>=1.47",           # embedded cover art and audio tags
 ]
 
 [project.optional-dependencies]

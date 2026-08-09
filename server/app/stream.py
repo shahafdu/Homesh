@@ -17,9 +17,10 @@ from sqlalchemy import text
 
 from .config import get_settings
 from .db import get_engine
-from .security import CurrentUser, require_user
+from .security import CurrentUser, optional_user, require_user
 from .signing import TokenError, mint, verify
 from .sources.local import LocalConnector
+from .thumbs import ThumbError, cache_path, generate, is_absent_marker, mark_absent
 
 log = logging.getLogger("hearth.stream")
 router = APIRouter(prefix="/api", tags=["stream"])
@@ -105,6 +106,67 @@ async def signed_url(item_id: UUID, user: CurrentUser = Depends(require_user)) -
         "url": f"/api/stream/{item_id}?t={mint(item_id, user.id, 'stream')}",
         "expires_in": ttl,
     }
+
+
+@router.get("/thumb/{item_id}")
+async def thumbnail(
+    item_id: UUID,
+    size: str = Query("small", pattern="^(small|large)$"),
+    t: str | None = Query(None),
+    user: CurrentUser | None = Depends(optional_user),
+) -> Response:
+    """Serve a cached thumbnail, generating it on first request.
+
+    Accepts either a session (the web client, whose <img> tags carry cookies) or a
+    signed thumb token (a TV app or Cast receiver, which has no session).
+    """
+    authorised = user is not None
+    if not authorised and t:
+        try:
+            claim = verify(t, "thumb")
+            authorised = claim.item_id == item_id
+        except TokenError:
+            authorised = False
+    if not authorised:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "authentication required")
+
+    path = cache_path(item_id, size)
+
+    if not path.exists():
+        with get_engine().connect() as conn:
+            kind = conn.execute(
+                text("SELECT kind::text FROM items WHERE id = :id"), {"id": str(item_id)}
+            ).scalar_one_or_none()
+        if kind is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "no such item")
+
+        try:
+            connector, rel, _filename, _size, _ext = resolve_playable(item_id)
+            generate(item_id, kind, connector, rel, size)
+        except HTTPException:
+            # Source offline — do not cache that as "no artwork"; it may come back.
+            raise
+        except ThumbError as exc:
+            log.debug("no thumbnail for %s: %s", item_id, exc)
+            mark_absent(item_id, size)
+        except Exception:  # noqa: BLE001 - a broken file must not break the listing
+            log.exception("thumbnail generation failed for %s", item_id)
+            mark_absent(item_id, size)
+
+    if not path.exists() or is_absent_marker(path):
+        # 404 rather than a placeholder image: the client already knows how to draw
+        # a kind icon, and it can cache that decision.
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "no thumbnail")
+
+    return Response(
+        content=path.read_bytes(),
+        media_type="image/webp",
+        headers={
+            # Thumbnails are immutable for a given item, so let the browser keep
+            # them; private because the catalog is not public.
+            "Cache-Control": "private, max-age=604800",
+        },
+    )
 
 
 @router.get("/stream/{item_id}")
