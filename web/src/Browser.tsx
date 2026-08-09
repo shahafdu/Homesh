@@ -4,6 +4,7 @@ import {
   browse,
   crumbs,
   formatDate,
+  formatDuration,
   formatSize,
   listSources,
   scanSource,
@@ -12,6 +13,7 @@ import {
   type Kind,
   type Listing,
   type SearchHit,
+  tagLine,
   type Source,
 } from "./library";
 import { VIEWS, type View } from "./prefs";
@@ -252,12 +254,18 @@ function FileRow(props: {
     );
   }
 
+  const tags = tagLine(f.meta);
+
   return (
     <li className={cls} onClick={click}>
       <span className={`ic ${f.kind}`}>{isPlaying ? "▶" : GLYPH[f.kind]}</span>
       <span className="nm" title={f.filename}>
         {f.filename}
+        {/* Additive: tags sit beneath the filename, never in place of it, so a
+            corrupt tag can never leave you wondering what a file is. */}
+        {tags && <span className="tags">{tags}</span>}
       </span>
+      <span className="meta dur">{formatDuration(f.duration_ms)}</span>
       <span className="meta">
         {f.available ? "" : <span className="badge">offline</span>}
       </span>

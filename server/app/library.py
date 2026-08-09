@@ -15,6 +15,7 @@ from sqlalchemy import text
 
 from .config import get_settings
 from .db import get_engine
+from .metadata import extract_for_source
 from .scanner import scan_source
 from .security import CurrentUser, require_user
 from .sources.local import LocalConnector
@@ -143,9 +144,30 @@ async def browse(
             text(
                 """
                 SELECT r.filename, r.ext, r.mtime, r.available,
-                       i.id, i.kind::text, i.size_bytes
+                       i.id, i.kind::text, i.size_bytes, i.duration_ms,
+                       md.meta
                 FROM replicas r
                 JOIN items i ON i.id = r.item_id
+                LEFT JOIN LATERAL (
+                    -- One value per key, resolving conflicts by origin. A tag the
+                    -- user set beats the file's own, which beats a lookup, which
+                    -- beats a model's guess — the precedence principle #1 exists
+                    -- to make visible.
+                    SELECT jsonb_object_agg(key, value) AS meta
+                    FROM (
+                        SELECT DISTINCT ON (m.key) m.key, m.value
+                        FROM item_metadata m
+                        WHERE m.item_id = i.id
+                          AND m.key IN ('title', 'artist', 'album', 'albumartist')
+                        ORDER BY m.key,
+                                 CASE m.origin
+                                     WHEN 'user' THEN 0
+                                     WHEN 'file' THEN 1
+                                     WHEN 'musicbrainz' THEN 2
+                                     ELSE 3
+                                 END
+                    ) best
+                ) md ON TRUE
                 WHERE r.source_id = :sid AND r.dir_path = :rel
                 ORDER BY r.filename COLLATE natsort
                 """
@@ -169,6 +191,9 @@ async def browse(
                 "ext": f[1],
                 "kind": f[5],
                 "size": f[6],
+                "duration_ms": f[7],
+                # Additive only: the filename above is never replaced by these.
+                "meta": f[8] or {},
                 "mtime": f[2].isoformat() if f[2] else None,
                 "available": f[3],
             }
@@ -255,8 +280,20 @@ async def trigger_scan(
     if root is None:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "source has no configured root")
 
-    background.add_task(scan_source, source_id, LocalConnector(root))
+    background.add_task(_scan_then_extract, source_id, root)
     return {"started": True, "source_id": str(source_id)}
+
+
+def _scan_then_extract(source_id: UUID, root: str) -> None:
+    """Index first, read tags second.
+
+    Scanning only touches directory entries, so the folder view is usable almost
+    immediately. Reading tags opens every file, which is far slower — running it
+    after means a large library is browsable long before it is fully described.
+    """
+    connector = LocalConnector(root)
+    scan_source(source_id, connector)
+    extract_for_source(source_id, connector)
 
 
 def _root_for_source(source_id: UUID) -> str | None:

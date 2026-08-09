@@ -2,6 +2,13 @@ import { api } from "./api";
 
 export type Kind = "audio" | "video" | "photo" | "doc" | "other";
 
+export interface FileMeta {
+  title?: string;
+  artist?: string;
+  album?: string;
+  albumartist?: string;
+}
+
 export interface FileEntry {
   item_id: string;
   /** Always present, always shown. Metadata may add to it, never replace it. */
@@ -9,8 +16,35 @@ export interface FileEntry {
   ext: string | null;
   kind: Kind;
   size: number | null;
+  duration_ms?: number | null;
+  /** Additive. Absent or partial is normal — plenty of files have no tags. */
+  meta?: FileMeta;
   mtime: string | null;
   available: boolean;
+}
+
+export function formatDuration(ms: number | null | undefined): string {
+  if (!ms || ms < 0) return "";
+  const total = Math.round(ms / 1000);
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  return h > 0
+    ? `${h}:${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`
+    : `${m}:${s.toString().padStart(2, "0")}`;
+}
+
+/** The tag line shown beneath a filename: "Title · Artist · Album".
+ *
+ * Returns null when there is nothing worth showing, so a file with no tags gets
+ * no empty second line.
+ */
+export function tagLine(meta: FileMeta | undefined): string | null {
+  if (!meta) return null;
+  const parts = [meta.title, meta.artist ?? meta.albumartist, meta.album].filter(
+    (p): p is string => Boolean(p && p.trim()),
+  );
+  return parts.length ? parts.join(" · ") : null;
 }
 
 export interface DirEntry {

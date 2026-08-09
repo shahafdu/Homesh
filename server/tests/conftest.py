@@ -135,6 +135,30 @@ def library(tmp_path: Path) -> Path:
     real = tmp_path / "Photos" / "2019" / "Greece" / "real.png"
     Image.new("RGB", (320, 240), (70, 110, 90)).save(real)
 
+    # A real audio file carrying real tags, so metadata extraction is exercised
+    # rather than mocked. WAVE carries ID3 frames just as MP3 does, and the wave
+    # module builds one without shelling out to an encoder.
+    import struct
+    import wave as wave_module
+
+    from mutagen.id3 import TALB, TIT2, TPE1, TRCK
+    from mutagen.wave import WAVE
+
+    tagged = tmp_path / "Music" / "Pink Floyd" / "The Wall" / "03 - Tagged Track.wav"
+    with wave_module.open(str(tagged), "w") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(8000)
+        w.writeframes(b"".join(struct.pack("<h", 0) for _ in range(8000)))  # 1 second
+
+    audio = WAVE(tagged)
+    audio.add_tags()
+    audio.tags.add(TIT2(encoding=3, text="Another Brick in the Wall"))
+    audio.tags.add(TPE1(encoding=3, text="Pink Floyd"))
+    audio.tags.add(TALB(encoding=3, text="The Wall"))
+    audio.tags.add(TRCK(encoding=3, text="3/26"))
+    audio.save()
+
     return tmp_path
 
 

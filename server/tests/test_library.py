@@ -76,8 +76,14 @@ class TestSearch:
 
     def test_matches_folder_name(self, client, scanned):
         """'wall' appears in no filename — only in the folder 'The Wall'."""
+        _sid, _prefix, root = scanned
+        expected = sum(
+            1 for p in (root / "Music" / "Pink Floyd" / "The Wall").iterdir() if p.is_file()
+        )
+
         hits = client.get("/api/search?q=wall").json()
-        assert len(hits) == 3
+        # Derived, not hardcoded: the fixture grows as tests need new cases.
+        assert len(hits) == expected
         assert all("The Wall" in h["path"] for h in hits)
 
     @pytest.mark.parametrize(
