@@ -42,3 +42,6 @@ Thumbs.db
 
 # Local test fixture
 sample-media/
+
+# Python build artefacts
+*.egg-info/
