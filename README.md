@@ -7,9 +7,10 @@ control tower** for every screen and speaker in the house.
 It streams from Google Drive and from local storage through one catalog, and it keeps
 working when the machine holding your files is switched off.
 
-> **Status: early development.** Phases 0–1 are done — passkey auth, the catalog, folder
-> browsing and search all work. Phase 2 (playback) is in progress: signed URLs and range
-> streaming are in, players and thumbnails are not. **Nothing plays yet.**
+> **Status: early development.** Phases 0–2 are done. Passkey auth, the catalog, folder
+> browsing, search, thumbnails and playback all work — audio with a folder queue, video
+> by direct play, photos and documents. Casting to a TV or the Denon, Google Drive, and
+> AI search are still ahead.
 >
 > [Architecture and roadmap](docs/ARCHITECTURE.md) · [User guide](docs/USER_GUIDE.md)
 

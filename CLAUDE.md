@@ -44,7 +44,7 @@ AGPL-3.0. Repo: `github.com/shahafdu/Media_Server` (**currently public**).
 |---|---|---|
 | 0 · Foundation | ✅ done | Compose stack, schema, passkeys, CI |
 | 1 · Sources & catalog | ✅ done | Local connector, scanner, folder tree, search |
-| 2 · Playback | 🔨 in progress | Signed URLs + range streaming done. **Next: thumbnails, audio player, video direct-play, photo viewer, doc preview** |
+| 2 · Playback | ✅ done | Signed URLs, range streaming, thumbnails, audio player with folder queue, video direct-play, photo and document viewer |
 | 3 · Control tower & zones | ⬜ | Server-owned sessions, renderer protocol, Denon via HEOS CLI + telnet |
 | 4 · TV apps | ⬜ | Android TV, Tizen, webOS from the same React codebase |
 | 5 · Playlists & music intelligence | ⬜ | Winamp `.m3u`/`.pls` import with path repair, AcoustID tag repair |
@@ -53,15 +53,14 @@ AGPL-3.0. Repo: `github.com/shahafdu/Media_Server` (**currently public**).
 | 8 · Optional transcode | ⬜ | May never be needed — see §3.2 of ARCHITECTURE |
 | 9 · Public release | ⬜ | Docs, screenshots, name decision |
 
-**Tests: 74 passing. Migrations: 004. Lint: clean.**
+**Tests: 88 passing. Migrations: 004. Lint: clean. CI green.**
 
 ### Outstanding tasks
 
-- [ ] Thumbnail generation + cache (blocks useful tiles view)
-- [ ] Audio player with gapless playback
-- [ ] Video direct-play in the browser
-- [ ] Photo viewer (incl. HEIC)
-- [ ] Document preview
+- [ ] Gapless audio playback and ReplayGain (the player is functional, not yet gapless)
+- [ ] Metadata extraction — duration, artist, album (durations currently come from
+      the media element, so listings show none)
+- [ ] Automatic rescan on file change (scanning is manual)
 - [ ] Google Drive connector — **blocked on Shahaf creating the OAuth client**
 - [ ] Go agent + WireGuard (Mode B split; only needed when the core moves off the PC)
 - [ ] Deploy to Oracle Always Free (phase 0.5)

@@ -116,7 +116,8 @@ your phone and TV.
 | **Small tiles** | Scanning lots of photos quickly |
 | **Large tiles** | Photos and video where you want a proper look |
 
-Tiles show placeholder icons for now — **thumbnail generation is not yet built**.
+Photos and video show real thumbnails. Files with no artwork — a track without an
+embedded cover, a document — fall back to an icon for their kind.
 
 ---
 
@@ -185,15 +186,25 @@ Press **Rescan**. Check the folder is actually mounted:
 
 ---
 
-## 9. Not built yet
+## 9. Playing things
 
-Being honest about the gap between design and today:
+**Music.** Click a track and the whole folder queues, so playing one file behaves like
+an album. The player bar stays put as you browse elsewhere. It has play/pause,
+previous/next, seeking and volume.
 
-- Playing anything — audio player, video, photo viewer, document preview
-- Thumbnails
+If a file turns out to be corrupt, the player says so and moves to the next one rather
+than stalling on it.
+
+**Video, photos and documents** open in a full-screen viewer. Arrow keys move between
+items of the same kind in that folder, Escape closes. Video is *direct play* — the
+original file, decoded by your browser, with nothing re-encoded in between.
+
+## 10. Not built yet
+
 - Google Drive and Google Photos
 - Casting to a TV or the Denon receiver; multi-room zones
 - Playlist import, AI search, metadata repair
+- Gapless playback, and durations shown in listings
 
 The [architecture document](ARCHITECTURE.md) covers all of it, including *why* certain
 things work the way they do — for instance why your receiver can't play different
