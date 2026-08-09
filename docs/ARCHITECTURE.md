@@ -461,9 +461,15 @@ connected to. That was chosen for security (§6, no inbound ports) and it pays a
 here: the core never needs to know where anything is.
 
 Only LAN devices we can't install software on — the Denon — need discovery, and SSDP handles it.
-Verified working: the probe found the receiver and read back a stable
-`uuid:…::urn:schemas-denon-com:device:ACT-Denon:1`. The agent will re-run discovery on a timer
-and on connection failure, so a DHCP reshuffle is self-healing.
+Verified working from the host: `tools/probe-denon.ps1` found the receiver and read back a
+stable `uuid:…::urn:schemas-denon-com:device:ACT-Denon:1`.
+
+⚠️ **Discovery cannot run from inside a bridged container.** Docker's bridge network does not
+forward multicast to the LAN, so the containerised core finds nothing — confirmed in practice,
+while *direct* connections to the receiver on ports 1255 and 23 work fine from the same
+container. Discovery therefore belongs to the home agent, which runs on the host with real LAN
+access; until that exists, `DENON_HOST` seeds the address. The identity-keyed model is unchanged
+— only the component performing discovery moves.
 
 A DHCP reservation on the router is still worth doing for the AVR — it makes debugging less
 confusing — but the design does not require one, and nothing breaks without it.

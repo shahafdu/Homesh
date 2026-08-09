@@ -40,6 +40,15 @@ class Settings(BaseSettings):
     # be a hardcoded absolute path.
     cache_dir: str = "/var/lib/hearth/cache"
 
+    # Receiver address, used when SSDP discovery cannot run.
+    #
+    # Docker's bridge network does not forward multicast to the LAN, so a
+    # containerised core cannot discover the AVR itself — confirmed in practice.
+    # In the split topology the home agent does discovery and reports the address;
+    # until then this seeds it. Still keyed by identity internally, so a DHCP
+    # change only costs a re-seed rather than a redesign (ARCHITECTURE.md §5.7).
+    denon_host: str = ""
+
     # Local roots to index, as "Name=/path" pairs separated by ';'.
     # Deployment facts, so they live in the environment rather than the database —
     # a stored path would silently stop matching the container's mounts.
