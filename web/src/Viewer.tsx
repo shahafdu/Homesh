@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "./api";
-import { formatSize, type FileEntry } from "./library";
+import { canPreview, downloadUrl, formatSize, type FileEntry } from "./library";
 
 /** Full-screen viewer for the kinds that need a viewport rather than a player bar.
  *
@@ -15,6 +15,7 @@ export default function Viewer(props: {
 }) {
   const { files, index, onIndex, onClose } = props;
   const file = files[index];
+  const previewable = file ? canPreview(file.kind, file.ext) : false;
 
   const [url, setUrl] = useState<string | null>(null);
   const [text, setText] = useState<string | null>(null);
@@ -27,6 +28,26 @@ export default function Viewer(props: {
     },
     [index, files.length, onIndex],
   );
+
+  // The viewer gets its own history entry so that back — the natural gesture on a
+  // phone — closes it rather than leaving the folder behind it.
+  useEffect(() => {
+    let closedByBack = false;
+    window.history.pushState({ viewer: true }, "");
+
+    const onPop = () => {
+      closedByBack = true;
+      onClose();
+    };
+    window.addEventListener("popstate", onPop);
+
+    return () => {
+      window.removeEventListener("popstate", onPop);
+      // Closed with the button or Escape, so our entry is still on the stack;
+      // drop it, or the next back press would appear to do nothing.
+      if (!closedByBack) window.history.back();
+    };
+  }, [onClose]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -52,7 +73,7 @@ export default function Viewer(props: {
         if (cancelled) return;
 
         // Plain text renders inline; anything binary is handed to the browser.
-        if (file.ext === "md" || file.ext === "txt") {
+        if (previewable && (file.ext === "md" || file.ext === "txt")) {
           const res = await fetch(url, { credentials: "same-origin" });
           if (!cancelled) setText(await res.text());
         }
@@ -67,6 +88,18 @@ export default function Viewer(props: {
     };
   }, [file]);
 
+  const save = async () => {
+    // A transient anchor rather than window.open: popup blockers treat a
+    // programmatic open as suspicious, and this keeps the filename the server sent.
+    const href = await downloadUrl(file.item_id);
+    const a = document.createElement("a");
+    a.href = href;
+    a.download = file.filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  };
+
   if (!file) return null;
 
   return (
@@ -79,9 +112,14 @@ export default function Viewer(props: {
             {files.length > 1 && ` · ${index + 1} of ${files.length}`}
           </span>
         </div>
-        <button className="v-close" onClick={onClose} aria-label="Close" title="Close (Esc)">
-          ✕
-        </button>
+        <div className="v-actions">
+          <button className="v-btn" onClick={save} title="Save to this device">
+            Download
+          </button>
+          <button className="v-btn" onClick={onClose} aria-label="Close" title="Close (Esc)">
+            ✕
+          </button>
+        </div>
       </header>
 
       <div className="v-stage">
@@ -111,8 +149,22 @@ export default function Viewer(props: {
 
           {url && file.kind === "doc" && text !== null && <pre className="v-text">{text}</pre>}
 
-          {url && file.kind === "doc" && text === null && (
+          {url && file.kind === "doc" && text === null && previewable && (
             <iframe className="v-frame" src={url} title={file.filename} />
+          )}
+
+          {url && !previewable && (
+            <div className="v-nopreview">
+              <p className="muted">
+                No preview for <code>.{file.ext}</code> files.
+              </p>
+              <p className="muted small">
+                Download it to open in another app, or to keep a copy.
+              </p>
+              <button className="v-btn" onClick={save}>
+                Download {file.filename}
+              </button>
+            </div>
           )}
         </div>
 

@@ -35,7 +35,11 @@ export default function Browser(props: {
 }) {
   const { isAdmin, view, onViewChange, onOpenSettings, onPlay, onView, playingId } = props;
 
-  const [path, setPath] = useState("/");
+  // The current folder lives in the URL, so the browser's own history works and a
+  // link can be shared. On a phone this is what makes the back gesture behave.
+  const [path, setPath] = useState(
+    () => new URLSearchParams(window.location.search).get("p") || "/",
+  );
   const [listing, setListing] = useState<Listing | null>(null);
   const [hits, setHits] = useState<SearchHit[] | null>(null);
   const [query, setQuery] = useState("");
@@ -85,7 +89,19 @@ export default function Browser(props: {
     setQuery("");
     setHits(null);
     setPath(p);
+    window.history.pushState({ p }, "", `?p=${encodeURIComponent(p)}`);
   };
+
+  // Back and forward move between folders rather than leaving the app.
+  useEffect(() => {
+    const onPop = () => {
+      setQuery("");
+      setHits(null);
+      setPath(new URLSearchParams(window.location.search).get("p") || "/");
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
 
   const rescan = async (id: string) => {
     await scanSource(id);

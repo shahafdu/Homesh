@@ -181,3 +181,46 @@ class TestOfflineSources:
 
     def test_unknown_item_404s(self, client, scanned):
         assert client.get(f"/api/items/{uuid.uuid4()}/url").status_code == 404
+
+
+class TestDownload:
+    """Saving a copy to the device — the only way to use formats we can't preview."""
+
+    def test_inline_by_default(self, client, db, scanned):
+        item = _item(db, "beach.mkv")
+        url = client.get(f"/api/items/{item}/url").json()["url"]
+        r = client.get(url)
+        assert r.headers["content-disposition"].startswith("inline")
+
+    def test_download_flag_makes_it_an_attachment(self, client, db, scanned):
+        item = _item(db, "beach.mkv")
+        url = client.get(f"/api/items/{item}/url").json()["url"]
+        r = client.get(f"{url}&download=1")
+        assert r.headers["content-disposition"].startswith("attachment")
+
+    def test_download_returns_identical_bytes(self, client, db, scanned):
+        """Only the header differs, so the flag grants nothing extra."""
+        item = _item(db, "beach.mkv")
+        url = client.get(f"/api/items/{item}/url").json()["url"]
+        assert client.get(url).content == client.get(f"{url}&download=1").content
+
+    def test_download_still_requires_a_valid_token(self, anon_client, db, scanned):
+        item = _item(db, "beach.mkv")
+        assert anon_client.get(f"/api/stream/{item}?t=forged&download=1").status_code == 403
+
+    def test_unicode_filename_uses_rfc6266_encoding(self, client, db, scanned):
+        """A bare non-ASCII filename is invalid in an HTTP header."""
+        item = _item(db, "שיר בעברית.mp3")
+        url = client.get(f"/api/items/{item}/url").json()["url"]
+        disposition = client.get(f"{url}&download=1").headers["content-disposition"]
+
+        assert "filename*=UTF-8''" in disposition
+        assert "%D7%A9" in disposition          # percent-encoded Hebrew
+        assert disposition.isascii(), "header must be ASCII-safe"
+
+    def test_quotes_in_filename_cannot_break_the_header(self):
+        """A filename containing a quote would otherwise terminate the parameter."""
+        from app.stream import _disposition
+
+        header = _disposition('we"rd\name.mp3', attachment=True)
+        assert header.count('"') == 2, f"unbalanced quoting: {header}"

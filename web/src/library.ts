@@ -51,6 +51,23 @@ export const search = (q: string) =>
 
 export const listSources = () => api.get<Source[]>("/api/sources");
 
+/** A short-lived URL that saves to the device instead of displaying.
+ *
+ * Only the Content-Disposition differs — the bytes are the same, so this grants
+ * nothing extra. It is what makes formats we cannot preview (spreadsheets,
+ * presentations) still useful, and lets you keep a copy of anything.
+ */
+export async function downloadUrl(itemId: string): Promise<string> {
+  const { url } = await api.get<{ url: string }>(`/api/items/${itemId}/url`);
+  return `${url}&download=1`;
+}
+
+/** Formats the browser can display. Anything else is offered as a download. */
+export function canPreview(kind: Kind, ext: string | null): boolean {
+  if (kind === "photo" || kind === "video" || kind === "audio") return true;
+  return ["pdf", "txt", "md"].includes((ext ?? "").toLowerCase());
+}
+
 export const scanSource = (id: string) => api.post(`/api/sources/${id}/scan`);
 
 export function formatSize(bytes: number | null): string {

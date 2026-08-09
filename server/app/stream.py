@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 import re
+from urllib.parse import quote
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
@@ -40,6 +41,20 @@ MIME = {
 }
 
 _RANGE = re.compile(r"^bytes=(\d*)-(\d*)$")
+
+
+def _disposition(filename: str, attachment: bool) -> str:
+    """Build a Content-Disposition header that survives non-ASCII filenames.
+
+    A bare `filename="שיר בעברית.mp3"` is not valid in an HTTP header, and browsers
+    handle it inconsistently. RFC 6266 gives a `filename*` form for exactly this;
+    the plain parameter stays as a sanitised fallback for older clients.
+    """
+    kind = "attachment" if attachment else "inline"
+    ascii_name = filename.encode("ascii", errors="replace").decode("ascii")
+    # Quotes and backslashes would terminate or escape the quoted string.
+    ascii_name = ascii_name.replace("\\", "_").replace('"', "_")
+    return f"{kind}; filename=\"{ascii_name}\"; filename*=UTF-8''{quote(filename)}"
 
 
 def resolve_playable(item_id: UUID) -> tuple[LocalConnector, str, str, int, str]:
@@ -170,8 +185,19 @@ async def thumbnail(
 
 
 @router.get("/stream/{item_id}")
-async def stream(item_id: UUID, request: Request, t: str = Query(...)) -> Response:
-    """Serve file bytes. Authorised by the signed token, not by session cookie."""
+async def stream(
+    item_id: UUID,
+    request: Request,
+    t: str = Query(...),
+    download: bool = Query(False, description="Send as an attachment rather than inline"),
+) -> Response:
+    """Serve file bytes. Authorised by the signed token, not by session cookie.
+
+    `download=1` only changes the Content-Disposition header. The bytes are
+    identical either way, so it grants nothing extra — it just tells the browser
+    to save the file rather than try to display it, which is what makes formats
+    we cannot preview (spreadsheets, presentations) still useful.
+    """
     try:
         claim = verify(t, "stream")
     except TokenError as exc:
@@ -191,7 +217,7 @@ async def stream(item_id: UUID, request: Request, t: str = Query(...)) -> Respon
         # Media URLs are per-user and short-lived, so they must never be cached
         # by a shared proxy.
         "Cache-Control": "private, max-age=0, no-store",
-        "Content-Disposition": f'inline; filename="{filename}"',
+        "Content-Disposition": _disposition(filename, attachment=download),
     }
 
     range_header = request.headers.get("range")

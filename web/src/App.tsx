@@ -16,6 +16,7 @@ export default function App() {
   const [showSettings, setShowSettings] = useState(false);
   const player = usePlayer();
   const [viewing, setViewing] = useState<{ files: FileEntry[]; index: number } | null>(null);
+  const closeViewer = useCallback(() => setViewing(null), []);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -110,7 +111,7 @@ export default function App() {
             files={viewing.files}
             index={viewing.index}
             onIndex={(index) => setViewing({ ...viewing, index })}
-            onClose={() => setViewing(null)}
+            onClose={closeViewer}
           />
         )}
 
