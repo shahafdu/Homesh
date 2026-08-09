@@ -62,8 +62,10 @@ jobs:
         working-directory: server
         env:
           DATABASE_URL: postgresql+psycopg://hearth:hearth@localhost:5432/hearth_test
-          MASTER_KEY: "00000000000000000000000000000000000000000000="
-          SECRET_KEY: "11111111111111111111111111111111111111111111="
+          # MASTER_KEY and SECRET_KEY are deliberately not set here. conftest.py
+          # supplies valid 32-byte defaults via setdefault, and duplicating them
+          # meant one copy could drift — which it did: the value here decoded to
+          # 33 bytes and failed validation.
         run: pytest tests -q
 
   web:
