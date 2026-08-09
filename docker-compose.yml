@@ -1,0 +1,53 @@
+# Mode A (all-in-one) — see docs/ARCHITECTURE.md §3.4.
+# Runs on Windows (amd64), Raspberry Pi and Oracle Ampere (arm64) unchanged.
+
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+      # Deterministic collation, so ORDER BY doesn't shift under us between hosts.
+      POSTGRES_INITDB_ARGS: "--locale=C --encoding=UTF8"
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    # Not published to the host: only the api service needs it.
+    expose:
+      - "5432"
+
+  api:
+    build:
+      # Root context: the image bundles both the API and the built web client.
+      context: .
+      dockerfile: server/Dockerfile
+    restart: unless-stopped
+    env_file: .env
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      # Thumbnails and previews. Access-controlled by the API, never served
+      # as a public static directory (ARCHITECTURE.md §6).
+      - media-cache:/var/lib/hearth/cache
+      # Your media, mounted READ-ONLY. The server indexes and streams; it has no
+      # business writing to your library.
+      - ${MEDIA_HOST_PATH:-./sample-media}:/media/library:ro
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8080/api/health').status==200 else 1)\""]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+volumes:
+  db-data:
+  media-cache:
