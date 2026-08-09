@@ -7,8 +7,11 @@ control tower** for every screen and speaker in the house.
 It streams from Google Drive and from local storage through one catalog, and it keeps
 working when the machine holding your files is switched off.
 
-> Status: **early development.** Phase 0 (foundation) is done. See
-> [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the full design and roadmap.
+> **Status: early development.** Phases 0–1 are done — passkey auth, the catalog, folder
+> browsing and search all work. Phase 2 (playback) is in progress: signed URLs and range
+> streaming are in, players and thumbnails are not. **Nothing plays yet.**
+>
+> [Architecture and roadmap](docs/ARCHITECTURE.md) · [User guide](docs/USER_GUIDE.md)
 
 ---
 
@@ -68,6 +71,9 @@ code — `docker compose logs api` — which you use to create the first account
 no public registration path; every account after the first is invited by an admin.
 
 Authentication is **passkeys only** (WebAuthn). No passwords to leak or phish.
+
+Full setup, including pointing it at your media and the Windows/WSL gotcha, is in the
+[user guide](docs/USER_GUIDE.md).
 
 ### Development
 
