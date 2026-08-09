@@ -11,7 +11,7 @@ from sqlalchemy import text
 from app.scanner import scan_source
 from app.signing import mint
 from app.sources.local import LocalConnector
-from app.thumbs import CACHE_ROOT, cache_path
+from app.thumbs import cache_path, cache_root
 
 
 @pytest.fixture
@@ -28,7 +28,7 @@ def scanned(source, monkeypatch):
     get_settings.cache_clear()
     # The cache is shared state on disk; leaving entries behind would let one test
     # satisfy another's request.
-    shutil.rmtree(CACHE_ROOT, ignore_errors=True)
+    shutil.rmtree(cache_root(), ignore_errors=True)
 
 
 def _item(db, filename: str):

@@ -16,11 +16,15 @@ import subprocess
 from pathlib import Path
 from uuid import UUID
 
+from .config import get_settings
 from .sources.local import LocalConnector
 
 log = logging.getLogger("hearth.thumbs")
 
-CACHE_ROOT = Path("/var/lib/hearth/cache/thumbs")
+
+def cache_root() -> Path:
+    """Where thumbnails live. Resolved per call so configuration can change."""
+    return Path(get_settings().cache_dir) / "thumbs"
 
 # Two sizes, matching the two tile views. Small is deliberately small: a folder of
 # two thousand tracks should not pull two thousand large images.
@@ -41,7 +45,7 @@ def cache_path(item_id: UUID, size: str) -> Path:
     # Shard by the first two hex characters: a single directory holding a hundred
     # thousand files is slow to list on most filesystems.
     key = item_id.hex
-    return CACHE_ROOT / size / key[:2] / f"{key}.webp"
+    return cache_root() / size / key[:2] / f"{key}.webp"
 
 
 def _encode(img, target: int) -> bytes:

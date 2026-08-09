@@ -35,6 +35,11 @@ class Settings(BaseSettings):
 
     media_url_ttl_minutes: int = Field(default=5, ge=1, le=60)
 
+    # Thumbnails and derived files. The container mounts a volume here, but the app
+    # must also run outside one — on a developer machine, or in CI — so this cannot
+    # be a hardcoded absolute path.
+    cache_dir: str = "/var/lib/hearth/cache"
+
     # Local roots to index, as "Name=/path" pairs separated by ';'.
     # Deployment facts, so they live in the environment rather than the database —
     # a stored path would silently stop matching the container's mounts.

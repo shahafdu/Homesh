@@ -8,6 +8,7 @@ against SQLite — a passing test on the wrong engine would prove nothing.
 from __future__ import annotations
 
 import os
+import tempfile
 import uuid
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -22,6 +23,9 @@ os.environ.setdefault(
 os.environ.setdefault("MASTER_KEY", "0" * 43 + "=")
 os.environ.setdefault("SECRET_KEY", "1" * 43 + "=")
 os.environ.setdefault("MEDIA_ROOTS", "")
+# Thumbnails are written to disk; give the suite its own directory rather than
+# the container path, which does not exist on a CI runner or a dev machine.
+os.environ.setdefault("CACHE_DIR", tempfile.mkdtemp(prefix="hearth-test-cache-"))
 
 
 def _guard_target_database() -> None:
