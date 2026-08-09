@@ -2,7 +2,9 @@ import { useCallback, useEffect, useState } from "react";
 import { api, ApiError, type AuthState, type Health } from "./api";
 import { login, logout, passkeysSupported, register } from "./auth";
 import Browser from "./Browser";
+import Player from "./Player";
 import Settings from "./Settings";
+import { usePlayer } from "./player";
 import { applyPrefs, DEFAULT_PREFS, getPrefs, savePrefs, type Prefs } from "./prefs";
 
 export default function App() {
@@ -10,6 +12,7 @@ export default function App() {
   const [health, setHealth] = useState<Health | null>(null);
   const [prefs, setPrefs] = useState<Prefs>(DEFAULT_PREFS);
   const [showSettings, setShowSettings] = useState(false);
+  const player = usePlayer();
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -84,6 +87,8 @@ export default function App() {
           view={prefs.view}
           onViewChange={(view) => void changePrefs({ view })}
           onOpenSettings={() => setShowSettings(true)}
+          onPlay={player.play}
+          playingId={player.current?.item_id ?? null}
         />
 
         {showSettings && (
@@ -93,6 +98,16 @@ export default function App() {
             onClose={() => setShowSettings(false)}
           />
         )}
+
+        <Player
+          state={player.state}
+          current={player.current}
+          onToggle={player.toggle}
+          onSkip={player.skip}
+          onSeek={player.seek}
+          onVolume={player.setVolume}
+          onStop={player.stop}
+        />
 
         <footer className="footer">
           <span className="status">

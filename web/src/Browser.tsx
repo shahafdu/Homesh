@@ -29,8 +29,10 @@ export default function Browser(props: {
   view: View;
   onViewChange: (v: View) => void;
   onOpenSettings: () => void;
+  onPlay: (files: FileEntry[], index: number, folderPath: string) => void;
+  playingId: string | null;
 }) {
-  const { isAdmin, view, onViewChange, onOpenSettings } = props;
+  const { isAdmin, view, onViewChange, onOpenSettings, onPlay, playingId } = props;
 
   const [path, setPath] = useState("/");
   const [listing, setListing] = useState<Listing | null>(null);
@@ -145,7 +147,14 @@ export default function Browser(props: {
       {hits !== null ? (
         <Results hits={hits} query={query} view={view} onOpen={navigate} />
       ) : (
-        <Folder listing={listing} loading={loading} view={view} onOpen={navigate} />
+        <Folder
+          listing={listing}
+          loading={loading}
+          view={view}
+          onOpen={navigate}
+          onPlay={onPlay}
+          playingId={playingId}
+        />
       )}
 
       {atRoot && <SourceList sources={sources} isAdmin={isAdmin} onScan={rescan} />}
@@ -186,14 +195,27 @@ function Thumb(props: { item: { item_id: string; kind: Kind; available: boolean 
 
 /** One file, rendered per view mode. Kept in one place so the four modes cannot
  *  drift apart in what they show. */
-function FileRow(props: { f: FileEntry; view: View }) {
-  const { f, view } = props;
-  const cls = `${f.available ? "" : "offline"}`;
+function FileRow(props: {
+  f: FileEntry;
+  view: View;
+  onPlay?: () => void;
+  isPlaying?: boolean;
+}) {
+  const { f, view, onPlay, isPlaying } = props;
+  // Only playable rows invite a click. Everything else stays inert until the
+  // viewer for its kind exists.
+  const playable = f.kind === "audio" && f.available;
+  const cls = [
+    f.available ? "" : "offline",
+    playable ? "playable" : "",
+    isPlaying ? "nowplaying" : "",
+  ].filter(Boolean).join(" ");
+  const click = playable ? onPlay : undefined;
 
   if (view === "columns") {
     return (
-      <li className={cls}>
-        <span className={`ic ${f.kind}`}>{GLYPH[f.kind]}</span>
+      <li className={cls} onClick={click}>
+        <span className={`ic ${f.kind}`}>{isPlaying ? "▶" : GLYPH[f.kind]}</span>
         {f.filename}
       </li>
     );
@@ -201,7 +223,7 @@ function FileRow(props: { f: FileEntry; view: View }) {
 
   if (view.startsWith("tiles")) {
     return (
-      <li className={cls}>
+      <li className={cls} onClick={click}>
         <Thumb item={f} size={view === "tiles-large" ? "large" : "small"} />
         <span className="nm" title={f.filename}>
           {f.filename}
@@ -212,8 +234,8 @@ function FileRow(props: { f: FileEntry; view: View }) {
   }
 
   return (
-    <li className={cls}>
-      <span className={`ic ${f.kind}`}>{GLYPH[f.kind]}</span>
+    <li className={cls} onClick={click}>
+      <span className={`ic ${f.kind}`}>{isPlaying ? "▶" : GLYPH[f.kind]}</span>
       <span className="nm" title={f.filename}>
         {f.filename}
       </span>
@@ -237,8 +259,10 @@ function Folder(props: {
   loading: boolean;
   view: View;
   onOpen: (p: string) => void;
+  onPlay: (files: FileEntry[], index: number, folderPath: string) => void;
+  playingId: string | null;
 }) {
-  const { listing, loading, view, onOpen } = props;
+  const { listing, loading, view, onOpen, onPlay, playingId } = props;
   if (!listing) return <p className="muted">{loading ? "Loading…" : ""}</p>;
 
   if (listing.dirs.length === 0 && listing.files.length === 0) {
@@ -298,8 +322,14 @@ function Folder(props: {
         </li>
       ))}
 
-      {listing.files.map((f) => (
-        <FileRow key={f.item_id} f={f} view={view} />
+      {listing.files.map((f, i) => (
+        <FileRow
+          key={f.item_id}
+          f={f}
+          view={view}
+          isPlaying={playingId === f.item_id}
+          onPlay={() => onPlay(listing.files, i, listing.path)}
+        />
       ))}
     </ul>
   );

@@ -457,3 +457,84 @@ button.compact:hover { color: var(--ink); }
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; animation: none !important; }
 }
+
+/* ── Playback ───────────────────────────────────────────────────────────────
+   A persistent bar rather than a modal: playback outlives whatever folder you
+   wander into, which is the point of a queue. */
+
+.row.playable, .tiles li.playable { cursor: pointer; }
+.rows li.nowplaying { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.rows li.nowplaying .nm { color: var(--accent); }
+.cols li.nowplaying, .tiles li.nowplaying .nm { color: var(--accent); }
+
+.player {
+  position: sticky; bottom: 0; z-index: 20;
+  display: flex; align-items: center; gap: 16px;
+  padding: 10px 16px;
+  background: var(--surface);
+  border-top: 1px solid var(--line);
+}
+
+.p-controls { display: flex; gap: 6px; flex: none; }
+.p-btn {
+  padding: 7px 11px; min-width: 38px;
+  background: transparent; color: var(--muted);
+  border: 1px solid var(--line); border-radius: 8px;
+  cursor: pointer; line-height: 1; font-size: 12px;
+}
+.p-btn:hover:not(:disabled) { color: var(--ink); }
+.p-btn:disabled { opacity: .4; cursor: not-allowed; }
+.p-btn.primary {
+  background: var(--accent); color: var(--accent-ink); border-color: var(--accent);
+  font-size: 13px;
+}
+
+.p-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.p-title { display: flex; flex-direction: column; min-width: 0; }
+.p-name {
+  font-family: var(--mono); font-size: 13px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.p-where {
+  font-size: 11.5px; color: var(--muted);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+.p-scrub { display: flex; align-items: center; gap: 10px; }
+.p-time {
+  font-size: 11.5px; color: var(--muted);
+  font-variant-numeric: tabular-nums; min-width: 34px;
+}
+.p-time:last-of-type { text-align: right; }
+
+.p-range, .p-vol {
+  -webkit-appearance: none; appearance: none;
+  height: 4px; border-radius: 999px; background: var(--line); cursor: pointer;
+}
+.p-range { flex: 1; min-width: 0; }
+.p-vol { width: 84px; flex: none; }
+.p-range::-webkit-slider-thumb, .p-vol::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none;
+  width: 12px; height: 12px; border-radius: 50%;
+  background: var(--accent); border: 0; cursor: pointer;
+}
+.p-range::-moz-range-thumb, .p-vol::-moz-range-thumb {
+  width: 12px; height: 12px; border-radius: 50%;
+  background: var(--accent); border: 0; cursor: pointer;
+}
+
+.p-right { display: flex; align-items: center; gap: 10px; flex: none; }
+.p-count { font-size: 11.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+.p-error {
+  position: absolute; left: 16px; bottom: 100%;
+  padding: 6px 10px; margin-bottom: 6px; border-radius: 7px;
+  background: color-mix(in srgb, var(--danger) 16%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--danger) 40%, transparent);
+  font-size: 12px;
+}
+
+@media (max-width: 640px) {
+  .p-where, .p-count, .p-vol { display: none; }
+  .player { gap: 10px; padding: 8px 12px; }
+}
