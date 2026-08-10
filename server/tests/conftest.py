@@ -62,8 +62,13 @@ def _schema():
 def db():
     engine = get_engine()
     yield engine
-    # Each test starts from a clean catalog. Cascades handle items/replicas.
+    # Each test starts from a clean catalog. Cascades handle items, replicas and
+    # play_sessions; zones and renderers need naming because a leaked zone makes
+    # the next test's "create zone" fail on the unique name rather than on
+    # anything it was actually testing.
     with engine.begin() as conn:
+        conn.execute(text("DELETE FROM zones"))
+        conn.execute(text("DELETE FROM renderers"))
         conn.execute(text("DELETE FROM sources"))
         conn.execute(text("DELETE FROM users"))
 

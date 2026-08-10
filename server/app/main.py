@@ -22,6 +22,7 @@ from .library import register_sources
 from .library import router as library_router
 from .prefs import router as prefs_router
 from .stream import router as stream_router
+from .zones import router as zones_router
 
 settings = get_settings()
 logging.basicConfig(
@@ -114,6 +115,7 @@ app.include_router(auth_router)
 app.include_router(library_router)
 app.include_router(prefs_router)
 app.include_router(stream_router)
+app.include_router(zones_router)
 
 
 @app.get("/api/health")

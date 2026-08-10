@@ -35,6 +35,11 @@ class Settings(BaseSettings):
 
     media_url_ttl_minutes: int = Field(default=5, ge=1, le=60)
 
+    # Receivers pull for the length of a whole track or film, so the short browser
+    # TTL would expire mid-playback. Longer, but still bound to one item and one
+    # user, and only handed to devices on the local network.
+    cast_url_ttl_minutes: int = Field(default=240, ge=5, le=1440)
+
     # Thumbnails and derived files. The container mounts a volume here, but the app
     # must also run outside one — on a developer machine, or in CI — so this cannot
     # be a hardcoded absolute path.
@@ -48,6 +53,12 @@ class Settings(BaseSettings):
     # until then this seeds it. Still keyed by identity internally, so a DHCP
     # change only costs a re-seed rather than a redesign (ARCHITECTURE.md §5.7).
     denon_host: str = ""
+
+    # The origin a device on the LAN can fetch media from, e.g.
+    # http://192.0.2.10:8080. Not PUBLIC_ORIGIN, which is usually localhost and
+    # means nothing to a receiver across the room: the receiver pulls the stream
+    # itself rather than receiving it from the browser.
+    lan_base_url: str = ""
 
     # Local roots to index, as "Name=/path" pairs separated by ';'.
     # Deployment facts, so they live in the environment rather than the database —
