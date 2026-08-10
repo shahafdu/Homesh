@@ -23,7 +23,7 @@ from .signing import TokenError, mint, verify
 from .sources.local import LocalConnector
 from .thumbs import ThumbError, cache_path, generate, is_absent_marker, mark_absent
 
-log = logging.getLogger("hearth.stream")
+log = logging.getLogger("homesh.stream")
 router = APIRouter(prefix="/api", tags=["stream"])
 
 # Content types we serve. Anything unknown is sent as a download rather than

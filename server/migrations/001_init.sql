@@ -1,4 +1,4 @@
--- Hearth initial schema.
+-- Homesh initial schema.
 -- Design rationale lives in docs/ARCHITECTURE.md §9; the principles this schema
 -- exists to enforce are in §2.
 

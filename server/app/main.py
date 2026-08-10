@@ -1,4 +1,4 @@
-"""Hearth core API.
+"""Homesh core API.
 
 Phase 0: the stack stands up, the schema applies, health is observable.
 Auth, sources and the control tower land in the phases that follow.
@@ -28,7 +28,7 @@ logging.basicConfig(
     level=settings.log_level,
     format="%(asctime)s %(levelname)-8s %(name)s: %(message)s",
 )
-log = logging.getLogger("hearth")
+log = logging.getLogger("homesh")
 
 
 class _SuppressHealthProbes(logging.Filter):
@@ -52,7 +52,7 @@ logging.getLogger("uvicorn.access").addFilter(_SuppressHealthProbes())
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    log.info("Hearth starting — origin=%s rp_id=%s", settings.public_origin, settings.rp_id)
+    log.info("Homesh starting — origin=%s rp_id=%s", settings.public_origin, settings.rp_id)
 
     if not settings.is_configured:
         # Loud, but not fatal: the operator gets a clear health response rather
@@ -88,11 +88,11 @@ async def lifespan(app: FastAPI):
             )
 
     yield
-    log.info("Hearth stopped")
+    log.info("Homesh stopped")
 
 
 app = FastAPI(
-    title="Hearth",
+    title="Homesh",
     version="0.1.0",
     lifespan=lifespan,
     docs_url="/api/docs",

@@ -4,7 +4,7 @@
 
 .DESCRIPTION
     The suite truncates `users` and `sources` between tests, so it must never touch
-    a working database. This script always points it at `hearth_test`, creating that
+    a working database. This script always points it at `homesh_test`, creating that
     database if needed. conftest.py additionally refuses any database whose name
     does not contain "test", so both layers have to fail before real data is at risk.
 
@@ -35,13 +35,13 @@ $envLine = Get-Content .env | Where-Object { $_ -match '^POSTGRES_PASSWORD=' } |
 if (-not $envLine) { throw "POSTGRES_PASSWORD not found in .env" }
 $pw = $envLine.Split('=', 2)[1]
 
-$testDb = 'hearth_test'
+$testDb = 'homesh_test'
 
 Write-Host "Ensuring $testDb exists..." -ForegroundColor Cyan
-$exists = docker compose exec -T db psql -U hearth -d postgres -tAc `
+$exists = docker compose exec -T db psql -U homesh -d postgres -tAc `
     "SELECT 1 FROM pg_database WHERE datname='$testDb'"
 if ($exists -notmatch '1') {
-    docker compose exec -T db psql -U hearth -d postgres -c "CREATE DATABASE $testDb" | Out-Null
+    docker compose exec -T db psql -U homesh -d postgres -c "CREATE DATABASE $testDb" | Out-Null
     Write-Host "  created" -ForegroundColor Green
 } else {
     Write-Host "  present" -ForegroundColor Green
@@ -60,7 +60,7 @@ $ErrorActionPreference = 'Continue'
 
 docker compose run --rm `
     --volume "${repo}/server:/app" `
-    --env "DATABASE_URL=postgresql+psycopg://hearth:$pw@db:5432/$testDb" `
+    --env "DATABASE_URL=postgresql+psycopg://homesh:$pw@db:5432/$testDb" `
     --env "MEDIA_ROOTS=" `
     --entrypoint sh `
     api -c "pip install --quiet pytest pytest-asyncio httpx >/dev/null 2>&1 && python -m pytest $($pytestArgs -join ' ')"

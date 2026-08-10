@@ -19,7 +19,7 @@ from sqlalchemy.engine import Connection
 from .config import get_settings
 from .db import get_engine
 
-SESSION_COOKIE = "hearth_session"
+SESSION_COOKIE = "homesh_session"
 SESSION_TTL = timedelta(days=30)
 
 

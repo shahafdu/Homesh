@@ -17,7 +17,7 @@ from sqlalchemy import text
 from .db import get_engine
 from .security import CurrentUser, require_user
 
-log = logging.getLogger("hearth.prefs")
+log = logging.getLogger("homesh.prefs")
 router = APIRouter(prefix="/api/prefs", tags=["prefs"])
 
 # key -> (allowed values, default). Anything not listed here is rejected.

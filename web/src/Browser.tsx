@@ -116,7 +116,7 @@ export default function Browser(props: {
   return (
     <div className="browser">
       <header className="bar">
-        <span className="brand">Hearth</span>
+        <span className="brand">Homesh</span>
         <input
           className="searchbox"
           type="search"

@@ -1,4 +1,4 @@
-# Agent context — Hearth
+# Agent context — Homesh
 
 Everything an agent needs to resume this project cold. Keep it current: update the
 status table and the task list whenever a phase moves.
@@ -11,7 +11,10 @@ A self-hosted media server for **video, music, photos and documents**, built bec
 Plex failed on eight specific counts. Owner: Shahaf (`shahafdu@gmail.com`). Licence
 AGPL-3.0. Repo: `github.com/shahafdu/Media_Server` (**currently public**).
 
-"Hearth" is a working name and has not been ratified — rename is still open.
+Named **Homesh** (home + mesh), ratified 10 August 2026. The rename touched the
+package, image, logger names, session cookie, WebAuthn RP name, cache path, the
+Postgres role and both databases. `RP_ID` stayed `localhost` deliberately —
+changing it would invalidate every registered passkey.
 
 ### The eight problems it exists to solve
 
@@ -74,7 +77,6 @@ AGPL-3.0. Repo: `github.com/shahafdu/Media_Server` (**currently public**).
    Credentials go in `.env` as `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`.
 2. **A real media folder** to point at instead of the synthetic fixture.
 3. **Repo visibility** decision (public today).
-4. **Project name** ratification.
 
 ---
 
@@ -149,13 +151,13 @@ docs/             ARCHITECTURE.md, USER_GUIDE.md
 
 ```powershell
 docker compose up -d --build      # stack on http://localhost:8080
-.\tools\run-tests.ps1             # suite against the hearth_test database
+.\tools\run-tests.ps1             # suite against the homesh_test database
 docker compose logs api           # first-run bootstrap code lives here
 ```
 
-⚠️ **Never point the test suite at the `hearth` database.** Fixtures truncate `users`
+⚠️ **Never point the test suite at the `homesh` database.** Fixtures truncate `users`
 and `sources`; doing so once destroyed a registered passkey. `conftest.py` refuses any
-database whose name lacks "test", and `run-tests.ps1` pins `hearth_test`.
+database whose name lacks "test", and `run-tests.ps1` pins `homesh_test`.
 
 Docker Desktop lives outside the default PATH here. Refresh it first:
 

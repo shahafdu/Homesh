@@ -18,12 +18,12 @@ jobs:
       db:
         image: pgvector/pgvector:pg16
         env:
-          POSTGRES_USER: hearth
-          POSTGRES_PASSWORD: hearth
-          POSTGRES_DB: hearth_test
+          POSTGRES_USER: homesh
+          POSTGRES_PASSWORD: homesh
+          POSTGRES_DB: homesh_test
         ports: ["5432:5432"]
         options: >-
-          --health-cmd "pg_isready -U hearth -d hearth_test"
+          --health-cmd "pg_isready -U homesh -d homesh_test"
           --health-interval 5s --health-timeout 5s --health-retries 20
     steps:
       - uses: actions/checkout@v4
@@ -43,13 +43,13 @@ jobs:
       - name: Apply migrations against a real Postgres
         working-directory: server
         env:
-          DATABASE_URL: postgresql+psycopg://hearth:hearth@localhost:5432/hearth_test
+          DATABASE_URL: postgresql+psycopg://homesh:homesh@localhost:5432/homesh_test
         run: python -c "from app.db import run_migrations; print('applied:', run_migrations())"
 
       - name: Migrations are idempotent
         working-directory: server
         env:
-          DATABASE_URL: postgresql+psycopg://hearth:hearth@localhost:5432/hearth_test
+          DATABASE_URL: postgresql+psycopg://homesh:homesh@localhost:5432/homesh_test
         run: |
           python - <<'PY'
           from app.db import run_migrations
@@ -61,7 +61,7 @@ jobs:
       - name: Tests
         working-directory: server
         env:
-          DATABASE_URL: postgresql+psycopg://hearth:hearth@localhost:5432/hearth_test
+          DATABASE_URL: postgresql+psycopg://homesh:homesh@localhost:5432/homesh_test
           # MASTER_KEY and SECRET_KEY are deliberately not set here. conftest.py
           # supplies valid 32-byte defaults via setdefault, and duplicating them
           # meant one copy could drift — which it did: the value here decoded to

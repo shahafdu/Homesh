@@ -23,7 +23,7 @@ from sqlalchemy import text
 from .db import get_engine
 from .sources.local import LocalConnector
 
-log = logging.getLogger("hearth.metadata")
+log = logging.getLogger("homesh.metadata")
 
 # Keys we surface in listings. Deliberately small: a listing needs a handful of
 # facts, not everything a container can carry.

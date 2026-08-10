@@ -19,7 +19,7 @@ from uuid import UUID
 from .config import get_settings
 from .sources.local import LocalConnector
 
-log = logging.getLogger("hearth.thumbs")
+log = logging.getLogger("homesh.thumbs")
 
 
 def cache_root() -> Path:

@@ -18,14 +18,14 @@ from fastapi.testclient import TestClient
 from sqlalchemy import text
 
 os.environ.setdefault(
-    "DATABASE_URL", "postgresql+psycopg://hearth:hearth@localhost:5432/hearth_test"
+    "DATABASE_URL", "postgresql+psycopg://homesh:homesh@localhost:5432/homesh_test"
 )
 os.environ.setdefault("MASTER_KEY", "0" * 43 + "=")
 os.environ.setdefault("SECRET_KEY", "1" * 43 + "=")
 os.environ.setdefault("MEDIA_ROOTS", "")
 # Thumbnails are written to disk; give the suite its own directory rather than
 # the container path, which does not exist on a CI runner or a dev machine.
-os.environ.setdefault("CACHE_DIR", tempfile.mkdtemp(prefix="hearth-test-cache-"))
+os.environ.setdefault("CACHE_DIR", tempfile.mkdtemp(prefix="homesh-test-cache-"))
 
 
 def _guard_target_database() -> None:
@@ -42,7 +42,7 @@ def _guard_target_database() -> None:
         raise SystemExit(
             f"\nRefusing to run tests against database {name!r}.\n"
             "These tests truncate users and sources. Point DATABASE_URL at a\n"
-            "database whose name contains 'test', e.g. hearth_test.\n"
+            "database whose name contains 'test', e.g. homesh_test.\n"
         )
 
 

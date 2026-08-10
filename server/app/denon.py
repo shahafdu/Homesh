@@ -29,7 +29,7 @@ import logging
 import re
 from dataclasses import dataclass, field
 
-log = logging.getLogger("hearth.denon")
+log = logging.getLogger("homesh.denon")
 
 HEOS_PORT = 1255
 AVR_PORT = 23

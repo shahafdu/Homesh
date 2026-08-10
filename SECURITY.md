@@ -11,7 +11,7 @@ Expect an acknowledgement within a week.
 
 ## Scope
 
-Hearth is designed to hold personal media and to be reachable from the public internet.
+Homesh is designed to hold personal media and to be reachable from the public internet.
 The properties below are treated as security guarantees; a break in any of them is a
 vulnerability worth reporting.
 

@@ -35,7 +35,7 @@ services:
     volumes:
       # Thumbnails and previews. Access-controlled by the API, never served
       # as a public static directory (ARCHITECTURE.md §6).
-      - media-cache:/var/lib/hearth/cache
+      - media-cache:/var/lib/homesh/cache
       # Your media, mounted READ-ONLY. The server indexes and streams; it has no
       # business writing to your library.
       - ${MEDIA_HOST_PATH:-./sample-media}:/media/library:ro

@@ -40,10 +40,10 @@ COPY server/migrations ./migrations
 COPY --from=web /web/dist ./static
 
 # Never run as root.
-RUN useradd --create-home --uid 10001 hearth \
- && mkdir -p /var/lib/hearth/cache \
- && chown -R hearth:hearth /app /var/lib/hearth
-USER hearth
+RUN useradd --create-home --uid 10001 homesh \
+ && mkdir -p /var/lib/homesh/cache \
+ && chown -R homesh:homesh /app /var/lib/homesh
+USER homesh
 
 EXPOSE 8080
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080"]

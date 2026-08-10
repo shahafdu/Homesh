@@ -1,4 +1,4 @@
-# Hearth
+# Homesh
 
 A self-hosted media server for video, music, photos and documents that treats your
 **filenames as data**, your **folders as a first-class view**, and your **phone as a
@@ -20,7 +20,7 @@ working when the machine holding your files is switched off.
 
 Built after living with Plex and running into eight specific walls:
 
-| Problem | Hearth's answer |
+| Problem | Homesh's answer |
 |---|---|
 | Paywalled features | AGPL-3.0. No tiers, nothing withheld |
 | Separate apps for music and video | One app, one catalog, all media types |

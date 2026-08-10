@@ -157,7 +157,7 @@ function SignIn(props: { busy: boolean; error: string | null; onSignIn: () => vo
   return (
     <div className="shell">
       <div className="card">
-        <h1>Hearth</h1>
+        <h1>Homesh</h1>
         <p className="sub">Sign in with your passkey.</p>
 
         <button disabled={props.busy || !passkeysSupported()} onClick={props.onSignIn}>
@@ -187,7 +187,7 @@ function FirstRun(props: {
   return (
     <div className="shell">
       <div className="card">
-        <h1>Set up Hearth</h1>
+        <h1>Set up Homesh</h1>
         <p className="sub">No accounts exist yet. Create the first one — it becomes the admin.</p>
 
         <label htmlFor="handle">Username</label>

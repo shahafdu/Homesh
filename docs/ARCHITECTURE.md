@@ -1,6 +1,6 @@
 # Media Server — Feature Set & Architecture
 
-> Working name: **Hearth**. Rename before public release.
+> Name: **Homesh** — a welding of *home* and *mesh*. Chosen 10 August 2026.
 > Status: **Phase 0 complete** — stack, schema, passkey auth and CI are running and
 > verified. Phase 1 (sources & catalog) in progress. Roadmap in §10.
 
@@ -121,7 +121,7 @@ Three planes, deliberately decoupled so that any one being down degrades rather 
 │  DATA PLANE — intermittent│   │  CLIENT PLANE                       │
 │                          │   │                                     │
 │  Home PC + RAID          │   │  Phone (PWA)  ── remote control      │
-│   • Hearth Agent (Go)    │   │  Browser / TV browser                │
+│   • Homesh Agent (Go)    │   │  Browser / TV browser                │
 │   • serves file ranges   │   │                                     │
 │   • ffmpeg transcode     │   │  RENDER TARGETS:                     │
 │   • thumbnail/embed gen  │   │   • Chromecast / Google TV           │

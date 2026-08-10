@@ -20,7 +20,7 @@ from .scanner import scan_source
 from .security import CurrentUser, require_user
 from .sources.local import LocalConnector
 
-log = logging.getLogger("hearth.library")
+log = logging.getLogger("homesh.library")
 router = APIRouter(prefix="/api", tags=["library"])
 
 

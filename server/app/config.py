@@ -22,10 +22,10 @@ class Settings(BaseSettings):
 
     # ── WebAuthn / passkeys ─────────────────────────────────────────────────
     rp_id: str = "localhost"
-    rp_name: str = "Hearth"
+    rp_name: str = "Homesh"
 
     # ── Database ────────────────────────────────────────────────────────────
-    database_url: str = "postgresql+psycopg://hearth:hearth@db:5432/hearth"
+    database_url: str = "postgresql+psycopg://homesh:homesh@db:5432/homesh"
 
     # ── Cryptography ────────────────────────────────────────────────────────
     # 32 raw bytes, urlsafe-base64 encoded. Empty is tolerated only so the app
@@ -38,7 +38,7 @@ class Settings(BaseSettings):
     # Thumbnails and derived files. The container mounts a volume here, but the app
     # must also run outside one — on a developer machine, or in CI — so this cannot
     # be a hardcoded absolute path.
-    cache_dir: str = "/var/lib/hearth/cache"
+    cache_dir: str = "/var/lib/homesh/cache"
 
     # Receiver address, used when SSDP discovery cannot run.
     #

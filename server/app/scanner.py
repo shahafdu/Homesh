@@ -20,7 +20,7 @@ from .db import get_engine
 from .sources.base import PLAYLIST_EXTS, classify
 from .sources.local import LocalConnector
 
-log = logging.getLogger("hearth.scanner")
+log = logging.getLogger("homesh.scanner")
 
 BATCH = 500
 

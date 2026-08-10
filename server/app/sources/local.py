@@ -15,7 +15,7 @@ from pathlib import Path
 
 from .base import Entry
 
-log = logging.getLogger("hearth.sources.local")
+log = logging.getLogger("homesh.sources.local")
 
 # Directories that are never media and only slow a scan down.
 _SKIP_DIRS = {

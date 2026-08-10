@@ -1,4 +1,4 @@
-# Hearth — User Guide
+# Homesh — User Guide
 
 How to install, run and use it. Written against what exists today; features still
 being built are marked **not yet**, so nothing here promises something that isn't there.
@@ -50,7 +50,7 @@ MEDIA_ROOTS=Library=/media/library
 
 `MEDIA_HOST_PATH` is the folder on your machine. `MEDIA_ROOTS` names it inside the
 container — `Library` becomes the mount point you see when browsing. **The folder is
-mounted read-only**: Hearth indexes and streams, and has no business writing to your
+mounted read-only**: Homesh indexes and streams, and has no business writing to your
 library.
 
 Then:

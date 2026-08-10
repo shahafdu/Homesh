@@ -44,7 +44,7 @@ from .security import (
     set_session_cookie,
 )
 
-log = logging.getLogger("hearth.auth")
+log = logging.getLogger("homesh.auth")
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 # One-time code for creating the very first account. Regenerated on every restart,
