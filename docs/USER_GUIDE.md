@@ -27,8 +27,8 @@ you don't need Ubuntu alongside it.
 ## 2. First run
 
 ```bash
-git clone https://github.com/shahafdu/Media_Server.git
-cd Media_Server
+git clone https://github.com/shahafdu/Homesh.git
+cd Homesh
 cp .env.example .env
 ```
 

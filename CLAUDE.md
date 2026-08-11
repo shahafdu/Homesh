@@ -9,7 +9,7 @@ status table and the task list whenever a phase moves.
 
 A self-hosted media server for **video, music, photos and documents**, built because
 Plex failed on eight specific counts. Owner: Shahaf (`shahafdu@gmail.com`). Licence
-AGPL-3.0. Repo: `github.com/shahafdu/Media_Server` (**currently public**).
+AGPL-3.0. Repo: `github.com/shahafdu/Homesh` (public).
 
 Named **Homesh** (home + mesh), ratified 10 August 2026. The rename touched the
 package, image, logger names, session cookie, WebAuthn RP name, cache path, the
