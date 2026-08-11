@@ -33,8 +33,8 @@ that becomes the primary photo source and the Google Photos API problem stops be
 critical path. Takeout stays available later to fill gaps for anything that exists only in
 Google Photos.
 
-This raises the obvious objection — you don't want the RAID running all the time, and for good
-reason (loud fan, and it's exposed during a power cut). The architecture already answers this:
+This raises the obvious objection — the storage is not meant to run all the time. The
+architecture already answers this:
 
 - **Catalog, EXIF, thumbnails and AI search vectors live on the core node.** So browsing,
   timeline, map view, face groups and natural-language search over your entire photo library
@@ -47,8 +47,8 @@ reason (loud fan, and it's exposed during a power cut). The architecture already
   the PC/RAID on demand rather than keeping it up. This suits the loud-fan problem well — the
   RAID is off until the moment you actually need a full-size file.
 
-Worth mentioning once and then dropping: a UPS solves the power-cut half of the concern
-independently of anything we build. Your call, not a dependency.
+Whether the storage is additionally protected against power loss is a deployment choice,
+independent of anything built here.
 
 ### 1.2 Google OAuth tokens die every 7 days unless the app is published
 
@@ -224,10 +224,10 @@ When it *is* needed, it is **delegated to the home PC agent**, never to the core
 is down, only cloud content is playable anyway, and that content is overwhelmingly already in a
 directly-playable codec.
 
-⚠️ **Hardware reality check.** An earlier draft assumed a desktop-class PC with a discrete GPU.
-There isn't one. The only machine in the house is the **Intel N95 mini PC** that hosts the RAID —
-four Alder Lake-N efficiency cores, integrated graphics, no discrete GPU. Software transcoding on
-it would be slow.
+⚠️ **Hardware reality check.** An earlier draft assumed a desktop-class machine with a discrete
+GPU. The target profile is a low-power mini PC — four Alder Lake-N efficiency cores, integrated
+graphics, no discrete GPU — which also hosts the storage. Software transcoding on it would be
+slow.
 
 Alder Lake generally carries a Quick Sync media engine capable of H.264/HEVC hardware encode, and
 Alder Lake-N is *expected* to retain it, but Intel's published material doesn't confirm the
@@ -323,13 +323,13 @@ which is exactly how Drive content keeps playing when the RAID is down, transpar
 This is requirement #7 and deserves its own design. The phone is a **remote**; it is never
 obliged to be the thing producing sound or picture.
 
-#### The actual device fleet
+#### The device profile
 
 | Device | Platform | Cast? | AirPlay 2? | Our app? |
 |---|---|---|---|---|
-| LG OLED | webOS | ❌ | ✅ (2019+; 2018 via update) | ✅ webOS app (HTML5) |
-| Samsung smart TVs | Tizen | ❌ | ✅ (2018+) | ✅ Tizen app (HTML5) |
-| Samsung "dumb" TVs ×2 | via Partner Android TV box | ✅ | ❌ | ✅ Android TV app |
+| LG | webOS | ❌ | ✅ (2019+; 2018 via update) | ✅ webOS app (HTML5) |
+| Samsung | Tizen | ❌ | ✅ (2018+) | ✅ Tizen app (HTML5) |
+| Non-smart TVs | via an Android TV box | ✅ | ❌ | ✅ Android TV app |
 | Denon AVR-X1600H | HEOS | ❌ **no Chromecast** | ✅ | ❌ — network protocols only |
 
 There is no single casting standard that covers this fleet. Cast reaches only the Android box;
@@ -365,13 +365,13 @@ ZONE2, select the network source, set volume, push the stream URL.
 
 #### Zone routing — two independent audio paths
 
-The physical setup, as confirmed by the owner:
+The wiring this assumes:
 
 - **Zone 1 (living room)** — TV connected over HDMI. The TV is *not* wired to ZONE2.
 - **Zone 2 (balcony)** — fed by streaming from a phone to the AVR over the network, then
   selecting the zone in the HEOS app.
-- These run **simultaneously with different content** — e.g. TV audio in the living room while
-  Spotify streams from a phone to the balcony. Verified in practice.
+- These run **simultaneously with different content** — TV audio in the main zone while a
+  network stream feeds ZONE2. Verified in practice.
 
 This matches the manual's restriction: *"It is not possible to play the digital audio signals
 input from the HDMI, COAXIAL or OPTICAL connectors in ZONE2. Use analog connections for ZONE2
@@ -611,11 +611,11 @@ checklist at the end.
 Two tiers, split on a privacy line.
 
 **Tier 1 — local, bulk, private.** Runs on the home PC agent, for everything that touches actual
-media content. **There is no GPU** — the agent host is a 4-core Intel N95 — so every model here is
+media content. **There is no GPU** — the agent host is a 4-core low-power CPU — so every model here is
 chosen to be CPU-viable: quantised ONNX Runtime rather than PyTorch, small model variants, batch
 throughput over latency.
 
-| Job | Model | On an N95 | Verdict |
+| Job | Model | On that CPU | Verdict |
 |---|---|---|---|
 | Photo / keyframe embeddings | CLIP or SigLIP ViT-B/32, int8 ONNX | hours for a large library, once | ✅ overnight batch |
 | Document text embeddings | small sentence encoder, int8 | fast; documents are few and small | ✅ fine |
@@ -716,7 +716,7 @@ Each phase ends in something you can actually use.
 | **1. Sources & catalog** | Drive connector, Go agent + WireGuard, unified tree, folder browser, filename-first UI, search | Google Cloud project + OAuth consent; install agent on PC |
 | **2. Playback** | Audio player w/ gapless, video **direct play + remux** (no transcode), photo viewer, doc preview | QA on real content |
 | **3. Control tower, renderers & zones** | Server-owned sessions, WebSocket renderer protocol, multi-zone control tower UI, zone orchestration, Denon via HEOS CLI + telnet | ~~Probe~~ done; ~~Network Control~~ done; physical testing |
-| **4. TV apps** | Android TV app (Partner box), Tizen app (Samsung + bedroom), webOS app (LG) — same React codebase | Side-load / developer mode on each TV |
+| **4. TV apps** | Android TV, Tizen and webOS apps — same React codebase | Side-load / developer mode on each TV |
 | **5. Playlists & music intelligence** | Winamp import w/ path repair, smart playlists, AcoustID tag repair | Point me at your `.m3u` files |
 | **6. AI** | Local CLIP/Whisper embedding pipeline, NL search, auto-tagging, doc Q&A | Anthropic API key |
 | **7. Photo availability** | RAID → Drive sync, Wake-on-LAN, optional Takeout gap-fill | Decide originals vs. compressed after I measure |
@@ -741,8 +741,8 @@ All resolved. Nothing is blocking a start.
 3. ~~Google account~~ — **personal `@gmail.com` with paid storage.** No Workspace, so the 7-day
    refresh-token expiry applies; mitigation in §11.1 below. Paid storage is what makes the
    RAID→Drive photo sync viable.
-4. ~~Devices~~ — LG OLED (webOS), Samsung smart TVs (Tizen), Samsung dumb TVs via Partner Android
-   TV box, **Denon AVR-X1600H**. Full matrix and protocol plan in §5.6.
+4. ~~Devices~~ — webOS, Tizen and Android TV displays, plus a **Denon AVR-X1600H**. Full matrix
+   and protocol plan in §5.6.
 5. ~~License~~ — **AGPL-3.0.** Requirement was "derivatives must also be open source." For
    software reached over a network, plain GPL leaves a loophole: someone can modify it, run it as
    a hosted service, and never distribute the source. AGPL closes exactly that. It's also what
@@ -770,21 +770,21 @@ does not block phase 0 or 1.
 
 ---
 
-## 12. Hardware inventory
+## 12. Target hardware profile
 
-The real fleet, as confirmed with the owner. Recorded because several earlier design drafts
-assumed hardware that does not exist here.
+The deployment this is designed against, kept generic deliberately. The specifics of any
+particular installation — which devices sit in which rooms, when storage is powered, which
+control interfaces are open — belong in a local, uncommitted note rather than in a public
+repository.
 
-| Role | Device | Notes |
-|---|---|---|
-| Home server / agent host | **Intel N95 mini PC** | 4 Alder Lake-N E-cores, integrated graphics, **no discrete GPU**. The *only* PC in the house — there is no second, beefier machine |
-| Bulk storage | RAID enclosure, USB/network attached to the mini PC | Intermittent by choice: loud fan, and exposed during power cuts. Not to be relied on for availability |
-| Always-on core | Oracle Cloud Always Free (arm64), Pi later | §3.4 |
-| Living room display | **LG OLED** (webOS) | HDMI to the Denon, main zone |
-| Other displays | **Samsung smart TVs** (Tizen), incl. bedroom | AirPlay 2 capable; will run our Tizen app |
-| Legacy displays | 2 × Samsung non-smart + **Partner Android TV box** | Google Cast native; will run our Android TV app |
-| Audio | **Denon AVR-X1600H** | Zone 1 (living room) + ZONE2 (balcony). HEOS + AirPlay 2, no Chromecast. One network player only (§5.6) |
-| Network | DHCP throughout, few static leases | Hence identity-not-IP addressing (§5.7) |
+| Role | Profile |
+|---|---|
+| Server / agent host | Low-power mini PC: 4 efficiency cores, integrated graphics, **no discrete GPU**. The only such machine — there is no second, beefier one |
+| Bulk storage | Directly attached, **intermittently powered by design**. Not to be relied on for availability |
+| Always-on core | Free-tier arm64 cloud instance, or a Pi later (§3.4) |
+| Displays | **webOS**, **Tizen**, and **Android TV** — all three get an app from the same codebase |
+| Audio | **Denon AVR-X1600H**: main zone plus ZONE2. HEOS + AirPlay 2, no Chromecast. One network player only (§5.6) |
+| Network | DHCP throughout. Hence identity-not-IP addressing (§5.7), and no real address in any tracked file |
 
 ### Consequences already folded into the design
 

@@ -31,6 +31,14 @@ changing it would invalidate every registered passkey.
 
 ---
 
+## Where the real setup lives
+
+`.local/SETUP.md` (untracked) holds the actual deployment: device inventory by
+room, receiver configuration, and zone wiring. `.env` holds addresses and
+secrets. Read both when resuming; never copy their contents into a tracked file.
+
+---
+
 ## Working agreement
 
 - **Do not ask Shahaf to test increments.** Verify via CI. Involve him only for real
@@ -80,30 +88,37 @@ changing it would invalidate every registered passkey.
 
 ---
 
-## Hardware (real, confirmed)
+## Target hardware
 
-| Role | Device |
+The deployment profile this is designed against, kept generic on purpose — the
+specifics of the house it runs in live in `.local/SETUP.md`, which is not
+committed. A public repository should not publish which devices sit in which
+rooms, when storage is unpowered, or which control interfaces are left open.
+
+| Role | Profile |
 |---|---|
-| Server / agent host | **Intel N95 mini PC**, 4 E-cores, no discrete GPU. The *only* PC |
-| Storage | RAID attached to it. Intermittent by choice — loud fan, power-cut risk |
-| Living room | **LG OLED** (webOS) → HDMI → Denon main zone |
-| Other rooms | **Samsung** TVs (Tizen), incl. bedroom; 2 dumb TVs on a **Partner Android TV box** |
-| Audio | **Denon AVR-X1600H** — address is DHCP and lives in `.env` as `DENON_HOST`, never in the repo |
+| Server / agent host | A low-power mini PC — 4 efficiency cores, **no discrete GPU**. Sizing assumptions follow from this |
+| Storage | Directly attached, **intermittently powered by design**. The availability model exists because of it |
+| Always-on core | Free-tier arm64 cloud instance, or a Pi (§3.4 of ARCHITECTURE) |
+| Displays | LG webOS, Samsung Tizen, and Android TV — all three get an app from the same codebase |
+| Audio | **Denon AVR-X1600H**. Address is DHCP and lives in `.env` as `DENON_HOST` |
 | Network | DHCP throughout. **No real addresses in tracked files** — CI enforces this |
 
-### Denon facts, measured not assumed
+### Denon protocol facts, measured not assumed
+
+These are properties of the model, documented by Denon and useful to anyone with
+the same receiver — not facts about one household.
 
 - AirPlay 2 ✅, HEOS ✅, **Chromecast ❌**
 - **Exactly one HEOS player** → cannot run two network streams at once
 - ZONE2 cannot take HDMI/coax/optical — network or analog only
-- ZONE2 source already set to `NET`; power and volume controllable
 - Two protocols: **HEOS CLI on :1255** (JSON, `play_stream` takes a URL) and the
   **Denon AVR telnet on :23** (power, volume, zones) — different protocols, same box
-- Network Control is set to "Always On", so the receiver can be woken remotely
+- Port 23 answers from standby only when Network Control is set to "Always On"
 - Re-measure with `tools/probe-denon.ps1` (SSDP discovery, no IP needed)
 
-**Consequence:** different audio in the two zones requires two transports — TV app over
-HDMI for zone 1, HEOS for ZONE2.
+**Consequence:** different audio in two zones requires two transports — a TV app
+over HDMI for the main zone, HEOS for ZONE2.
 
 ---
 

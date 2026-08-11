@@ -45,3 +45,6 @@ sample-media/
 
 # Python build artefacts
 *.egg-info/
+
+# Local deployment notes — describes a real house, never committed
+.local/
