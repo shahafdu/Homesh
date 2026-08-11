@@ -88,8 +88,8 @@ changing it would invalidate every registered passkey.
 | Storage | RAID attached to it. Intermittent by choice — loud fan, power-cut risk |
 | Living room | **LG OLED** (webOS) → HDMI → Denon main zone |
 | Other rooms | **Samsung** TVs (Tizen), incl. bedroom; 2 dumb TVs on a **Partner Android TV box** |
-| Audio | **Denon AVR-X1600H** at `192.0.2.42` (DHCP) |
-| Network | DHCP throughout |
+| Audio | **Denon AVR-X1600H** — address is DHCP and lives in `.env` as `DENON_HOST`, never in the repo |
+| Network | DHCP throughout. **No real addresses in tracked files** — CI enforces this |
 
 ### Denon facts, measured not assumed
 
