@@ -21,6 +21,7 @@ from .db import check_connection, run_migrations
 from .library import register_sources
 from .library import router as library_router
 from .prefs import router as prefs_router
+from .renderers import router as renderers_router
 from .stream import router as stream_router
 from .zones import router as zones_router
 
@@ -114,6 +115,7 @@ if not settings.secure_cookies:
 app.include_router(auth_router)
 app.include_router(library_router)
 app.include_router(prefs_router)
+app.include_router(renderers_router)
 app.include_router(stream_router)
 app.include_router(zones_router)
 
