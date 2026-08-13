@@ -165,7 +165,7 @@ docs/             ARCHITECTURE.md, USER_GUIDE.md
 ## Running and testing
 
 ```powershell
-.	ools\configure-network.ps1    # derive DENON_HOST + LAN_BASE_URL into .env
+.\tools\configure-network.ps1     # derive DENON_HOST + LAN_BASE_URL into .env
 docker compose up -d --build      # stack on http://localhost:8080
 .\tools\run-tests.ps1             # suite against the homesh_test database
 docker compose logs api           # first-run bootstrap code lives here
