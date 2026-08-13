@@ -156,7 +156,7 @@ server/app/       config, db, main, auth, security, prefs, library, scanner,
 server/migrations 001_init, 002_natural_sort, 003_search_indexes, 004_user_prefs
 server/tests/     conftest + scanner, library, security, prefs, streaming
 web/src/          App, Browser, Settings, api, auth, library, prefs, styles.css
-tools/            probe-denon.ps1, run-tests.ps1
+tools/            probe-denon.ps1, configure-network.ps1, run-tests.ps1
 docs/             ARCHITECTURE.md, USER_GUIDE.md
 ```
 
@@ -165,6 +165,7 @@ docs/             ARCHITECTURE.md, USER_GUIDE.md
 ## Running and testing
 
 ```powershell
+.	ools\configure-network.ps1    # derive DENON_HOST + LAN_BASE_URL into .env
 docker compose up -d --build      # stack on http://localhost:8080
 .\tools\run-tests.ps1             # suite against the homesh_test database
 docker compose logs api           # first-run bootstrap code lives here
