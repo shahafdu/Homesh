@@ -326,11 +326,14 @@ obliged to be the thing producing sound or picture.
 
 #### The device profile
 
-Several screens are fed by Android TV set-top boxes rather than relying on the TV's own
-platform. That matters more than it sounds: a box is the *easy* target — it takes Cast with
-no install at all, and side-loading is routine — while the TV platforms both expire their
-developer certificates and need periodic reinstalling. **Where a screen has a box, use the
-box.** A TV's own smart platform is only worth targeting when there is no box in front of it.
+Nearly every screen is fed by an Android TV set-top box rather than relying on the TV's own
+platform, and that collapses this section's complexity. A box is the easy target — Cast works
+with no install at all, side-loading is routine, and nothing expires. Both TV platforms, by
+contrast, expire their developer certificates and need periodic reinstalling.
+
+**Where a screen has a box, target the box.** A TV's own platform is only worth building for
+when a screen has none — and a cheap stick is usually a better answer than a second app to
+maintain forever. In practice this reduces three planned TV apps to one.
 
 | Device | Platform | Cast? | AirPlay 2? | Our app? |
 |---|---|---|---|---|
@@ -723,7 +726,7 @@ Each phase ends in something you can actually use.
 | **1. Sources & catalog** | Drive connector, Go agent + WireGuard, unified tree, folder browser, filename-first UI, search | Google Cloud project + OAuth consent; install agent on PC |
 | **2. Playback** | Audio player w/ gapless, video **direct play + remux** (no transcode), photo viewer, doc preview | QA on real content |
 | **3. Control tower, renderers & zones** | Server-owned sessions, WebSocket renderer protocol, multi-zone control tower UI, zone orchestration, Denon via HEOS CLI + telnet | ~~Probe~~ done; ~~Network Control~~ done; physical testing |
-| **4. TV apps** | **Android TV first** (covers every screen fed by a set-top box, and installs without developer-mode friction), then webOS, then Tizen only where a smart TV has no box | Confirm the boxes allow installing apps; developer mode on the TVs that need it |
+| **4. TV apps** | **Android TV** — likely the only one needed, since nearly every screen has an Android box in front of it. webOS and Tizen only if a screen turns out to have none | Confirm which screens have a box |
 | **5. Playlists & music intelligence** | Winamp import w/ path repair, smart playlists, AcoustID tag repair | Point me at your `.m3u` files |
 | **6. AI** | Local CLIP/Whisper embedding pipeline, NL search, auto-tagging, doc Q&A | Anthropic API key |
 | **7. Photo availability** | RAID → Drive sync, Wake-on-LAN, optional Takeout gap-fill | Decide originals vs. compressed after I measure |

@@ -57,7 +57,7 @@ secrets. Read both when resuming; never copy their contents into a tracked file.
 | 1 · Sources & catalog | ✅ done | Local connector, scanner, folder tree, search |
 | 2 · Playback | ✅ done | Signed URLs, range streaming, thumbnails, audio player with folder queue, video direct-play, photo and document viewer |
 | 3 · Control tower & zones | 🔨 | Denon control + zones/sessions done and verified against the real receiver; control tower UI next. 
-| 4 · TV apps | ⬜ | **Android TV first** (covers boxed screens), then webOS, then Tizen only where needed |
+| 4 · TV apps | ⬜ | **One Android TV app may cover every screen** — most already have an Android box in front of them, including the LG. webOS dropped. Tizen only if a screen turns out to have no box |
 | 5 · Playlists & music intelligence | ⬜ | Winamp `.m3u`/`.pls` import with path repair, AcoustID tag repair |
 | 6 · AI | ⬜ | CPU-only CLIP/text embeddings, NL search; Whisper on-demand only |
 | 7 · Photo availability | ⬜ | RAID→Drive sync, Wake-on-LAN, Takeout gap-fill |
