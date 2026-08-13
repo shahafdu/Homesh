@@ -57,7 +57,7 @@ secrets. Read both when resuming; never copy their contents into a tracked file.
 | 1 · Sources & catalog | ✅ done | Local connector, scanner, folder tree, search |
 | 2 · Playback | ✅ done | Signed URLs, range streaming, thumbnails, audio player with folder queue, video direct-play, photo and document viewer |
 | 3 · Control tower & zones | ⬜ | Server-owned sessions, renderer protocol, Denon via HEOS CLI + telnet |
-| 4 · TV apps | ⬜ | Android TV, Tizen, webOS from the same React codebase |
+| 4 · TV apps | ⬜ | **Android TV first** (covers boxed screens), then webOS, then Tizen only where needed |
 | 5 · Playlists & music intelligence | ⬜ | Winamp `.m3u`/`.pls` import with path repair, AcoustID tag repair |
 | 6 · AI | ⬜ | CPU-only CLIP/text embeddings, NL search; Whisper on-demand only |
 | 7 · Photo availability | ⬜ | RAID→Drive sync, Wake-on-LAN, Takeout gap-fill |
@@ -100,7 +100,7 @@ rooms, when storage is unpowered, or which control interfaces are left open.
 | Server / agent host | A low-power mini PC — 4 efficiency cores, **no discrete GPU**. Sizing assumptions follow from this |
 | Storage | Directly attached, **intermittently powered by design**. The availability model exists because of it |
 | Always-on core | Free-tier arm64 cloud instance, or a Pi (§3.4 of ARCHITECTURE) |
-| Displays | LG webOS, Samsung Tizen, and Android TV — all three get an app from the same codebase |
+| Displays | Several screens, mixed platforms. Many are fed by **Android TV set-top boxes** — the easy target, since a box takes Cast with no install and side-loads routinely. Target the box where one exists; a TV's own platform only where there is none |
 | Audio | **Denon AVR-X1600H**. Address is DHCP and lives in `.env` as `DENON_HOST` |
 | Network | DHCP throughout. **No real addresses in tracked files** — CI enforces this |
 
