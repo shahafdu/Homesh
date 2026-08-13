@@ -1,8 +1,9 @@
 # Media Server — Feature Set & Architecture
 
 > Name: **Homesh** — a welding of *home* and *mesh*. Chosen 10 August 2026.
-> Status: **Phase 0 complete** — stack, schema, passkey auth and CI are running and
-> verified. Phase 1 (sources & catalog) in progress. Roadmap in §10.
+> Status: **Phases 0-2 complete** — auth, catalog, search, thumbnails and playback all
+> work. Phase 3 (control tower) in progress: receiver control and zone sessions are
+> done and verified against real hardware; the phone UI is next. Roadmap in §10.
 
 ---
 
