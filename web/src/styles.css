@@ -629,3 +629,65 @@ button.compact:hover { color: var(--ink); }
   background: var(--surface); padding: 1px 6px; border-radius: 4px;
   font-size: 12.5px;
 }
+
+/* ── Zones and sending ──────────────────────────────────────────────────── */
+
+.sheet-inner.wide { max-width: 520px; }
+.sheet-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.sheet-head h2 { margin: 0; }
+
+.zone-card {
+  border: 1px solid var(--line); border-radius: 12px;
+  padding: 13px; margin-top: 12px;
+  background: var(--bg);
+  display: flex; flex-direction: column; gap: 8px;
+}
+.zone-card.live { border-color: color-mix(in srgb, var(--accent) 55%, var(--line)); }
+
+.zone-head { display: flex; align-items: center; gap: 9px; }
+.zone-name { font-weight: 600; flex: 1; }
+.zone-state { font-size: 12px; color: var(--muted); }
+.dot.live { background: var(--ok); }
+.dot.idle { background: var(--muted); opacity: .55; }
+.dot.off  { background: var(--muted); opacity: .3; }
+
+.zone-controls { display: flex; align-items: center; gap: 10px; }
+.zone-vol { flex: 1; }
+.vol-n { min-width: 26px; text-align: right; font-variant-numeric: tabular-nums; }
+button.compact.primary {
+  background: var(--accent); border-color: var(--accent);
+  color: var(--accent-ink); font-weight: 600;
+}
+button.compact:disabled { opacity: .5; cursor: not-allowed; }
+
+/* Send-to picker */
+.pick {
+  width: 100%; display: flex; align-items: center; gap: 12px;
+  padding: 11px; margin-top: 9px;
+  border: 1px solid var(--line); border-radius: 10px;
+  background: var(--bg); color: var(--ink);
+  cursor: pointer; text-align: left;
+}
+.pick:hover:not(:disabled) { border-color: var(--muted); }
+.pick:disabled { opacity: .45; cursor: not-allowed; }
+.pick-ic { width: 24px; text-align: center; color: var(--muted); flex: none; }
+.pick-text { min-width: 0; }
+.pick-text b { display: block; font-size: 14.5px; font-weight: 600; }
+.pick-text span { font-size: 12px; color: var(--muted); }
+
+.nm-clip { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--mono); }
+
+/* The per-row send button stays quiet until the row is hovered or focused,
+   so a long list is not a wall of icons. */
+.sendbtn {
+  background: transparent; border: 1px solid transparent; border-radius: 7px;
+  color: var(--muted); cursor: pointer; padding: 3px 7px; font-size: 13px;
+  opacity: 0;
+}
+.rows li:hover .sendbtn, .sendbtn:focus-visible { opacity: 1; border-color: var(--line); }
+.sendbtn:hover { color: var(--ink); }
+
+@media (hover: none) {
+  /* No hover on a touch screen, so it is always visible there. */
+  .sendbtn { opacity: 1; border-color: var(--line); }
+}

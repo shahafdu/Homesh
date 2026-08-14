@@ -31,11 +31,15 @@ export default function Browser(props: {
   view: View;
   onViewChange: (v: View) => void;
   onOpenSettings: () => void;
+  onOpenZones: () => void;
   onPlay: (files: FileEntry[], index: number, folderPath: string) => void;
   onView: (files: FileEntry[], index: number) => void;
+  onSendTo: (file: FileEntry, siblings: FileEntry[]) => void;
   playingId: string | null;
 }) {
-  const { isAdmin, view, onViewChange, onOpenSettings, onPlay, onView, playingId } = props;
+  const {
+    isAdmin, view, onViewChange, onOpenSettings, onOpenZones, onPlay, onView, onSendTo, playingId,
+  } = props;
 
   // The current folder lives in the URL, so the browser's own history works and a
   // link can be shared. On a phone this is what makes the back gesture behave.
@@ -124,6 +128,9 @@ export default function Browser(props: {
           value={query}
           onChange={(e) => setQuery(e.target.value)}
         />
+        <button className="iconbtn" onClick={onOpenZones} aria-label="Zones" title="Zones">
+          ⧉
+        </button>
         <button className="iconbtn" onClick={onOpenSettings} aria-label="Settings" title="Settings">
           ⚙
         </button>
@@ -173,6 +180,7 @@ export default function Browser(props: {
           onOpen={navigate}
           onPlay={onPlay}
           onView={onView}
+          onSendTo={onSendTo}
           playingId={playingId}
         />
       )}
@@ -219,9 +227,10 @@ function FileRow(props: {
   f: FileEntry;
   view: View;
   onPlay?: () => void;
+  onSendTo?: () => void;
   isPlaying?: boolean;
 }) {
-  const { f, view, onPlay, isPlaying } = props;
+  const { f, view, onPlay, onSendTo, isPlaying } = props;
   // Audio goes to the player bar; photos, video and documents open the viewer.
   // Anything else stays inert rather than pretending to be openable.
   const openable = f.available && ["audio", "photo", "video", "doc"].includes(f.kind);
@@ -267,7 +276,20 @@ function FileRow(props: {
       </span>
       <span className="meta dur">{formatDuration(f.duration_ms)}</span>
       <span className="meta">
-        {f.available ? "" : <span className="badge">offline</span>}
+        {f.available ? (
+          openable && (
+            <button
+              className="sendbtn"
+              title={`Send ${f.filename} to a room`}
+              aria-label="Send to a room"
+              onClick={(e) => { e.stopPropagation(); onSendTo?.(); }}
+            >
+              ⧉
+            </button>
+          )
+        ) : (
+          <span className="badge">offline</span>
+        )}
       </span>
       <span className="meta date">{formatDate(f.mtime)}</span>
     </li>
@@ -288,9 +310,10 @@ function Folder(props: {
   onOpen: (p: string) => void;
   onPlay: (files: FileEntry[], index: number, folderPath: string) => void;
   onView: (files: FileEntry[], index: number) => void;
+  onSendTo: (file: FileEntry, siblings: FileEntry[]) => void;
   playingId: string | null;
 }) {
-  const { listing, loading, view, onOpen, onPlay, onView, playingId } = props;
+  const { listing, loading, view, onOpen, onPlay, onView, onSendTo, playingId } = props;
   if (!listing) return <p className="muted">{loading ? "Loading…" : ""}</p>;
 
   if (listing.dirs.length === 0 && listing.files.length === 0) {
@@ -361,6 +384,7 @@ function Folder(props: {
               ? onPlay(listing.files, i, listing.path)
               : onView(listing.files, i)
           }
+          onSendTo={() => onSendTo(f, listing.files)}
         />
       ))}
     </ul>

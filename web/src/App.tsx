@@ -4,7 +4,9 @@ import { login, logout, passkeysSupported, register } from "./auth";
 import Browser from "./Browser";
 import Player from "./Player";
 import Settings from "./Settings";
+import PlayTo from "./PlayTo";
 import Viewer from "./Viewer";
+import Zones from "./Zones";
 import { usePlayer } from "./player";
 import type { FileEntry } from "./library";
 import { applyPrefs, DEFAULT_PREFS, getPrefs, savePrefs, type Prefs } from "./prefs";
@@ -17,6 +19,8 @@ export default function App() {
   const player = usePlayer();
   const [viewing, setViewing] = useState<{ files: FileEntry[]; index: number } | null>(null);
   const closeViewer = useCallback(() => setViewing(null), []);
+  const [showZones, setShowZones] = useState(false);
+  const [sendTo, setSendTo] = useState<{ file: FileEntry; siblings: FileEntry[] } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -91,6 +95,8 @@ export default function App() {
           view={prefs.view}
           onViewChange={(view) => void changePrefs({ view })}
           onOpenSettings={() => setShowSettings(true)}
+          onOpenZones={() => setShowZones(true)}
+          onSendTo={(file, siblings) => setSendTo({ file, siblings })}
           onPlay={player.play}
           onView={(files, index) => {
             // Arrowing through a folder should stay within the kind you opened —
@@ -112,6 +118,23 @@ export default function App() {
             index={viewing.index}
             onIndex={(index) => setViewing({ ...viewing, index })}
             onClose={closeViewer}
+          />
+        )}
+
+        {showZones && <Zones onClose={() => setShowZones(false)} />}
+
+        {sendTo && (
+          <PlayTo
+            file={sendTo.file}
+            siblings={sendTo.siblings}
+            onHere={() => {
+              const audio = sendTo.siblings.filter((f) => f.kind === "audio" && f.available);
+              const index = Math.max(0, audio.findIndex((f) => f.item_id === sendTo.file.item_id));
+              if (sendTo.file.kind === "audio") player.play(audio, index, "");
+              else setViewing({ files: sendTo.siblings, index: sendTo.siblings.indexOf(sendTo.file) });
+              setSendTo(null);
+            }}
+            onClose={() => setSendTo(null)}
           />
         )}
 
