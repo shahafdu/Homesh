@@ -253,9 +253,11 @@ async def play(
             },
         )
 
+    if zone.renderer_kind == "tvapp":
+        return await _push_to_screen(zone, item_id, user)
+
     if zone.renderer_kind != "heos":
-        # Other renderer kinds are driven over the WebSocket protocol; they poll
-        # the session rather than being pushed to.
+        # Cast and browser renderers arrive in later phases.
         return {"zone": zone.name, "state": "buffering", "pushed": False}
 
     settings = get_settings()
@@ -294,12 +296,83 @@ async def play(
     return {"zone": zone.name, "state": "playing", "pushed": True}
 
 
+async def _push_to_screen(zone: Zone, item_id: UUID, user: CurrentUser) -> dict:
+    """Send a play command to a paired screen over its open socket.
+
+    Unlike the receiver, a screen holds a connection, so there is no orchestration
+    to run and nothing to wake — it is either there or it is not, and saying which
+    is more useful than a timeout.
+    """
+    from .renderers import hub
+
+    if zone.renderer_id is None or not hub.is_connected(zone.renderer_id):
+        with get_engine().begin() as conn:
+            conn.execute(
+                text("UPDATE play_sessions SET state = 'idle' WHERE zone_id = :z"),
+                {"z": str(zone.id)},
+            )
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            f"{zone.name} is not connected — open Homesh on that screen",
+        )
+
+    settings = get_settings()
+    token = mint(item_id, user.id, "stream", ttl=settings.cast_url_ttl_minutes * 60)
+
+    # A screen fetches media itself, exactly as the receiver does, so the URL has
+    # to be reachable from the device rather than from the browser.
+    base = _media_base() if settings.lan_base_url.strip() else settings.public_origin.rstrip("/")
+
+    with get_engine().connect() as conn:
+        row = conn.execute(
+            text(
+                """
+                SELECT r.filename, i.kind::text,
+                       (SELECT string_agg(m.value, ' · ' ORDER BY m.key)
+                        FROM item_metadata m
+                        WHERE m.item_id = i.id AND m.key IN ('artist', 'album')) AS tags
+                FROM items i JOIN replicas r ON r.item_id = i.id
+                WHERE i.id = :id LIMIT 1
+                """
+            ),
+            {"id": str(item_id)},
+        ).first()
+
+    filename, kind, tags = row if row else ("", "audio", None)
+
+    sent = await hub.send(
+        zone.renderer_id,
+        {
+            "type": "play",
+            "item_id": str(item_id),
+            "url": f"{base}/api/stream/{item_id}?t={token}",
+            "filename": filename,
+            "tags": tags,
+            "kind": kind,
+        },
+    )
+    if not sent:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, f"{zone.name} did not accept the command")
+
+    with get_engine().begin() as conn:
+        conn.execute(
+            text("UPDATE play_sessions SET state = 'playing', updated_at = now() "
+                 "WHERE zone_id = :z"),
+            {"z": str(zone.id)},
+        )
+    return {"zone": zone.name, "state": "playing", "pushed": True}
+
+
 @router.post("/{zone_id}/stop")
 async def stop(zone_id: UUID, user: CurrentUser = Depends(require_user)) -> dict:
     zone = _load_zone(zone_id)
     settings = get_settings()
 
-    if zone.renderer_kind == "heos" and settings.denon_host.strip():
+    if zone.renderer_kind == "tvapp" and zone.renderer_id:
+        from .renderers import hub
+
+        await hub.send(zone.renderer_id, {"type": "stop"})
+    elif zone.renderer_kind == "heos" and settings.denon_host.strip():
         host = settings.denon_host.strip()
         try:
             players = await denon.get_players(host)
@@ -327,7 +400,11 @@ async def set_volume(
     zone = _load_zone(zone_id)
     settings = get_settings()
 
-    if zone.renderer_kind == "heos" and settings.denon_host.strip():
+    if zone.renderer_kind == "tvapp" and zone.renderer_id:
+        from .renderers import hub
+
+        await hub.send(zone.renderer_id, {"type": "volume", "volume": body.level})
+    elif zone.renderer_kind == "heos" and settings.denon_host.strip():
         host = settings.denon_host.strip()
         # ZONE2 volume is an AVR command, not a HEOS one: HEOS sets the player's
         # level, which is the main zone.

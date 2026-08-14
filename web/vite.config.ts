@@ -1,3 +1,4 @@
+import { resolve } from "node:path";
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
@@ -17,5 +18,13 @@ export default defineConfig({
   build: {
     outDir: "dist",
     sourcemap: true,
+    rollupOptions: {
+      // Two entry points, one codebase. The phone and the TV are different
+      // interfaces to the same system, not different applications.
+      input: {
+        main: resolve(__dirname, "index.html"),
+        tv: resolve(__dirname, "tv.html"),
+      },
+    },
   },
 });

@@ -164,6 +164,14 @@ if _STATIC.is_dir():
         # Reject traversal: the resolved path must stay inside the static root.
         if path and candidate.is_file() and candidate.is_relative_to(_STATIC):
             return FileResponse(candidate)
+
+        # The TV is a second interface to the same system, served from the same
+        # origin so it shares cookies and the WebSocket host.
+        if path == "tv" or path.startswith("tv/"):
+            tv = _STATIC / "tv.html"
+            if tv.is_file():
+                return FileResponse(tv)
+
         return FileResponse(_STATIC / "index.html")
 
 else:

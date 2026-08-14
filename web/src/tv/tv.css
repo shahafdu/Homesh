@@ -1,0 +1,168 @@
+/* Ten-foot interface.
+ *
+ * Different constraints from the phone entirely: read from three metres away,
+ * driven by a D-pad rather than a finger, and on a panel whose edges may be
+ * cropped by overscan. So: large type, a visible focus ring that is never
+ * ambiguous, and generous safe-area padding.
+ */
+
+:root {
+  --bg: #121110;
+  --surface: #1c1a18;
+  --line: #34302d;
+  --ink: #f2eee8;
+  --muted: #a49b91;
+  --accent: #e0a458;
+  --accent-ink: #201b14;
+
+  /* Broadcast overscan can crop up to 5% of each edge on older panels. */
+  --safe-x: 5vw;
+  --safe-y: 5vh;
+
+  --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, monospace;
+}
+
+* { box-sizing: border-box; }
+
+html, body, #tv-root { height: 100%; margin: 0; }
+
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font: 24px/1.5 var(--sans);
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+  /* A remote has no cursor, and a stray pointer would only ever be a distraction. */
+  cursor: none;
+  user-select: none;
+}
+
+.tv {
+  height: 100%;
+  padding: var(--safe-y) var(--safe-x);
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── Focus ────────────────────────────────────────────────────────────────
+   The single most important affordance on a TV: with no pointer, losing track
+   of focus means losing control of the device entirely. */
+
+:focus { outline: none; }
+.focusable {
+  border-radius: 14px;
+  transition: transform .12s ease, box-shadow .12s ease, background .12s ease;
+}
+.focusable:focus-visible,
+.focusable.focused {
+  box-shadow: 0 0 0 4px var(--accent);
+  background: var(--surface);
+  transform: scale(1.02);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .focusable { transition: none; }
+  .focusable.focused { transform: none; }
+}
+
+/* ── Pairing ─────────────────────────────────────────────────────────────── */
+
+.pair {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 28px;
+  text-align: center;
+}
+
+.brand { font-size: 34px; font-weight: 700; letter-spacing: -.02em; }
+.lede { font-size: 26px; color: var(--muted); max-width: 22ch; line-height: 1.35; }
+
+.code {
+  font-family: var(--mono);
+  font-size: clamp(64px, 11vw, 132px);
+  letter-spacing: .16em;
+  /* Compensate for the trailing letter-space so the block reads as centred. */
+  text-indent: .16em;
+  color: var(--accent);
+  padding: 28px 46px;
+  border: 3px dashed var(--line);
+  border-radius: 22px;
+  background: var(--surface);
+  font-variant-numeric: tabular-nums;
+}
+
+.hint { font-size: 21px; color: var(--muted); }
+.hint b { color: var(--ink); font-weight: 600; }
+
+/* ── Idle ────────────────────────────────────────────────────────────────── */
+
+.idle {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  text-align: center;
+}
+.zone-name { font-size: 44px; font-weight: 700; letter-spacing: -.02em; }
+.idle .lede { max-width: 26ch; }
+
+.badge {
+  display: inline-flex; align-items: center; gap: 12px;
+  font-size: 20px; color: var(--muted);
+  border: 1px solid var(--line); border-radius: 999px;
+  padding: 10px 20px;
+}
+.dot { width: 12px; height: 12px; border-radius: 50%; background: var(--accent); flex: none; }
+.dot.live { background: #6fae7f; }
+
+/* ── Playback ────────────────────────────────────────────────────────────── */
+
+.player { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+
+.stage {
+  flex: 1; min-height: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: #000; border-radius: 16px; overflow: hidden;
+}
+.stage video, .stage img { width: 100%; height: 100%; object-fit: contain; }
+
+.art {
+  width: min(38vh, 340px); aspect-ratio: 1;
+  border-radius: 20px; border: 1px solid var(--line);
+  background: linear-gradient(150deg, #3a3330, #211e1c);
+  display: grid; place-items: center;
+  font-size: 96px; color: var(--accent);
+}
+
+.meta { padding-top: 26px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.title {
+  font-family: var(--mono); font-size: 30px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.tags {
+  font-size: 22px; color: var(--muted);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+.scrub { display: flex; align-items: center; gap: 18px; padding-top: 20px; }
+.bar { flex: 1; height: 8px; border-radius: 99px; background: var(--line); overflow: hidden; }
+.bar > i { display: block; height: 100%; background: var(--accent); border-radius: 99px; }
+.time { font-size: 20px; color: var(--muted); font-variant-numeric: tabular-nums; min-width: 76px; }
+.time.right { text-align: right; }
+
+/* ── Connection ──────────────────────────────────────────────────────────── */
+
+.offline {
+  position: fixed; left: var(--safe-x); bottom: var(--safe-y);
+  display: flex; align-items: center; gap: 12px;
+  font-size: 19px; color: var(--muted);
+  background: var(--surface); border: 1px solid var(--line);
+  padding: 12px 20px; border-radius: 999px;
+}
+.offline .dot { background: #dd7a6b; }
