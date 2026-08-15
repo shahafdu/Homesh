@@ -17,7 +17,6 @@ from pathlib import Path
 from uuid import UUID
 
 from .config import get_settings
-from .sources.local import LocalConnector
 
 log = logging.getLogger("homesh.thumbs")
 
@@ -35,6 +34,10 @@ SIZES = {"small": 160, "large": 480}
 EMPTY = b"\x00"
 
 _MAX_SOURCE_BYTES = 80 * 1024 * 1024  # refuse to decode absurd images
+
+# Enough of a film for ffmpeg to find an early frame. Fetching more from a remote
+# source to make one thumbnail would be wasteful.
+_VIDEO_PREFIX_BYTES = 24 * 1024 * 1024
 
 
 class ThumbError(Exception):
@@ -128,7 +131,22 @@ def _from_video(path: Path, target: int) -> bytes:
     return _from_image(proc.stdout, target)
 
 
-def generate(item_id: UUID, kind: str, connector: LocalConnector, rel_path: str,
+def _read_prefix(connector, rel_path: str, limit: int) -> bytes:
+    """Read at most `limit` bytes through the connector.
+
+    Bytes rather than a filesystem path, because a source may not be a filesystem
+    — the same call works for a local file and a Drive one. A bound matters here:
+    a thumbnail never needs a whole 4 GB film.
+    """
+    collected = bytearray()
+    for chunk in connector.open_range(rel_path, 0, limit - 1):
+        collected += chunk
+        if len(collected) >= limit:
+            break
+    return bytes(collected)
+
+
+def generate(item_id: UUID, kind: str, connector, rel_path: str,
              size: str = "small") -> Path:
     """Produce and cache one thumbnail. Returns its path.
 
@@ -143,16 +161,33 @@ def generate(item_id: UUID, kind: str, connector: LocalConnector, rel_path: str,
     if out.exists():
         return out
 
-    source = connector._resolve(rel_path)  # noqa: SLF001 - same package boundary
-    if not source.is_file():
-        raise ThumbError("source file not reachable")
-
     if kind == "video":
-        data = _from_video(source, target)
+        # ffmpeg wants a seekable file. A local source already is one; anything
+        # remote gets a bounded prefix written to a temp file, which is enough to
+        # decode an early frame without dragging the whole film across.
+        local = getattr(connector, "root", None)
+        if local is not None:
+            source = connector._resolve(rel_path)  # noqa: SLF001 - same package
+            if not source.is_file():
+                raise ThumbError("source file not reachable")
+            data = _from_video(source, target)
+        else:
+            import tempfile
+
+            prefix = _read_prefix(connector, rel_path, _VIDEO_PREFIX_BYTES)
+            if not prefix:
+                raise ThumbError("could not read any of the file")
+            with tempfile.NamedTemporaryFile(suffix=".bin", delete=False) as tmp:
+                tmp.write(prefix)
+                temp_path = Path(tmp.name)
+            try:
+                data = _from_video(temp_path, target)
+            finally:
+                temp_path.unlink(missing_ok=True)
     else:
-        if source.stat().st_size > _MAX_SOURCE_BYTES:
-            raise ThumbError("source too large to decode")
-        raw = source.read_bytes()
+        raw = _read_prefix(connector, rel_path, _MAX_SOURCE_BYTES)
+        if not raw:
+            raise ThumbError("source file not reachable")
         if kind == "photo":
             data = _from_image(raw, target)
         elif kind == "audio":

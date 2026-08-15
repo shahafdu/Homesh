@@ -20,7 +20,6 @@ from .config import get_settings
 from .db import get_engine
 from .security import CurrentUser, optional_user, require_user
 from .signing import TokenError, mint, verify
-from .sources.local import LocalConnector
 from .thumbs import ThumbError, cache_path, generate, is_absent_marker, mark_absent
 
 log = logging.getLogger("homesh.stream")
@@ -57,22 +56,24 @@ def _disposition(filename: str, attachment: bool) -> str:
     return f"{kind}; filename=\"{ascii_name}\"; filename*=UTF-8''{quote(filename)}"
 
 
-def resolve_playable(item_id: UUID) -> tuple[LocalConnector, str, str, int, str]:
+def resolve_playable(item_id: UUID) -> tuple[object, str, str, int, str]:
     """Pick a reachable replica for an item.
 
-    An item can exist in several places (RAID and Drive). Preferring whichever is
-    available is what keeps cloud copies playing while the PC is off (§4).
+    An item can exist in several places — the RAID and Drive — and preferring
+    whichever answers is exactly what keeps cloud copies playing while the PC is
+    off (§4). The connector kind is decided per source, so this works the same
+    for a local file and a Drive one.
 
     Returns (connector, relative path, filename, size, extension).
     """
-    settings = get_settings()
+    from .library import connector_for
 
     with get_engine().connect() as conn:
         rows = conn.execute(
             text(
                 """
                 SELECT r.dir_path, r.filename, r.ext, i.size_bytes,
-                       s.mount_prefix, r.available
+                       s.id, r.available
                 FROM replicas r
                 JOIN items i   ON i.id = r.item_id
                 JOIN sources s ON s.id = r.source_id
@@ -86,15 +87,10 @@ def resolve_playable(item_id: UUID) -> tuple[LocalConnector, str, str, int, str]
     if not rows:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "no such item")
 
-    roots = {f"/local/{name.lower()}": root for name, root in settings.parsed_media_roots}
-
-    # Ordered available-first by the query, so the first reachable root wins.
-    for dir_path, filename, ext, size, prefix, _available in rows:
-        root = roots.get(prefix)
-        if root is None:
-            continue
-        connector = LocalConnector(root)
-        if not connector.available:
+    # Ordered available-first by the query, so the first reachable source wins.
+    for dir_path, filename, ext, size, source_id, _available in rows:
+        connector = connector_for(source_id)
+        if connector is None or not connector.available:
             continue
         rel = f"{dir_path}/{filename}" if dir_path else filename
         return connector, rel, filename, size or 0, (ext or "")

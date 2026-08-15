@@ -60,6 +60,10 @@ class Settings(BaseSettings):
     # itself rather than receiving it from the browser.
     lan_base_url: str = ""
 
+    # Service-account key for Google Drive. A credential, so it lives outside the
+    # repository and is referenced by path rather than pasted into config.
+    gdrive_key_file: str = "/run/secrets/gdrive.json"
+
     # Local roots to index, as "Name=/path" pairs separated by ';'.
     # Deployment facts, so they live in the environment rather than the database —
     # a stored path would silently stop matching the container's mounts.

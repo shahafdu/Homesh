@@ -21,6 +21,9 @@ dependencies = [
     "pillow>=11.0",            # thumbnails
     "pillow-heif>=0.20",       # HEIC/HEIF, which iPhones produce by default
     "mutagen>=1.47",           # embedded cover art and audio tags
+    "google-auth>=2.35",       # service-account credentials for Drive
+    "requests>=2.32",          # google-auth's token transport requires it
+    "httpx>=0.27",             # Drive API calls, with range support
 ]
 
 [project.optional-dependencies]

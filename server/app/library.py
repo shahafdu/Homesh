@@ -25,10 +25,16 @@ router = APIRouter(prefix="/api", tags=["library"])
 
 
 def register_sources() -> None:
-    """Upsert the configured local roots into `sources` at startup.
+    """Upsert every configured source at startup.
 
-    Idempotent, so restarts and added roots both do the right thing.
+    Idempotent, so restarts, added roots and newly shared Drive folders all do
+    the right thing.
     """
+    _register_local()
+    _register_drive()
+
+
+def _register_local() -> None:
     settings = get_settings()
     roots = settings.parsed_media_roots
     if not roots:
@@ -51,6 +57,59 @@ def register_sources() -> None:
             reachable = LocalConnector(root).available
             log.info("source %s -> %s (%s)", prefix, root,
                      "reachable" if reachable else "NOT REACHABLE")
+
+
+def _slug(name: str) -> str:
+    """A stable, URL-safe mount name.
+
+    Folder names here are frequently not Latin — Hebrew, in this house — so a
+    naive ASCII slug would collapse several folders to the same empty string.
+    Non-ASCII names keep their characters; only path separators are replaced.
+    """
+    cleaned = name.strip().replace("/", "-").replace("\\", "-")
+    return "-".join(cleaned.split()).lower() or "folder"
+
+
+def _register_drive() -> None:
+    """Register each Drive folder shared with the service account.
+
+    Discovery rather than configuration: share a folder in Drive and it appears
+    here on the next restart, with nothing to edit.
+    """
+    from pathlib import Path
+
+    from .sources.gdrive import DriveError, shared_folders
+
+    key = Path(get_settings().gdrive_key_file)
+    if not key.is_file():
+        log.info("no Drive key at %s — Drive not configured", key)
+        return
+
+    try:
+        folders = shared_folders(key)
+    except DriveError as exc:
+        log.warning("could not list Drive folders: %s", exc)
+        return
+
+    if not folders:
+        log.info("Drive key present but no folders are shared with it yet")
+        return
+
+    with get_engine().begin() as conn:
+        for folder_id, name in folders:
+            prefix = f"/drive/{_slug(name)}"
+            conn.execute(
+                text(
+                    """
+                    INSERT INTO sources (kind, name, mount_prefix, remote_id)
+                    VALUES ('gdrive', :name, :prefix, :rid)
+                    ON CONFLICT (mount_prefix) DO UPDATE
+                    SET name = EXCLUDED.name, remote_id = EXCLUDED.remote_id
+                    """
+                ),
+                {"name": name, "prefix": prefix, "rid": folder_id},
+            )
+            log.info("source %s -> Drive folder %r", prefix, name)
 
 
 @router.get("/sources")
@@ -276,24 +335,53 @@ async def trigger_scan(
     if row is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "no such source")
 
-    root = _root_for_source(source_id)
-    if root is None:
+    connector = connector_for(source_id)
+    if connector is None:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "source has no configured root")
 
-    background.add_task(_scan_then_extract, source_id, root)
+    background.add_task(_scan_then_extract, source_id, connector)
     return {"started": True, "source_id": str(source_id)}
 
 
-def _scan_then_extract(source_id: UUID, root: str) -> None:
+def _scan_then_extract(source_id: UUID, connector) -> None:
     """Index first, read tags second.
 
     Scanning only touches directory entries, so the folder view is usable almost
     immediately. Reading tags opens every file, which is far slower — running it
     after means a large library is browsable long before it is fully described.
     """
-    connector = LocalConnector(root)
     scan_source(source_id, connector)
-    extract_for_source(source_id, connector)
+
+    # Tag extraction reads bytes. Over a network that is slow enough to be worth
+    # doing separately, so remote sources are indexed now and described later.
+    from .sources.gdrive import GoogleDriveConnector
+
+    if not isinstance(connector, GoogleDriveConnector):
+        extract_for_source(source_id, connector)
+
+
+def connector_for(source_id: UUID):
+    """Build the right connector for a source, whatever kind it is."""
+    from pathlib import Path
+
+    from .sources.gdrive import GoogleDriveConnector
+
+    with get_engine().connect() as conn:
+        row = conn.execute(
+            text("SELECT kind::text, mount_prefix, remote_id FROM sources WHERE id = :id"),
+            {"id": str(source_id)},
+        ).first()
+    if row is None:
+        return None
+
+    kind, prefix, remote_id = row
+    if kind == "gdrive":
+        if not remote_id:
+            return None
+        return GoogleDriveConnector(remote_id, Path(get_settings().gdrive_key_file))
+
+    root = _root_for_source(source_id)
+    return LocalConnector(root) if root else None
 
 
 def _root_for_source(source_id: UUID) -> str | None:

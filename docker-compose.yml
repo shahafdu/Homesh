@@ -39,6 +39,9 @@ services:
       # Your media, mounted READ-ONLY. The server indexes and streams; it has no
       # business writing to your library.
       - ${MEDIA_HOST_PATH:-./sample-media}:/media/library:ro
+      # The Drive credential, mounted read-only. Kept out of the image so it is
+      # never baked into a layer that could be pushed somewhere.
+      - ./.secrets:/run/secrets:ro
     ports:
       - "8080:8080"
     healthcheck:
