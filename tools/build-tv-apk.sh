@@ -46,10 +46,13 @@ case "$(uname -s)" in MINGW*|MSYS*|CYGWIN*) EXE=".exe" ;; esac
 # Under Git Bash the SDK tools are native Windows binaries. The shell rewrites
 # path-looking arguments for them, but it cannot rewrite the contents of an
 # @response file — so those are converted explicitly.
+# Both branches end with a newline: these feed @response files one path per
+# line, and a fallback that omitted it ran every path together into one.
 if command -v cygpath >/dev/null 2>&1; then
   winpath() { cygpath -w "$1"; }
 else
-  winpath() { printf '%s' "$1"; }
+  winpath() { printf '%s
+' "$1"; }
 fi
 
 AAPT2="$BT/aapt2$EXE"

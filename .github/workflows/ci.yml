@@ -170,11 +170,28 @@ jobs:
     permissions:
       security-events: write
     strategy:
+      fail-fast: false
       matrix:
-        language: [python, javascript-typescript]
+        language: [python, javascript-typescript, java-kotlin]
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        if: matrix.language == 'java-kotlin'
+        with:
+          distribution: temurin
+          java-version: "21"
       - uses: github/codeql-action/init@v3
         with:
-          language: ${{ matrix.language }}
+          # `languages`, plural. The singular key is silently ignored, which
+          # made every leg of this matrix analyse everything it could detect —
+          # harmless until the repository gained a language that needs building,
+          # at which point both legs failed on it.
+          languages: ${{ matrix.language }}
+      # CodeQL learns Java by watching it compile, so the real build runs here
+      # rather than leaving autobuild to guess at a project with no Gradle file.
+      - name: Build the TV app
+        if: matrix.language == 'java-kotlin'
+        run: bash tools/build-tv-apk.sh
+        env:
+          HOMESH_TV_KEYSTORE: ${{ runner.temp }}/codeql-signing.jks
       - uses: github/codeql-action/analyze@v3
