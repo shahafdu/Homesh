@@ -223,6 +223,45 @@ async def set_player_volume(host: str, pid: int, level: int) -> None:
     )
 
 
+async def get_play_state(host: str, pid: int) -> str | None:
+    """What the receiver is doing right now — "play", "pause" or "stop".
+
+    This is the receiver's own state, so it reports Spotify Connect and AirPlay
+    just as readily as anything we started. Without asking, the app would only
+    ever know about its own playback and would happily interrupt someone else's.
+    """
+    payload = await _heos_command(
+        host, f"heos://player/get_play_state?pid={pid}", "player/get_play_state"
+    )
+    message = payload.get("heos", {}).get("message", "")
+    for part in message.split("&"):
+        if part.startswith("state="):
+            return part.split("=", 1)[1]
+    return None
+
+
+async def get_now_playing(host: str, pid: int) -> dict:
+    """What is on, whoever put it there.
+
+    The payload names its own source, which is how "someone else is using this"
+    becomes "Spotify is using this".
+    """
+    payload = await _heos_command(
+        host, f"heos://player/get_now_playing_media?pid={pid}", "player/get_now_playing_media"
+    )
+    body = payload.get("payload") or {}
+    if isinstance(body, list):
+        body = body[0] if body else {}
+    return {
+        "type": body.get("type"),
+        "song": body.get("song"),
+        "artist": body.get("artist"),
+        "album": body.get("album"),
+        "station": body.get("station"),
+        "source_id": body.get("sid"),
+    }
+
+
 async def player_stop(host: str, pid: int) -> None:
     await _heos_command(
         host, f"heos://player/set_play_state?pid={pid}&state=stop", "player/set_play_state"

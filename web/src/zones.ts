@@ -16,19 +16,36 @@ export interface ZoneSession {
   updated_at: string | null;
 }
 
+/** What the hardware is doing when it is not us doing it.
+ *
+ * A receiver plays Spotify and AirPlay without this app being involved, so the
+ * tower asks it rather than trusting its own records.
+ */
+export interface ZoneExternal {
+  busy?: boolean;
+  unreachable?: boolean;
+  detail: string | null;
+}
+
 export interface Zone {
   id: string;
   name: string;
   renderer: ZoneRenderer | null;
   session: ZoneSession | null;
+  external: ZoneExternal | null;
 }
 
 export const listZones = () => api.get<Zone[]>("/api/zones");
 
-export const playInZone = (zoneId: string, itemIds: string[], startIndex = 0) =>
+export const playInZone = (
+  zoneId: string,
+  itemIds: string[],
+  startIndex = 0,
+  takeOver = false,
+) =>
   api.post<{ zone: string; state: string; pushed: boolean }>(
     `/api/zones/${zoneId}/play`,
-    { item_ids: itemIds, start_index: startIndex },
+    { item_ids: itemIds, start_index: startIndex, take_over: takeOver },
   );
 
 export const stopZone = (zoneId: string) => api.post(`/api/zones/${zoneId}/stop`);
@@ -52,6 +69,14 @@ export function zoneAccepts(zone: Zone, kind: string): boolean {
 
 export function zoneStatus(zone: Zone): { label: string; tone: "live" | "idle" | "off" } {
   if (!zone.renderer) return { label: "no device", tone: "off" };
+
+  // Someone else is using the room. Saying "ready" here would be a lie, and
+  // acting on it would cut them off.
+  if (zone.external?.busy) {
+    return { label: zone.external.detail ?? "in use", tone: "live" };
+  }
+  if (zone.external?.unreachable) return { label: "not responding", tone: "off" };
+
   if (zone.renderer.state === "unavailable") {
     // A screen that is not connected is a different thing from a receiver that is
     // merely idle: one needs the app opened, the other is simply not playing.

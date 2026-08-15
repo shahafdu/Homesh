@@ -20,7 +20,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlalchemy import text
 
-from . import denon
+from . import denon, occupancy
 from .config import get_settings
 from .db import get_engine
 from .security import CurrentUser, require_user
@@ -62,6 +62,9 @@ class ZoneCreate(BaseModel):
 class PlayRequest(BaseModel):
     item_ids: list[UUID] = Field(min_length=1, max_length=500)
     start_index: int = Field(default=0, ge=0)
+    # The receiver has one network player, so starting here stops whatever else
+    # is using it. That should be a decision, not a surprise.
+    take_over: bool = False
 
 
 class VolumeRequest(BaseModel):
@@ -157,10 +160,24 @@ async def list_zones(_: CurrentUser = Depends(require_user)) -> list[dict]:
     for row in rows:
         queue = row[6] or []
         cursor = row[7] or 0
+        kind = row[2]
+        session_state = row[5]
+
+        # A receiver plays Spotify and AirPlay without us. Asking it is the only
+        # way the tower can be honest about whether a room is free.
+        external = None
+        if kind == "heos":
+            seen = await occupancy.receiver_occupancy(session_state)
+            if seen.busy and not seen.ours:
+                external = {"busy": True, "detail": seen.detail}
+            elif not seen.reachable:
+                external = {"busy": False, "unreachable": True, "detail": seen.detail}
+
         out.append(
             {
                 "id": str(row[0]),
                 "name": row[1],
+                "external": external,
                 "renderer": {"kind": row[2], "state": row[3], "name": row[4]}
                 if row[2]
                 else None,
@@ -232,6 +249,17 @@ async def play(
     index = min(body.start_index, len(body.item_ids) - 1)
     item_id = body.item_ids[index]
 
+    if zone.renderer_kind == "heos" and not body.take_over:
+        seen = await occupancy.receiver_occupancy(None)
+        if seen.busy and not seen.ours:
+            # 409 rather than 403: nothing is forbidden, the room is simply busy,
+            # and the caller can repeat the request having decided to interrupt.
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                f"{zone.name} is already playing {seen.detail or 'something else'}. "
+                f"Starting here will stop it.",
+            )
+
     # The session is written first and independently of the hardware. If the
     # receiver is unreachable the intent is still recorded, so the control tower
     # can show what was asked for and offer to retry.
@@ -292,6 +320,7 @@ async def play(
                  "WHERE zone_id = :z"),
             {"z": str(zone_id)},
         )
+    occupancy.invalidate()
 
     return {"zone": zone.name, "state": "playing", "pushed": True}
 
@@ -390,6 +419,7 @@ async def stop(zone_id: UUID, user: CurrentUser = Depends(require_user)) -> dict
                  "updated_at = now() WHERE zone_id = :z"),
             {"z": str(zone_id)},
         )
+    occupancy.invalidate()
     return {"zone": zone.name, "state": "idle"}
 
 

@@ -691,3 +691,11 @@ button.compact:disabled { opacity: .5; cursor: not-allowed; }
   /* No hover on a touch screen, so it is always visible there. */
   .sendbtn { opacity: 1; border-color: var(--line); }
 }
+
+.takeover {
+  margin-top: 12px; padding: 12px; border-radius: 10px;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 36%, transparent);
+  font-size: 13.5px;
+}
+.takeover p { margin: 0 0 10px; }

@@ -326,3 +326,112 @@ class TestDeviceState:
         finally:
             denon.AVR_PORT = original
             denon.CONNECT_TIMEOUT = 5.0
+
+
+class TestExternalUse:
+    """A receiver plays Spotify and AirPlay without us.
+
+    Reporting only our own playback would show "ready" for a room that is audibly
+    in use — and sending a track there would cut somebody off, because this
+    receiver has exactly one network player.
+    """
+
+    def test_listing_reports_a_room_used_by_something_else(
+        self, client, db, scanned, receiver, monkeypatch
+    ):
+        _make_zone(client)
+
+        async def busy_elsewhere(_state):
+            from app.occupancy import Occupancy
+
+            return Occupancy(busy=True, ours=False, detail="Bohemian Rhapsody — via Spotify")
+
+        monkeypatch.setattr("app.occupancy.receiver_occupancy", busy_elsewhere)
+
+        zone = client.get("/api/zones").json()[0]
+        assert zone["external"]["busy"] is True
+        assert "Spotify" in zone["external"]["detail"]
+
+    def test_our_own_playback_is_not_reported_as_external(
+        self, client, db, scanned, receiver, monkeypatch
+    ):
+        _make_zone(client)
+
+        async def ours(_state):
+            from app.occupancy import Occupancy
+
+            return Occupancy(busy=True, ours=True)
+
+        monkeypatch.setattr("app.occupancy.receiver_occupancy", ours)
+        assert client.get("/api/zones").json()[0]["external"] is None
+
+    def test_play_refuses_to_interrupt_without_being_asked(
+        self, client, db, scanned, receiver, monkeypatch
+    ):
+        zone_id = _make_zone(client)
+
+        async def busy_elsewhere(_state):
+            from app.occupancy import Occupancy
+
+            return Occupancy(busy=True, ours=False, detail="Bohemian Rhapsody — via Spotify")
+
+        monkeypatch.setattr("app.occupancy.receiver_occupancy", busy_elsewhere)
+
+        r = client.post(f"/api/zones/{zone_id}/play", json={"item_ids": _items(db)})
+        assert r.status_code == 409
+        assert "Spotify" in r.json()["detail"]
+        assert "stop it" in r.json()["detail"]
+
+    def test_take_over_proceeds_when_asked(self, client, db, scanned, receiver, monkeypatch):
+        """Interrupting is allowed — it just has to be a decision."""
+        zone_id = _make_zone(client)
+
+        async def busy_elsewhere(_state):
+            from app.occupancy import Occupancy
+
+            return Occupancy(busy=True, ours=False, detail="something else")
+
+        monkeypatch.setattr("app.occupancy.receiver_occupancy", busy_elsewhere)
+
+        r = client.post(
+            f"/api/zones/{zone_id}/play",
+            json={"item_ids": _items(db), "take_over": True},
+        )
+        assert r.status_code == 200
+        assert r.json()["state"] == "playing"
+
+    def test_an_unreachable_receiver_is_not_reported_as_free(
+        self, client, db, scanned, receiver, monkeypatch
+    ):
+        """Unreachable and idle are different things, and only one is actionable."""
+        _make_zone(client)
+
+        async def unreachable(_state):
+            from app.occupancy import Occupancy
+
+            return Occupancy(busy=False, ours=False, reachable=False, detail="cannot reach")
+
+        monkeypatch.setattr("app.occupancy.receiver_occupancy", unreachable)
+
+        zone = client.get("/api/zones").json()[0]
+        assert zone["external"]["unreachable"] is True
+
+    def test_a_screen_is_not_probed_for_external_use(self, client, db, scanned, monkeypatch):
+        """Only the receiver can be driven by something else behind our back."""
+        called = False
+
+        async def tracker(_state):
+            nonlocal called
+            called = True
+            from app.occupancy import Occupancy
+
+            return Occupancy(busy=False, ours=False)
+
+        monkeypatch.setattr("app.occupancy.receiver_occupancy", tracker)
+
+        client.post(
+            "/api/zones",
+            json={"name": "Screen", "renderer_kind": "tvapp", "device_key": "uuid:screen"},
+        )
+        client.get("/api/zones")
+        assert called is False, "a screen was probed as though it were a receiver"

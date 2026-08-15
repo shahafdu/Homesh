@@ -19,12 +19,13 @@ export default function PlayTo(props: {
   const [zones, setZones] = useState<Zone[] | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [confirm, setConfirm] = useState<{ zone: Zone; message: string } | null>(null);
 
   useEffect(() => {
     listZones().then(setZones).catch(() => setZones([]));
   }, []);
 
-  const send = async (zone: Zone) => {
+  const send = async (zone: Zone, takeOver = false) => {
     setBusy(zone.id);
     setError(null);
     try {
@@ -32,10 +33,16 @@ export default function PlayTo(props: {
       // playing here does.
       const queue = siblings.filter((f) => f.kind === file.kind && f.available);
       const index = Math.max(0, queue.findIndex((f) => f.item_id === file.item_id));
-      await playInZone(zone.id, queue.map((f) => f.item_id), index);
+      await playInZone(zone.id, queue.map((f) => f.item_id), index, takeOver);
       props.onClose();
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : String(e));
+      // 409 means the room is busy with something we did not start. Nothing is
+      // forbidden — it just should not happen by accident.
+      if (e instanceof ApiError && e.status === 409) {
+        setConfirm({ zone, message: e.message });
+      } else {
+        setError(e instanceof ApiError ? e.message : String(e));
+      }
     } finally {
       setBusy(null);
     }
@@ -48,6 +55,21 @@ export default function PlayTo(props: {
         <p className="muted small nm-clip">{file.filename}</p>
 
         {error && <div className="error">{error}</div>}
+
+        {confirm && (
+          <div className="takeover">
+            <p>{confirm.message}</p>
+            <div className="zone-controls">
+              <button
+                className="compact primary"
+                onClick={() => { const z = confirm.zone; setConfirm(null); void send(z, true); }}
+              >
+                Play anyway
+              </button>
+              <button className="compact" onClick={() => setConfirm(null)}>Leave it</button>
+            </div>
+          </div>
+        )}
 
         <button className="pick" onClick={props.onHere}>
           <span className="pick-ic">▤</span>
