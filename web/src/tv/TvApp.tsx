@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { randomId } from "../id";
 
 /** A screen that has joined the house.
  *
@@ -28,7 +29,7 @@ const STORAGE_KEY = "homesh.tv.credential";
 function deviceKey(): string {
   const existing = localStorage.getItem("homesh.tv.device");
   if (existing) return existing;
-  const fresh = `tv-${crypto.randomUUID()}`;
+  const fresh = `tv-${randomId()}`;
   localStorage.setItem("homesh.tv.device", fresh);
   return fresh;
 }
@@ -46,6 +47,7 @@ function formatTime(ms: number): string {
 export default function TvApp() {
   const [phase, setPhase] = useState<Phase>("starting");
   const [code, setCode] = useState<string | null>(null);
+  const [fault, setFault] = useState<string | null>(null);
   const [zoneName, setZoneName] = useState("This screen");
   const [connected, setConnected] = useState(false);
   const [now, setNow] = useState<Command | null>(null);
@@ -64,13 +66,27 @@ export default function TvApp() {
   const connectRef = useRef<() => void>(() => undefined);
 
   const startPairing = useCallback(async () => {
-    const res = await fetch("/api/renderers/pair/begin", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ device_key: deviceKey(), device_name: "TV" }),
-    });
-    const { code, poll_token } = await res.json();
-    setCode(code);
+    let poll_token: string;
+    try {
+      const res = await fetch("/api/renderers/pair/begin", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ device_key: deviceKey(), device_name: "TV" }),
+      });
+      if (!res.ok) throw new Error(`pairing refused (${res.status})`);
+      const body = await res.json();
+      setCode(body.code);
+      poll_token = body.poll_token;
+    } catch (e) {
+      // Say so on the screen. Falling through to the idle view would leave a
+      // television claiming to be ready while it had never reached the server,
+      // which is exactly how a startup failure went unnoticed before.
+      setFault(e instanceof Error ? e.message : String(e));
+      window.setTimeout(() => void startPairing(), 5000);
+      return;
+    }
+
+    setFault(null);
     setPhase("pairing");
 
     // Poll rather than hold a socket: pairing is brief, and a screen with no
@@ -254,6 +270,22 @@ export default function TvApp() {
   }, [phase, report]);
 
   // ── Screens ───────────────────────────────────────────────────────────────
+
+  // Before anything else: a screen that could not reach the server says so.
+  // The idle view below is the fallback for every remaining phase, so without
+  // this a failed start renders as "Ready" — which is what hid one.
+  if (fault) {
+    return (
+      <div className="tv">
+        <div className="idle">
+          <div className="brand">Homesh</div>
+          <p className="lede">Cannot reach the server.</p>
+          <p className="hint">{fault}</p>
+          <div className="badge"><span className="dot" /> Retrying…</div>
+        </div>
+      </div>
+    );
+  }
 
   if (phase === "pairing" || (phase === "starting" && code)) {
     return (

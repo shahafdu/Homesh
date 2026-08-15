@@ -112,6 +112,40 @@ jobs:
         working-directory: web
         run: npm run build
 
+  tv:
+    name: Android TV — build APK
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      # The runner already carries the Android SDK, so nothing is downloaded.
+      # The build uses aapt2/javac/d8/apksigner directly — no Gradle, no AGP,
+      # and no third-party Android dependencies to resolve.
+      - name: Build
+        run: bash tools/build-tv-apk.sh
+        env:
+          # A throwaway key per run. The APK from CI is for testing; the copy
+          # installed on a real box is signed by the key on the machine that
+          # built it, which is what keeps upgrades working there.
+          HOMESH_TV_KEYSTORE: ${{ runner.temp }}/ci-signing.jks
+      - name: Check what it declares
+        run: |
+          BT=$(ls -1d "$ANDROID_HOME"/build-tools/*/ | sort -V | tail -1)
+          "${BT}aapt2" dump badging build/homesh-tv.apk > badging.txt
+          cat badging.txt
+          # The launcher entry is the whole point of shipping a native shell;
+          # losing it would leave an APK that installs and cannot be opened.
+          grep -q "leanback-launchable-activity" badging.txt
+          grep -q "application-label:'Homesh'" badging.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: homesh-tv-apk
+          path: build/homesh-tv.apk
+          if-no-files-found: error
+
   image:
     name: Image — multi-arch build
     runs-on: ubuntu-latest

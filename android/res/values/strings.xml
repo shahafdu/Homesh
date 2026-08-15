@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Homesh</string>
+
+    <string name="setup_title">Where is Homesh?</string>
+    <string name="setup_hint">Type the address shown in Settings on your phone. The http:// and the port are filled in for you.</string>
+    <string name="setup_placeholder">homesh.local</string>
+    <string name="setup_connect">Connect</string>
+    <string name="setup_checking">Looking for it…</string>
+    <string name="setup_empty">Type an address first.</string>
+    <string name="setup_failed">Nothing answered at %1$s. Check the address and that the server is running.</string>
+
+    <string name="cannot_reach">Cannot reach %1$s.\n\nPress MENU on the remote to change the address.</string>
+</resources>

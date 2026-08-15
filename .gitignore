@@ -48,3 +48,9 @@ sample-media/
 
 # Local deployment notes — describes a real house, never committed
 .local/
+
+# Android build output. The signing keystore lives in .local/ (already ignored)
+# — it is generated per machine and must never be published.
+build/
+*.jks
+*.keystore
