@@ -180,6 +180,21 @@ function AddDevice(props: { onDone: () => void; onCancel: () => void }) {
         Open Homesh on the screen. It shows a six-character code.
       </p>
 
+      {/* A set-top box has no easy way to receive a file, but it can fetch a URL.
+          Shown here because this is where somebody stands when they discover the
+          screen has no app on it yet. */}
+      <details className="install">
+        <summary className="muted small">Nothing installed on that screen yet?</summary>
+        <p className="muted small">
+          On the box, open <b>Downloader</b> (or any browser) and go to:
+        </p>
+        <div className="invite-link nm-clip">{`${window.location.origin}/tv.apk`}</div>
+        <p className="muted small">
+          Allow it to install unknown apps when asked. Then open Homesh from the
+          launcher — it will ask where this server is, and show a pairing code.
+        </p>
+      </details>
+
       <label htmlFor="pair-code">Code from the screen</label>
       <input
         id="pair-code"

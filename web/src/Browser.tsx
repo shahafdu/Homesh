@@ -35,12 +35,12 @@ export default function Browser(props: {
   onOpenPeople?: () => void;
   onPlay: (files: FileEntry[], index: number, folderPath: string) => void;
   onView: (files: FileEntry[], index: number) => void;
-  onSendTo: (file: FileEntry, siblings: FileEntry[]) => void;
+  onActions: (file: FileEntry, siblings: FileEntry[]) => void;
   playingId: string | null;
 }) {
   const {
     isAdmin, view, onViewChange, onOpenSettings, onOpenZones, onOpenPeople,
-    onPlay, onView, onSendTo, playingId,
+    onPlay, onView, onActions, playingId,
   } = props;
 
   // The current folder lives in the URL, so the browser's own history works and a
@@ -187,7 +187,7 @@ export default function Browser(props: {
           onOpen={navigate}
           onPlay={onPlay}
           onView={onView}
-          onSendTo={onSendTo}
+          onActions={onActions}
           playingId={playingId}
         />
       )}
@@ -234,10 +234,10 @@ function FileRow(props: {
   f: FileEntry;
   view: View;
   onPlay?: () => void;
-  onSendTo?: () => void;
+  onActions?: () => void;
   isPlaying?: boolean;
 }) {
-  const { f, view, onPlay, onSendTo, isPlaying } = props;
+  const { f, view, onPlay, onActions, isPlaying } = props;
   // Audio goes to the player bar; photos, video and documents open the viewer.
   // Anything else stays inert rather than pretending to be openable.
   const openable = f.available && ["audio", "photo", "video", "doc"].includes(f.kind);
@@ -287,11 +287,11 @@ function FileRow(props: {
           openable && (
             <button
               className="sendbtn"
-              title={`Send ${f.filename} to a room`}
-              aria-label="Send to a room"
-              onClick={(e) => { e.stopPropagation(); onSendTo?.(); }}
+              title={`What to do with ${f.filename}`}
+              aria-label="Actions"
+              onClick={(e) => { e.stopPropagation(); onActions?.(); }}
             >
-              ⧉
+              ⋯
             </button>
           )
         ) : (
@@ -317,10 +317,10 @@ function Folder(props: {
   onOpen: (p: string) => void;
   onPlay: (files: FileEntry[], index: number, folderPath: string) => void;
   onView: (files: FileEntry[], index: number) => void;
-  onSendTo: (file: FileEntry, siblings: FileEntry[]) => void;
+  onActions: (file: FileEntry, siblings: FileEntry[]) => void;
   playingId: string | null;
 }) {
-  const { listing, loading, view, onOpen, onPlay, onView, onSendTo, playingId } = props;
+  const { listing, loading, view, onOpen, onPlay, onView, onActions, playingId } = props;
   if (!listing) return <p className="muted">{loading ? "Loading…" : ""}</p>;
 
   if (listing.dirs.length === 0 && listing.files.length === 0) {
@@ -391,7 +391,7 @@ function Folder(props: {
               ? onPlay(listing.files, i, listing.path)
               : onView(listing.files, i)
           }
-          onSendTo={() => onSendTo(f, listing.files)}
+          onActions={() => onActions(f, listing.files)}
         />
       ))}
     </ul>

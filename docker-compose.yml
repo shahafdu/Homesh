@@ -36,6 +36,10 @@ services:
       # Thumbnails and previews. Access-controlled by the API, never served
       # as a public static directory (ARCHITECTURE.md §6).
       - media-cache:/var/lib/homesh/cache
+      # The built TV app, so a set-top box can install it over the LAN rather
+      # than needing a cable or a developer machine. Read-only; absent until
+      # tools/build-tv-apk.sh has been run, which the route handles.
+      - ./build:/app/tv-app:ro
       # Your media, mounted READ-ONLY. The server indexes and streams; it has no
       # business writing to your library.
       - ${MEDIA_HOST_PATH:-./sample-media}:/media/library:ro

@@ -7,6 +7,7 @@ Auth, sources and the control tower land in the phases that follow.
 from __future__ import annotations
 
 import logging
+import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -143,6 +144,45 @@ async def health() -> JSONResponse:
     # 200 even when degraded: the endpoint is for humans and Compose alike, and
     # a running-but-misconfigured service is a different thing from a dead one.
     return JSONResponse(body)
+
+
+# ── The TV app ──────────────────────────────────────────────────────────────
+# A set-top box has no easy way to receive a file. It has a network connection to
+# this server and a remote control, so the server hands out the APK itself and
+# the box fetches it with a URL short enough to type on a D-pad.
+#
+# Unauthenticated, deliberately: the box has no account and no keyboard worth the
+# name, and the payload is the same open-source APK published in the repository.
+# It carries no secret, names no address, and grants nothing — installing it
+# still requires pairing from a signed-in phone before the screen can play
+# anything.
+
+def _tv_apk_path() -> Path:
+    """Resolved per request, not at import.
+
+    The APK is built outside the container and appears in a mounted directory.
+    Reading it once at startup would mean a server that had to be restarted
+    before it would hand out a build made a minute after it booted.
+    """
+    return Path(os.environ.get("TV_APK_PATH", "/app/tv-app/homesh-tv.apk"))
+
+
+@app.get("/tv.apk", include_in_schema=False)
+async def tv_apk() -> Response:
+    apk = _tv_apk_path()
+    if not apk.is_file():
+        return JSONResponse(
+            {
+                "detail": "No TV app build present. Run tools/build-tv-apk.sh, "
+                "or download it from the repository's releases."
+            },
+            status_code=404,
+        )
+    return FileResponse(
+        apk,
+        media_type="application/vnd.android.package-archive",
+        filename="homesh-tv.apk",
+    )
 
 
 # ── Web client ──────────────────────────────────────────────────────────────

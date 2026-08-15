@@ -65,3 +65,25 @@ reached over plain HTTP on the house network and Android blocks that by default
 from API 28 onwards. It cannot be narrowed to one host here — the address is
 DHCP-assigned and differs per install, which is the same reason it is not in the
 source. When the server gains TLS, that file is what to tighten first.
+
+## Installing without a cable
+
+The server hands out the APK itself, so a box needs nothing but its remote:
+
+1. On the box, install **Downloader** (by AFTVnews) from Google Play — the usual
+   tool for this, since Android TV ships no browser.
+2. Enter `http://<your-server>:8080/tv.apk`
+3. Allow it to install unknown apps when Android asks.
+
+The exact URL is shown in the app under **Zones → Add a device → "Nothing
+installed on that screen yet?"**, so it can be read off a phone while standing at
+the television.
+
+That endpoint needs no account, deliberately: a television cannot sign in, and
+the APK is the same open-source build published in this repository. It carries no
+secret and names no address — installing it grants nothing until the screen is
+paired from a signed-in phone.
+
+If you would rather fetch it over the internet than off the LAN, attach the APK
+to a GitHub release. Sign it with the same key each time or installs will refuse
+to upgrade.

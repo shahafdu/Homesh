@@ -4,6 +4,7 @@ import { login, logout, passkeysSupported, register } from "./auth";
 import Browser from "./Browser";
 import Player from "./Player";
 import Settings from "./Settings";
+import FileActions from "./FileActions";
 import People from "./People";
 import PlayTo from "./PlayTo";
 import Viewer from "./Viewer";
@@ -22,6 +23,9 @@ export default function App() {
   const closeViewer = useCallback(() => setViewing(null), []);
   const [showZones, setShowZones] = useState(false);
   const [showPeople, setShowPeople] = useState(false);
+  const [actionsFor, setActionsFor] = useState<{ file: FileEntry; siblings: FileEntry[] } | null>(
+    null,
+  );
   // An invite link is how somebody else joins, so it is read before anything
   // else decides which screen to show.
   const invite = new URLSearchParams(window.location.search).get("invite");
@@ -102,7 +106,7 @@ export default function App() {
           onOpenSettings={() => setShowSettings(true)}
           onOpenZones={() => setShowZones(true)}
           onOpenPeople={state.user.is_admin ? () => setShowPeople(true) : undefined}
-          onSendTo={(file, siblings) => setSendTo({ file, siblings })}
+          onActions={(file, siblings) => setActionsFor({ file, siblings })}
           onPlay={player.play}
           onView={(files, index) => {
             // Arrowing through a folder should stay within the kind you opened —
@@ -129,6 +133,19 @@ export default function App() {
 
         {showZones && <Zones onClose={() => setShowZones(false)} />}
         {showPeople && <People onClose={() => setShowPeople(false)} />}
+
+        {actionsFor && (
+          <FileActions
+            file={actionsFor.file}
+            onSendTo={() => {
+              // Chained rather than duplicated: the room picker already exists
+              // and knows which rooms will accept this kind of file.
+              setSendTo(actionsFor);
+              setActionsFor(null);
+            }}
+            onClose={() => setActionsFor(null)}
+          />
+        )}
 
         {sendTo && (
           <PlayTo

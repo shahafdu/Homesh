@@ -751,3 +751,23 @@ button.compact:disabled { opacity: .5; cursor: not-allowed; }
   color: #d08b26;
   margin-left: 7px;
 }
+
+/* ── File actions ───────────────────────────────────────────────────────────── */
+
+.actions { display: flex; flex-direction: column; gap: 8px; margin: 6px 0 12px; }
+.action {
+  display: flex; align-items: flex-start; gap: 12px; width: 100%;
+  padding: 12px 14px; text-align: left; cursor: pointer;
+  background: var(--bg); color: var(--ink);
+  border: 1px solid var(--line); border-radius: 10px;
+  font-size: 15px;
+}
+.action:hover:not(:disabled) { border-color: var(--accent); }
+.action:disabled { opacity: 0.45; cursor: default; }
+/* The label and its explanation stack; the icon stays on the baseline of the
+   first line rather than centring against both. */
+.action > span:last-child { display: flex; flex-direction: column; gap: 2px; }
+.action-ic { font-size: 17px; width: 20px; text-align: center; }
+
+.install { margin: 4px 0 2px; }
+.install summary { cursor: pointer; padding: 4px 0; }
