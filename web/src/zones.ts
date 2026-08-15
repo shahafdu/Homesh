@@ -53,8 +53,18 @@ export const stopZone = (zoneId: string) => api.post(`/api/zones/${zoneId}/stop`
 export const setZoneVolume = (zoneId: string, level: number) =>
   api.post(`/api/zones/${zoneId}/volume`, { level });
 
-export const pairDevice = (code: string, name: string) =>
-  api.post<{ renderer_id: string; name: string }>("/api/renderers/pair/claim", { code, name });
+export const pairDevice = (
+  code: string,
+  name: string,
+  audience: "everyone" | "admins" | "selected",
+  grantTo: string[],
+) =>
+  api.post<{ renderer_id: string; name: string }>("/api/renderers/pair/claim", {
+    code,
+    name,
+    audience,
+    grant_to: grantTo,
+  });
 
 /** What a zone can be sent, so the UI never offers something that will fail.
  *

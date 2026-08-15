@@ -204,9 +204,16 @@ class TestMediaAccess:
 
 class TestZoneAccess:
     def _zone(self, client, name, key):
+        # Open to the household, so these tests exercise the personal rules
+        # rather than the room's own audience — that has its own tests.
         r = client.post(
             "/api/zones",
-            json={"name": name, "renderer_kind": "tvapp", "device_key": key},
+            json={
+                "name": name,
+                "renderer_kind": "tvapp",
+                "device_key": key,
+                "audience": "selected",
+            },
         )
         assert r.status_code == 201, r.text
         return r.json()["id"]

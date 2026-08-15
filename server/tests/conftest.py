@@ -176,8 +176,8 @@ def source(db, library: Path):
         sid = conn.execute(
             text(
                 """
-                INSERT INTO sources (kind, name, mount_prefix)
-                VALUES ('local', 'Test', :p) RETURNING id
+                INSERT INTO sources (kind, name, mount_prefix, audience)
+                VALUES ('local', 'Test', :p, 'everyone') RETURNING id
                 """
             ),
             {"p": prefix},

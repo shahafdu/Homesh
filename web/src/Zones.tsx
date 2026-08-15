@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
+import AudiencePicker, { type Choice } from "./Audience";
+import { listPeople, type Person } from "./people";
 import { ApiError } from "./api";
 import {
   listZones,
@@ -148,12 +150,21 @@ function AddDevice(props: { onDone: () => void; onCancel: () => void }) {
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Administrators only until told otherwise. A room is reachable the instant it
+  // pairs, so the safe answer has to be the one already selected.
+  const [audience, setAudience] = useState<Choice>("admins");
+  const [grantTo, setGrantTo] = useState<string[]>([]);
+  const [people, setPeople] = useState<Person[]>([]);
+
+  useEffect(() => {
+    listPeople().then(setPeople).catch(() => setPeople([]));
+  }, []);
 
   const submit = async () => {
     setBusy(true);
     setError(null);
     try {
-      await pairDevice(code.trim(), name.trim());
+      await pairDevice(code.trim(), name.trim(), audience, grantTo);
       props.onDone();
     } catch (e) {
       setError(e instanceof ApiError ? e.message : String(e));
@@ -186,6 +197,16 @@ function AddDevice(props: { onDone: () => void; onCancel: () => void }) {
         value={name}
         placeholder="Bedroom"
         onChange={(e) => setName(e.target.value)}
+      />
+
+      <AudiencePicker
+        value={audience}
+        users={grantTo}
+        people={people}
+        onChange={(v, u) => {
+          setAudience(v);
+          setGrantTo(u);
+        }}
       />
 
       {error && <div className="error">{error}</div>}

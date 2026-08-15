@@ -1,19 +1,25 @@
 import { useCallback, useEffect, useState } from "react";
 import { ApiError } from "./api";
+import { AudienceEditor, type Choice } from "./Audience";
 import { browse, type DirEntry } from "./library";
 import {
   createInvite,
   describeAccess,
+  describeAudience,
   inviteLink,
+  listAudiences,
   listInvites,
   listPeople,
   removePerson,
   revokeInvite,
   setAdmin,
+  setFolderAudience,
+  setRoomAudience,
   setRules,
   type Grant,
   type Invite,
   type Person,
+  type Place,
 } from "./people";
 import { listZones, type Zone } from "./zones";
 
@@ -30,17 +36,27 @@ export default function People(props: { onClose: () => void }) {
   const [invites, setInvites] = useState<Invite[]>([]);
   const [zones, setZones] = useState<Zone[]>([]);
   const [roots, setRoots] = useState<DirEntry[]>([]);
+  const [folders, setFolders] = useState<Place[]>([]);
+  const [rooms, setRooms] = useState<Place[]>([]);
   const [inviting, setInviting] = useState(false);
   const [editing, setEditing] = useState<Person | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     try {
-      const [p, i, z, r] = await Promise.all([listPeople(), listInvites(), listZones(), browse("/")]);
+      const [p, i, z, r, a] = await Promise.all([
+        listPeople(),
+        listInvites(),
+        listZones(),
+        browse("/"),
+        listAudiences(),
+      ]);
       setPeople(p);
       setInvites(i);
       setZones(z);
       setRoots(r.dirs);
+      setFolders(a.folders);
+      setRooms(a.rooms);
     } catch (e) {
       setError(e instanceof ApiError ? e.message : String(e));
     }
@@ -157,6 +173,19 @@ export default function People(props: { onClose: () => void }) {
             onCancel={() => setEditing(null)}
           />
         )}
+
+        <Audiences
+          folders={folders}
+          rooms={rooms}
+          people={people ?? []}
+          onSave={async (kind, id, choice, users) => {
+            await act(() =>
+              kind === "folder"
+                ? setFolderAudience(id, choice, users)
+                : setRoomAudience(id, choice, users),
+            );
+          }}
+        />
 
         <button className="compact" style={{ marginTop: 16 }} onClick={props.onClose}>
           Done
@@ -371,6 +400,72 @@ function AccessForm(props: {
         </button>
         <button className="compact" onClick={props.onCancel}>Cancel</button>
       </div>
+    </div>
+  );
+}
+
+
+/** Who each folder and room is for.
+ *
+ * Anything undecided is listed first and says so. Folders are not created by
+ * anyone here — sharing a folder with the server is enough to make it appear —
+ * so "nobody has ruled on this yet" is a normal state that needs answering
+ * rather than an error, and until it is answered the folder stays with
+ * administrators.
+ */
+function Audiences(props: {
+  folders: Place[];
+  rooms: Place[];
+  people: Person[];
+  onSave: (kind: "folder" | "room", id: string, choice: Choice, users: string[]) => Promise<void>;
+}) {
+  const [open, setOpen] = useState<string | null>(null);
+
+  const undecided = [...props.folders, ...props.rooms].filter((p) => p.audience === null).length;
+
+  const row = (place: Place, kind: "folder" | "room") => (
+    <div key={place.id} className="invite-row column">
+      <div className="place-head">
+        <div>
+          <b>{place.name}</b>
+          {place.audience === null && <span className="badge warn">needs a decision</span>}
+          <div className="muted small">{describeAudience(place)}</div>
+        </div>
+        {open !== place.id && (
+          <button className="compact" onClick={() => setOpen(place.id)}>
+            {place.audience === null ? "Decide" : "Change"}
+          </button>
+        )}
+      </div>
+
+      {open === place.id && (
+        <AudienceEditor
+          initial={place.audience ?? "admins"}
+          initialUsers={place.selected.map((p) => p.id)}
+          people={props.people}
+          onSave={async (choice, users) => {
+            await props.onSave(kind, place.id, choice, users);
+            setOpen(null);
+          }}
+          onCancel={() => setOpen(null)}
+        />
+      )}
+    </div>
+  );
+
+  return (
+    <div className="zone-card">
+      <div className="zone-head">
+        <span className="zone-name">Folders and rooms</span>
+        {undecided > 0 && <span className="badge warn">{undecided} to decide</span>}
+      </div>
+      <p className="muted small" style={{ marginTop: 0 }}>
+        A folder shared with the server appears on its own. Until you say who it is
+        for, only administrators can see it.
+      </p>
+
+      {props.folders.map((f) => row(f, "folder"))}
+      {props.rooms.map((r) => row(r, "room"))}
     </div>
   );
 }

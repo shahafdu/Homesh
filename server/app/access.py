@@ -43,6 +43,16 @@ class Scope:
 
 
 def library_scope(user_id: UUID) -> Scope:
+    """Resolve one account's reach, folder audiences included.
+
+    A folder's audience is a ceiling applied before any personal grant. Without
+    that, "admins only" would be unenforceable against an account holding
+    whole-library access — it would pick the folder up the moment it appeared,
+    which is exactly the case the setting exists to prevent.
+
+    Whole-library access therefore means everything open to the household, not
+    everything on the disk. A folder kept back is kept back from everyone.
+    """
     with get_engine().connect() as conn:
         row = conn.execute(
             text("SELECT is_admin, all_library FROM users WHERE id = :u"), {"u": str(user_id)}
@@ -51,21 +61,42 @@ def library_scope(user_id: UUID) -> Scope:
             return Scope(everything=False)
         is_admin, all_library = row
 
-        # Administrators are unrestricted by definition: they can edit these
-        # rules, so enforcing them would be theatre.
-        if is_admin or all_library:
+        # Administrators are unrestricted by definition: they can edit both the
+        # rules and the audiences, so enforcing either would be theatre.
+        if is_admin:
             return Scope(everything=True)
 
+        sources = conn.execute(text("SELECT mount_prefix, audience FROM sources")).all()
         rules = conn.execute(
             text("SELECT path_prefix FROM user_library_rules WHERE user_id = :u"),
             {"u": str(user_id)},
         ).all()
 
-    return Scope(everything=False, allowed=tuple(r[0].rstrip("/") for r in rules))
+    # A NULL audience is a folder nobody has ruled on yet, which is treated as
+    # admins-only rather than as everyone.
+    open_to_all = [p.rstrip("/") for p, a in sources if a == "everyone"]
+    grantable = [p.rstrip("/") for p, a in sources if a in ("everyone", "selected")]
+
+    def under_a_grantable_source(prefix: str) -> bool:
+        return any(prefix == p or prefix.startswith(p + "/") for p in grantable)
+
+    # Dropping rather than ignoring: a grant under a folder later restricted to
+    # admins stops applying, and a grant left behind by a removed source stops
+    # meaning anything at all.
+    allowed = [r[0].rstrip("/") for r in rules if under_a_grantable_source(r[0].rstrip("/"))]
+    if all_library:
+        allowed.extend(open_to_all)
+
+    return Scope(everything=False, allowed=tuple(dict.fromkeys(allowed)))
 
 
 def zone_scope(user_id: UUID) -> tuple[bool, set[UUID]]:
-    """(may use any room, otherwise the specific rooms allowed)."""
+    """(may use any room, otherwise the specific rooms allowed).
+
+    Rooms carry an audience for the same reason folders do: a room paired this
+    afternoon should not be playable by the whole household before anyone has
+    said it should be.
+    """
     with get_engine().connect() as conn:
         row = conn.execute(
             text("SELECT is_admin, all_zones FROM users WHERE id = :u"), {"u": str(user_id)}
@@ -73,14 +104,22 @@ def zone_scope(user_id: UUID) -> tuple[bool, set[UUID]]:
         if row is None:
             return False, set()
         is_admin, all_zones = row
-        if is_admin or all_zones:
+        if is_admin:
             return True, set()
 
+        zones = conn.execute(text("SELECT id, audience FROM zones")).all()
         rules = conn.execute(
             text("SELECT zone_id FROM user_zone_rules WHERE user_id = :u"),
             {"u": str(user_id)},
         ).all()
-    return False, {r[0] for r in rules}
+
+    open_to_all = {z for z, a in zones if a == "everyone"}
+    grantable = {z for z, a in zones if a in ("everyone", "selected")}
+
+    allowed = {r[0] for r in rules} & grantable
+    if all_zones:
+        allowed |= open_to_all
+    return False, allowed
 
 
 def can_read(path: str, scope: Scope) -> bool:

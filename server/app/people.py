@@ -21,6 +21,7 @@ import json
 import logging
 import secrets
 from datetime import UTC, datetime, timedelta
+from typing import Literal, NamedTuple
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -56,6 +57,48 @@ class RulesUpdate(BaseModel):
 
 class AdminUpdate(BaseModel):
     is_admin: bool
+
+
+class _Place(NamedTuple):
+    """The two things an audience can be set on.
+
+    Folders and rooms are the same reconciliation over different tables. The
+    statements are carried as literals rather than assembled from table names:
+    the logic stays in one place, and no SQL is ever built by interpolation.
+    """
+
+    set_audience: str
+    clear_grants: str
+    everyone: str
+    grant: str
+
+
+FOLDER = _Place(
+    set_audience="UPDATE sources SET audience = CAST(:a AS audience) WHERE id = :id",
+    clear_grants="DELETE FROM user_library_rules WHERE path_prefix = :v",
+    everyone="SELECT id FROM users WHERE NOT is_admin AND NOT all_library",
+    grant=(
+        "INSERT INTO user_library_rules (user_id, path_prefix) "
+        "VALUES (:u, :v) ON CONFLICT DO NOTHING"
+    ),
+)
+
+ROOM = _Place(
+    set_audience="UPDATE zones SET audience = CAST(:a AS audience) WHERE id = :id",
+    clear_grants="DELETE FROM user_zone_rules WHERE zone_id = CAST(:v AS uuid)",
+    everyone="SELECT id FROM users WHERE NOT is_admin AND NOT all_zones",
+    grant=(
+        "INSERT INTO user_zone_rules (user_id, zone_id) "
+        "VALUES (:u, CAST(:v AS uuid)) ON CONFLICT DO NOTHING"
+    ),
+)
+
+
+class AudienceUpdate(BaseModel):
+    audience: Literal["everyone", "admins", "selected"]
+    # Only consulted for "selected"; ignored otherwise rather than rejected, so
+    # a picker left populated after switching choice cannot grant by accident.
+    users: list[UUID] = Field(default_factory=list, max_length=200)
 
 
 def _require_admin(user: CurrentUser) -> None:
@@ -216,6 +259,139 @@ async def revoke_invite(code: str, user: CurrentUser = Depends(require_user)) ->
     with get_engine().begin() as conn:
         conn.execute(text("DELETE FROM invites WHERE code = :c AND used_at IS NULL"),
                      {"c": code})
+    return {"ok": True}
+
+
+@router.get("/audiences")
+async def list_audiences(user: CurrentUser = Depends(require_user)) -> dict:
+    """Every folder and room, and who can currently reach it.
+
+    Folders arrive by discovery rather than by anyone filling in a form — a Drive
+    folder shared with the service account simply appears — so `audience: null`
+    is a real and common state meaning nobody has ruled on it yet. Those are
+    listed first because they are the ones holding a decision.
+    """
+    _require_admin(user)
+
+    with get_engine().connect() as conn:
+        folders = conn.execute(
+            text("SELECT id, name, mount_prefix, audience FROM sources ORDER BY mount_prefix")
+        ).all()
+        rooms = conn.execute(text("SELECT id, name, audience FROM zones ORDER BY name")).all()
+        lib_rules = conn.execute(
+            text(
+                """
+                SELECT r.path_prefix, u.id, u.display_name
+                FROM user_library_rules r JOIN users u ON u.id = r.user_id
+                WHERE NOT u.is_admin
+                """
+            )
+        ).all()
+        zone_rules = conn.execute(
+            text(
+                """
+                SELECT r.zone_id, u.id, u.display_name
+                FROM user_zone_rules r JOIN users u ON u.id = r.user_id
+                WHERE NOT u.is_admin
+                """
+            )
+        ).all()
+
+    def named(rows, key) -> list[dict]:
+        return [{"id": str(uid), "display_name": name} for k, uid, name in rows if k == key]
+
+    return {
+        "folders": [
+            {
+                "id": str(f[0]),
+                "name": f[1],
+                "path": f[2],
+                "audience": f[3],
+                "selected": named(lib_rules, f[2]),
+            }
+            for f in sorted(folders, key=lambda f: (f[3] is not None, f[2]))
+        ],
+        "rooms": [
+            {
+                "id": str(r[0]),
+                "name": r[1],
+                "audience": r[2],
+                "selected": named(zone_rules, r[0]),
+            }
+            for r in sorted(rooms, key=lambda r: (r[2] is not None, r[1]))
+        ],
+    }
+
+
+def apply_audience(
+    conn, *, place: _Place, key: UUID, grant_value: str, body: AudienceUpdate
+) -> None:
+    """Set an audience and reconcile the personal grants that go with it.
+
+    Existing grants are deleted rather than left inert behind the ceiling: a
+    folder switched to admins-only and later reopened to a chosen few must not
+    silently revive whoever happened to hold it last year.
+    """
+    conn.execute(text(place.set_audience), {"a": body.audience, "id": str(key)})
+    conn.execute(text(place.clear_grants), {"v": grant_value})
+
+    if body.audience == "admins":
+        return
+
+    if body.audience == "everyone":
+        # "Everyone" must be true of the people who already have accounts, not
+        # only of those holding blanket access — otherwise a scoped child would
+        # quietly be left out of something marked as shared with all. Accounts
+        # that already hold everything need no row; the audience covers them.
+        recipients = [r[0] for r in conn.execute(text(place.everyone)).all()]
+    else:
+        recipients = body.users
+
+    for uid in recipients:
+        conn.execute(text(place.grant), {"u": str(uid), "v": grant_value})
+
+
+@router.put("/audiences/folders/{source_id}")
+async def set_folder_audience(
+    source_id: UUID, body: AudienceUpdate, user: CurrentUser = Depends(require_user)
+) -> dict:
+    _require_admin(user)
+
+    with get_engine().begin() as conn:
+        prefix = conn.execute(
+            text("SELECT mount_prefix FROM sources WHERE id = :id"), {"id": str(source_id)}
+        ).scalar()
+        if prefix is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "no such folder")
+
+        apply_audience(conn, place=FOLDER, key=source_id, grant_value=prefix, body=body)
+        audit(
+            conn,
+            "audience.folder.set",
+            user.id,
+            {"folder": prefix, "audience": body.audience},
+            None,
+        )
+
+    return {"ok": True}
+
+
+@router.put("/audiences/rooms/{zone_id}")
+async def set_room_audience(
+    zone_id: UUID, body: AudienceUpdate, user: CurrentUser = Depends(require_user)
+) -> dict:
+    _require_admin(user)
+
+    with get_engine().begin() as conn:
+        name = conn.execute(
+            text("SELECT name FROM zones WHERE id = :id"), {"id": str(zone_id)}
+        ).scalar()
+        if name is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "no such room")
+
+        apply_audience(conn, place=ROOM, key=zone_id, grant_value=str(zone_id), body=body)
+        audit(conn, "audience.room.set", user.id, {"room": name, "audience": body.audience}, None)
+
     return {"ok": True}
 
 

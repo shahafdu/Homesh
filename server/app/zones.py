@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 import logging
 from dataclasses import dataclass
+from typing import Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -24,6 +25,7 @@ from . import denon, occupancy
 from .access import can_use_zone, may_access_item, zone_scope
 from .config import get_settings
 from .db import get_engine
+from .people import ROOM, AudienceUpdate, apply_audience
 from .security import CurrentUser, require_user
 from .signing import mint
 
@@ -58,6 +60,11 @@ class ZoneCreate(BaseModel):
     preroll: list[dict] = Field(default_factory=list)
     postroll: list[dict] = Field(default_factory=list)
     volume: int | None = Field(default=None, ge=0, le=100)
+    # Who the room is for, decided as it is created. Omitted means undecided,
+    # which reads as admins-only until somebody says otherwise — a room paired
+    # this afternoon should not be playable by the household before then.
+    audience: Literal["everyone", "admins", "selected"] | None = None
+    grant_to: list[UUID] = Field(default_factory=list, max_length=200)
 
 
 class PlayRequest(BaseModel):
@@ -232,8 +239,9 @@ async def create_zone(body: ZoneCreate, user: CurrentUser = Depends(require_user
             zone_id = conn.execute(
                 text(
                     """
-                    INSERT INTO zones (name, renderer_id, preroll, postroll)
-                    VALUES (:name, :rid, CAST(:pre AS jsonb), CAST(:post AS jsonb))
+                    INSERT INTO zones (name, renderer_id, preroll, postroll, audience)
+                    VALUES (:name, :rid, CAST(:pre AS jsonb), CAST(:post AS jsonb),
+                            CAST(:aud AS audience))
                     RETURNING id
                     """
                 ),
@@ -242,10 +250,22 @@ async def create_zone(body: ZoneCreate, user: CurrentUser = Depends(require_user
                     "rid": str(renderer_id),
                     "pre": json.dumps(body.preroll),
                     "post": json.dumps(body.postroll),
+                    "aud": body.audience,
                 },
             ).scalar_one()
         except Exception as exc:  # noqa: BLE001
             raise HTTPException(status.HTTP_409_CONFLICT, "a zone with that name exists") from exc
+
+        # Reuse the same reconciliation the audience endpoint performs, so a room
+        # created with an audience and one changed afterwards end up identical.
+        if body.audience is not None:
+            apply_audience(
+                conn,
+                place=ROOM,
+                key=zone_id,
+                grant_value=str(zone_id),
+                body=AudienceUpdate(audience=body.audience, users=body.grant_to),
+            )
 
     return {"id": str(zone_id), "name": body.name}
 

@@ -18,6 +18,7 @@ import logging
 import secrets
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
+from typing import Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect, status
@@ -25,6 +26,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import text
 
 from .db import get_engine
+from .people import ROOM, AudienceUpdate, apply_audience
 from .security import CurrentUser, require_user
 
 log = logging.getLogger("homesh.renderers")
@@ -170,6 +172,11 @@ class PairBegin(BaseModel):
 class PairClaim(BaseModel):
     code: str = Field(min_length=CODE_LENGTH, max_length=CODE_LENGTH + 2)
     name: str = Field(min_length=1, max_length=60)
+    # Who the room is for. Omitted leaves it undecided, which reads as
+    # admins-only: a screen paired this afternoon should not become playable by
+    # the whole household before anyone has said it should be.
+    audience: Literal["everyone", "admins", "selected"] | None = None
+    grant_to: list[UUID] = Field(default_factory=list, max_length=200)
 
 
 @router.post("/pair/begin")
@@ -320,16 +327,28 @@ async def pair_claim(body: PairClaim, user: CurrentUser = Depends(require_user))
         )
 
         # A paired screen is only useful as a zone, so create one with its name.
-        conn.execute(
+        zone_id = conn.execute(
             text(
                 """
-                INSERT INTO zones (name, renderer_id)
-                VALUES (:name, :rid)
+                INSERT INTO zones (name, renderer_id, audience)
+                VALUES (:name, :rid, CAST(:aud AS audience))
                 ON CONFLICT (name) DO UPDATE SET renderer_id = EXCLUDED.renderer_id
+                RETURNING id
                 """
             ),
-            {"name": body.name, "rid": str(renderer_id)},
-        )
+            {"name": body.name, "rid": str(renderer_id), "aud": body.audience},
+        ).scalar_one()
+
+        # Same reconciliation as the audience screen performs, so a room answered
+        # at pairing time and one answered later end up in identical states.
+        if body.audience is not None:
+            apply_audience(
+                conn,
+                place=ROOM,
+                key=zone_id,
+                grant_value=str(zone_id),
+                body=AudienceUpdate(audience=body.audience, users=body.grant_to),
+            )
 
     return {"renderer_id": str(renderer_id), "name": body.name}
 

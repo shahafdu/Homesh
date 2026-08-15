@@ -76,3 +76,43 @@ export function describeAccess(person: Person): string {
 
   return `${folders} · ${rooms}`;
 }
+
+/** Who a folder or room is for.
+ *
+ * `null` means nobody has decided yet. Folders arrive by discovery — a Drive
+ * folder shared with the service account simply appears — so this is a real
+ * state, and it reads as admins-only until answered.
+ */
+export type Audience = "everyone" | "admins" | "selected" | null;
+
+export interface Place {
+  id: string;
+  name: string;
+  path?: string;
+  audience: Audience;
+  selected: { id: string; display_name: string }[];
+}
+
+export const listAudiences = () =>
+  api.get<{ folders: Place[]; rooms: Place[] }>("/api/people/audiences");
+
+export const setFolderAudience = (id: string, audience: Exclude<Audience, null>, users: string[]) =>
+  api.put(`/api/people/audiences/folders/${id}`, { audience, users });
+
+export const setRoomAudience = (id: string, audience: Exclude<Audience, null>, users: string[]) =>
+  api.put(`/api/people/audiences/rooms/${id}`, { audience, users });
+
+export function describeAudience(place: Place): string {
+  switch (place.audience) {
+    case "everyone":
+      return "Everyone with an account";
+    case "admins":
+      return "Administrators only";
+    case "selected":
+      return place.selected.length === 0
+        ? "Nobody yet — administrators only"
+        : place.selected.map((p) => p.display_name).join(", ");
+    default:
+      return "Not decided yet — administrators only";
+  }
+}
