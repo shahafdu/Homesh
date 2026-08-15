@@ -1,6 +1,15 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { copyText } from "./copy";
 import type { FileEntry } from "./library";
-import { canShareFiles, downloadFile, shareFile } from "./share";
+import {
+  canShareFiles,
+  createDriveLink,
+  downloadFile,
+  driveLink,
+  revokeDriveLink,
+  shareFile,
+  type DriveLink,
+} from "./share";
 
 /** What you can do with one file, besides open it.
  *
@@ -15,8 +24,18 @@ export default function FileActions(props: {
   const { file } = props;
   const [busy, setBusy] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
+  const [drive, setDrive] = useState<DriveLink | null>(null);
+  const [copied, setCopied] = useState(false);
 
   const sharable = canShareFiles();
+
+  // Asked for every file rather than guessed from the path: whether a copy sits
+  // in Drive is the server's knowledge, not something to infer from a prefix.
+  useEffect(() => {
+    driveLink(file.item_id)
+      .then(setDrive)
+      .catch(() => setDrive({ supported: false, url: null, reason: null }));
+  }, [file.item_id]);
 
   const share = async () => {
     setBusy("Preparing…");
@@ -83,6 +102,78 @@ export default function FileActions(props: {
             </span>
           </button>
         </div>
+
+        {drive?.supported && (
+          <div className="drive-share">
+            <div className="muted small">
+              <b>This file is in Google Drive.</b> For anything too big to attach —
+              a long video, a whole album — send a Drive link instead. It points at
+              Drive, not at your server.
+            </div>
+
+            {drive.url ? (
+              <>
+                <div className="invite-link nm-clip">{drive.url}</div>
+                <div className="zone-controls">
+                  <button
+                    className="compact primary"
+                    onClick={async () => {
+                      setCopied(await copyText(drive.url as string));
+                      window.setTimeout(() => setCopied(false), 2500);
+                    }}
+                  >
+                    {copied ? "Copied" : "Copy link"}
+                  </button>
+                  <button
+                    className="compact"
+                    disabled={busy !== null}
+                    onClick={async () => {
+                      setBusy("Stopping…");
+                      setNote(null);
+                      try {
+                        await revokeDriveLink(file.item_id);
+                        setDrive({ ...drive, url: null });
+                      } catch (e) {
+                        setNote(e instanceof Error ? e.message : String(e));
+                      } finally {
+                        setBusy(null);
+                      }
+                    }}
+                  >
+                    Stop sharing
+                  </button>
+                </div>
+                <p className="muted small">
+                  Anyone with this link can view this one file until you stop
+                  sharing it. Nothing else in your Drive is exposed.
+                </p>
+              </>
+            ) : (
+              <button
+                className="compact"
+                disabled={busy !== null}
+                onClick={async () => {
+                  setBusy("Asking Drive…");
+                  setNote(null);
+                  try {
+                    const { url } = await createDriveLink(file.item_id);
+                    setDrive({ ...drive, url });
+                  } catch (e) {
+                    setNote(e instanceof Error ? e.message : String(e));
+                  } finally {
+                    setBusy(null);
+                  }
+                }}
+              >
+                Create a Drive link
+              </button>
+            )}
+          </div>
+        )}
+
+        {drive && !drive.supported && drive.reason && (
+          <p className="muted small">{drive.reason}</p>
+        )}
 
         {/* Worth saying plainly on the screen where it matters: what leaves this
             house is a copy of the file, not a way back to the server. */}

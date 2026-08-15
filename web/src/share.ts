@@ -10,6 +10,7 @@
  * from the gallery, and nothing about this server travels with it.
  */
 
+import { api } from "./api";
 import { downloadUrl } from "./library";
 
 /** Above this, sharing is refused in favour of a download.
@@ -110,3 +111,28 @@ export async function downloadFile(itemId: string, filename: string): Promise<vo
   link.click();
   document.body.removeChild(link);
 }
+
+
+/** Whether a file can be handed over as a Drive link, and whether it already is.
+ *
+ * The route for the files nothing else can carry: a two-hour video will not fit
+ * through a share sheet and will not go through email at all. If the file
+ * already lives in Drive, the copy is there and the link costs nothing.
+ *
+ * The link points at Drive, never at this server — what travels is one file,
+ * served by Google and revocable, not a way into the house.
+ */
+export interface DriveLink {
+  supported: boolean;
+  url: string | null;
+  reason: string | null;
+}
+
+export const driveLink = (itemId: string) =>
+  api.get<DriveLink>(`/api/items/${itemId}/drive-link`);
+
+export const createDriveLink = (itemId: string) =>
+  api.post<{ url: string }>(`/api/items/${itemId}/drive-link`);
+
+export const revokeDriveLink = (itemId: string) =>
+  api.delete(`/api/items/${itemId}/drive-link`);

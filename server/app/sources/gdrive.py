@@ -25,7 +25,17 @@ from .base import Entry
 log = logging.getLogger("homesh.sources.gdrive")
 
 API = "https://www.googleapis.com/drive/v3"
+
+# Everything that reads your library uses this and only this. The server indexes
+# and streams; it has no business writing to your media (§2).
 SCOPES = ["https://www.googleapis.com/auth/drive.readonly"]
+
+# Creating a shareable link is the one action that cannot be done read-only —
+# a link is a permission, and adding a permission is a write. It therefore gets
+# its own credential, minted separately and used by nothing else, so the scope
+# that can alter your Drive is reachable from exactly one code path instead of
+# being handed to every listing and every byte range.
+SHARE_SCOPES = ["https://www.googleapis.com/auth/drive"]
 
 FOLDER_MIME = "application/vnd.google-apps.folder"
 
@@ -51,8 +61,9 @@ class _Credentials:
     user's consent, which is precisely why nothing here expires on a weekly clock.
     """
 
-    def __init__(self, key_path: Path) -> None:
+    def __init__(self, key_path: Path, scopes: list[str] | None = None) -> None:
         self.key_path = key_path
+        self.scopes = scopes or SCOPES
         self._creds: Any = None
         self._lock = threading.Lock()
 
@@ -68,7 +79,7 @@ class _Credentials:
                         "Download the JSON key and place it there."
                     )
                 self._creds = service_account.Credentials.from_service_account_file(
-                    str(self.key_path), scopes=SCOPES
+                    str(self.key_path), scopes=self.scopes
                 )
             if not self._creds.valid:
                 self._creds.refresh(Request())
@@ -282,3 +293,82 @@ class GoogleDriveConnector:
     def is_exportable_only(mime: str | None) -> bool:
         """Docs, Sheets and Slides have no bytes — they must be exported."""
         return bool(mime and mime.startswith(NATIVE_PREFIX) and mime != FOLDER_MIME)
+
+
+# ── Sharing a file by link ──────────────────────────────────────────────────
+
+
+class DrivePermissionError(DriveError):
+    """The robot account is not allowed to share this file.
+
+    Distinct from a transport failure because the fix is a human one: the folder
+    was shared with the robot as a viewer, and a viewer cannot grant access it
+    does not have.
+    """
+
+
+def _share_client(key_path: Path) -> httpx.Client:
+    return _client(_Credentials(key_path, SHARE_SCOPES))
+
+
+def link_for(key_path: Path, file_id: str) -> str | None:
+    """The existing anyone-with-the-link URL, or None if it is not shared."""
+    with _share_client(key_path) as http:
+        r = http.get(
+            f"{API}/files/{file_id}",
+            params={"fields": "webViewLink,permissions(id,type,role)",
+                    "supportsAllDrives": "true"},
+        )
+        if r.status_code == 404:
+            raise DriveError("that file is no longer in Drive")
+        if r.status_code == 403:
+            raise DrivePermissionError(r.text)
+        r.raise_for_status()
+        body = r.json()
+
+    shared = any(p.get("type") == "anyone" for p in body.get("permissions") or [])
+    return body.get("webViewLink") if shared else None
+
+
+def create_link(key_path: Path, file_id: str) -> str:
+    """Make the file readable by anyone holding the link, and return it.
+
+    Reader, never writer: the person receiving this is being sent a copy to
+    watch, not an invitation to change the original.
+    """
+    with _share_client(key_path) as http:
+        r = http.post(
+            f"{API}/files/{file_id}/permissions",
+            params={"supportsAllDrives": "true", "sendNotificationEmail": "false"},
+            json={"role": "reader", "type": "anyone"},
+        )
+        if r.status_code in (403, 401):
+            raise DrivePermissionError(r.text)
+        if r.status_code == 404:
+            raise DriveError("that file is no longer in Drive")
+        r.raise_for_status()
+
+        info = http.get(
+            f"{API}/files/{file_id}",
+            params={"fields": "webViewLink", "supportsAllDrives": "true"},
+        )
+        info.raise_for_status()
+        link = info.json().get("webViewLink")
+
+    if not link:
+        raise DriveError("Drive granted the permission but returned no link")
+    return link
+
+
+def revoke_link(key_path: Path, file_id: str) -> None:
+    """Withdraw the public link. Idempotent — already-gone is success."""
+    with _share_client(key_path) as http:
+        r = http.delete(
+            f"{API}/files/{file_id}/permissions/anyoneWithLink",
+            params={"supportsAllDrives": "true"},
+        )
+        if r.status_code in (404, 204, 200):
+            return
+        if r.status_code == 403:
+            raise DrivePermissionError(r.text)
+        r.raise_for_status()

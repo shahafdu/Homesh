@@ -771,3 +771,29 @@ button.compact:disabled { opacity: .5; cursor: not-allowed; }
 
 .install { margin: 4px 0 2px; }
 .install summary { cursor: pointer; padding: 4px 0; }
+
+/* ── Signing in on a second device ──────────────────────────────────────────── */
+
+.code.big {
+  font-family: var(--mono); font-size: 34px; letter-spacing: 6px;
+  text-align: center; padding: 14px 10px; margin: 6px 0 2px;
+  color: var(--accent);
+  border: 1px dashed var(--line); border-radius: 10px; background: var(--bg);
+}
+.code-input {
+  font-family: var(--mono); font-size: 22px; letter-spacing: 4px; text-align: center;
+}
+/* A secondary route, not a second primary action: it should be findable without
+   competing with the passkey button above it. */
+.linkish {
+  background: none; border: 0; color: var(--muted);
+  text-decoration: underline; cursor: pointer;
+  font-size: 13px; margin-top: 12px; padding: 6px;
+}
+.linkish:hover { color: var(--ink); }
+
+.drive-share {
+  display: flex; flex-direction: column; gap: 8px;
+  padding: 12px; margin: 4px 0 10px;
+  border: 1px solid var(--line); border-radius: 10px; background: var(--bg);
+}

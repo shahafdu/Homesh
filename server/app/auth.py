@@ -8,6 +8,7 @@ an existing admin.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import secrets
@@ -474,3 +475,124 @@ async def logout(request: Request, response: Response) -> dict:
             revoke_session(conn, token)
     clear_session_cookie(response)
     return {"ok": True}
+
+
+# ── Linking a device that cannot use a passkey ──────────────────────────────
+#
+# WebAuthn is only available in a secure context. A phone reaching this server
+# over plain http at a LAN address has no navigator.credentials at all, so it can
+# neither present a passkey nor enrol one — the account is unreachable from the
+# device it is most wanted on.
+#
+# A link code closes that gap without weakening the model. It can only be issued
+# from a session that is already signed in, so it proves the same thing a passkey
+# proves: somebody already holding this account authorised this device. It is
+# single use, expires in minutes, and is stored only as a hash.
+#
+# It is not a password. There is nothing to reuse, nothing to phish at leisure,
+# and nothing in the database worth stealing.
+
+LINK_TTL = timedelta(minutes=10)
+LINK_CODE_LENGTH = 8
+
+# Same alphabet as device pairing: no O/0, I/1 or S/5, because this gets read off
+# one screen and typed into another.
+LINK_ALPHABET = "ABCDEFGHJKLMNPQRTUVWXYZ2346789"
+
+# Coarse per-address throttle. The codes carry ~39 bits over a ten-minute window,
+# so guessing is already hopeless; this makes it loud as well as futile.
+_link_attempts: dict[str, list[datetime]] = {}
+MAX_LINK_ATTEMPTS = 10
+LINK_ATTEMPT_WINDOW = timedelta(minutes=5)
+
+
+def _hash_code(code: str) -> str:
+    return hashlib.sha256(code.encode()).hexdigest()
+
+
+def _too_many_attempts(ip: str | None) -> bool:
+    if ip is None:
+        return False
+    now = datetime.now(UTC)
+    recent = [t for t in _link_attempts.get(ip, []) if now - t < LINK_ATTEMPT_WINDOW]
+    recent.append(now)
+    _link_attempts[ip] = recent
+    return len(recent) > MAX_LINK_ATTEMPTS
+
+
+class LinkClaim(BaseModel):
+    code: str = Field(min_length=LINK_CODE_LENGTH, max_length=LINK_CODE_LENGTH + 4)
+    device_label: str | None = Field(default=None, max_length=80)
+
+
+@router.post("/devices/link")
+async def create_device_link(user: CurrentUser = Depends(require_user)) -> dict:
+    """Issue a code that signs this same account in on another device."""
+    code = "".join(secrets.choice(LINK_ALPHABET) for _ in range(LINK_CODE_LENGTH))
+    expires = datetime.now(UTC) + LINK_TTL
+
+    with get_engine().begin() as conn:
+        conn.execute(text("DELETE FROM device_links WHERE expires_at < now()"))
+        conn.execute(
+            text(
+                """
+                INSERT INTO device_links (code_hash, user_id, expires_at)
+                VALUES (:h, :u, :e)
+                """
+            ),
+            {"h": _hash_code(code), "u": str(user.id), "e": expires},
+        )
+        audit(conn, "auth.device_link.issued", user.id, {}, None)
+
+    settings = get_settings()
+    return {
+        "code": code,
+        "expires_in": int(LINK_TTL.total_seconds()),
+        # The address to type on the other device. Configuration, read from the
+        # environment — it is never written down in this repository.
+        "address": settings.lan_base_url or settings.public_origin,
+    }
+
+
+@router.post("/devices/claim")
+async def claim_device_link(
+    body: LinkClaim, request: Request, response: Response
+) -> dict:
+    """Exchange a code for a session on this device."""
+    ip = request.client.host if request.client else None
+    if _too_many_attempts(ip):
+        raise HTTPException(
+            status.HTTP_429_TOO_MANY_REQUESTS, "too many attempts — wait a few minutes"
+        )
+
+    code = body.code.strip().upper().replace(" ", "")
+
+    with get_engine().begin() as conn:
+        row = conn.execute(
+            text(
+                """
+                SELECT user_id FROM device_links
+                WHERE code_hash = :h AND used_at IS NULL AND expires_at > now()
+                """
+            ),
+            {"h": _hash_code(code)},
+        ).first()
+        if row is None:
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "that code is not valid")
+
+        user_id = row[0]
+        # Marked used inside the same transaction as the session it creates, so
+        # two devices racing on one code cannot both end up signed in.
+        conn.execute(
+            text("UPDATE device_links SET used_at = now() WHERE code_hash = :h"),
+            {"h": _hash_code(code)},
+        )
+        token = create_session(conn, user_id, body.device_label)
+        audit(conn, "auth.device_link.claimed", user_id, {"label": body.device_label}, ip)
+
+        who = conn.execute(
+            text("SELECT handle, display_name FROM users WHERE id = :u"), {"u": str(user_id)}
+        ).first()
+
+    set_session_cookie(response, token)
+    return {"ok": True, "handle": who[0], "display_name": who[1]}

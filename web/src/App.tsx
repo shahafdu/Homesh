@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, ApiError, type AuthState, type Health } from "./api";
-import { login, logout, passkeysSupported, register } from "./auth";
+import { claimDeviceLink, login, logout, passkeysSupported, register } from "./auth";
 import Browser from "./Browser";
 import Player from "./Player";
 import Settings from "./Settings";
 import FileActions from "./FileActions";
+import LinkDevice from "./LinkDevice";
 import People from "./People";
 import PlayTo from "./PlayTo";
 import Viewer from "./Viewer";
@@ -23,6 +24,7 @@ export default function App() {
   const closeViewer = useCallback(() => setViewing(null), []);
   const [showZones, setShowZones] = useState(false);
   const [showPeople, setShowPeople] = useState(false);
+  const [linking, setLinking] = useState(false);
   const [actionsFor, setActionsFor] = useState<{ file: FileEntry; siblings: FileEntry[] } | null>(
     null,
   );
@@ -166,9 +168,15 @@ export default function App() {
           <Settings
             prefs={prefs}
             onChange={(patch) => void changePrefs(patch)}
+            onLinkDevice={() => {
+              setShowSettings(false);
+              setLinking(true);
+            }}
             onClose={() => setShowSettings(false)}
           />
         )}
+
+        {linking && <LinkDevice onClose={() => setLinking(false)} />}
 
         <Player
           state={player.state}
@@ -271,20 +279,86 @@ function AcceptInvite(props: {
 }
 
 function SignIn(props: { busy: boolean; error: string | null; onSignIn: () => void }) {
+  const [useCode, setUseCode] = useState(false);
+  const [code, setCode] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Passkeys need a secure context. On a phone reaching this server over plain
+  // http there is no navigator.credentials at all, so offering only the passkey
+  // button would be a dead end with no explanation on it.
+  const canPasskey = passkeysSupported();
+
+  if (useCode) {
+    return (
+      <div className="shell">
+        <div className="card">
+          <h1>Enter your code</h1>
+          <p className="sub">
+            On a device already signed in, open <b>Settings → Use on another
+            device</b>.
+          </p>
+
+          <input
+            className="code-input"
+            value={code}
+            placeholder="ABCD2345"
+            autoCapitalize="characters"
+            autoCorrect="off"
+            spellCheck={false}
+            onChange={(e) => setCode(e.target.value.toUpperCase())}
+          />
+
+          <button
+            disabled={busy || code.trim().length < 8}
+            onClick={async () => {
+              setBusy(true);
+              setError(null);
+              try {
+                await claimDeviceLink(code.trim());
+                window.location.reload();
+              } catch (e) {
+                setError(e instanceof ApiError ? e.message : String(e));
+              } finally {
+                setBusy(false);
+              }
+            }}
+          >
+            {busy ? "Checking…" : "Sign in"}
+          </button>
+
+          {error && <div className="error">{error}</div>}
+
+          <button className="linkish" onClick={() => setUseCode(false)}>
+            Use a passkey instead
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="shell">
       <div className="card">
         <h1>Homesh</h1>
         <p className="sub">Sign in with your passkey.</p>
 
-        <button disabled={props.busy || !passkeysSupported()} onClick={props.onSignIn}>
+        <button disabled={props.busy || !canPasskey} onClick={props.onSignIn}>
           {props.busy ? "Waiting for passkey…" : "Sign in"}
         </button>
 
-        {!passkeysSupported() && (
-          <div className="error">This browser does not support passkeys.</div>
+        {!canPasskey && (
+          <div className="hint">
+            This connection cannot use passkeys — they need https, or the server
+            opened on the machine it runs on. Use a code from a device that is
+            already signed in.
+          </div>
         )}
         {props.error && <div className="error">{props.error}</div>}
+
+        <button className="linkish" onClick={() => setUseCode(true)}>
+          Use a code
+        </button>
       </div>
     </div>
   );

@@ -9,9 +9,10 @@ const APPEARANCES: { id: Appearance; label: string }[] = [
 export default function Settings(props: {
   prefs: Prefs;
   onChange: (patch: Partial<Prefs>) => void;
+  onLinkDevice: () => void;
   onClose: () => void;
 }) {
-  const { prefs, onChange, onClose } = props;
+  const { prefs, onChange, onLinkDevice, onClose } = props;
 
   return (
     <div
@@ -63,6 +64,19 @@ export default function Settings(props: {
               </button>
             ))}
           </div>
+        </div>
+
+        <div className="group">
+          <label>This account</label>
+          <button className="compact" onClick={onLinkDevice}>
+            Use on another device
+          </button>
+          {/* Named for the problem rather than the mechanism: what somebody
+              wants is Homesh on their phone, and the reason a passkey will not
+              do it there is not their concern until they get there. */}
+          <p className="muted small">
+            Sign in on a phone or tablet that cannot create a passkey.
+          </p>
         </div>
 
         <button className="compact" style={{ marginTop: 18 }} onClick={onClose}>

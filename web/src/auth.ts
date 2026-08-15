@@ -66,3 +66,24 @@ export async function login(): Promise<void> {
 export async function logout(): Promise<void> {
   await api.post("/api/auth/logout");
 }
+
+export interface DeviceLink {
+  code: string;
+  expires_in: number;
+  /** What to type on the other device. Configuration, sent by the server —
+   *  never written down in this repository. */
+  address: string;
+}
+
+/** Issue a code that signs this same account in on another device.
+ *
+ * The way onto a phone, where passkeys are unavailable: WebAuthn needs a secure
+ * context, and plain http at a LAN address is not one.
+ */
+export const linkDevice = () => api.post<DeviceLink>("/api/auth/devices/link");
+
+export const claimDeviceLink = (code: string) =>
+  api.post<{ handle: string; display_name: string }>("/api/auth/devices/claim", {
+    code,
+    device_label: deviceLabel(),
+  });

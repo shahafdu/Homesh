@@ -24,6 +24,7 @@ from .library import router as library_router
 from .people import router as people_router
 from .prefs import router as prefs_router
 from .renderers import router as renderers_router
+from .sharing import router as sharing_router
 from .stream import router as stream_router
 from .zones import router as zones_router
 
@@ -118,6 +119,7 @@ app.include_router(auth_router)
 app.include_router(library_router)
 app.include_router(people_router)
 app.include_router(prefs_router)
+app.include_router(sharing_router)
 app.include_router(renderers_router)
 app.include_router(stream_router)
 app.include_router(zones_router)

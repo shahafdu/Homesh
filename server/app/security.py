@@ -7,6 +7,7 @@ database dump does not yield usable sessions (ARCHITECTURE.md §6).
 from __future__ import annotations
 
 import hashlib
+import ipaddress
 import secrets
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -116,6 +117,23 @@ async def require_user(
     return user
 
 
+def _as_inet(ip: str | None) -> str | None:
+    """Only a real address reaches an inet column.
+
+    The client host is not always one: a test client reports "testclient", a unix
+    socket reports nothing useful, and a misconfigured proxy can pass a hostname.
+    Postgres rejects those outright, which would take down the request the audit
+    entry exists to record — the logging must never be what fails.
+    """
+    if not ip:
+        return None
+    try:
+        ipaddress.ip_address(ip)
+    except ValueError:
+        return None
+    return ip
+
+
 def audit(conn: Connection, event: str, user_id: UUID | None, detail: dict, ip: str | None) -> None:
     """Append to the audit log. Every auth event goes through here (§6)."""
     import json
@@ -131,6 +149,6 @@ def audit(conn: Connection, event: str, user_id: UUID | None, detail: dict, ip: 
             "uid": str(user_id) if user_id else None,
             "ev": event,
             "d": json.dumps(detail),
-            "ip": ip,
+            "ip": _as_inet(ip),
         },
     )

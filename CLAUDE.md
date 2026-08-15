@@ -64,7 +64,7 @@ secrets. Read both when resuming; never copy their contents into a tracked file.
 | 8 · Optional transcode | ⬜ | May never be needed — see §3.2 of ARCHITECTURE |
 | 9 · Public release | ⬜ | Docs, screenshots, name decision |
 
-**Tests: 251 passing. Migrations: 010. Lint: clean. CI green.**
+**Tests: 266 passing. Migrations: 011. Lint: clean. CI green.**
 
 ### Outstanding tasks
 
@@ -83,11 +83,15 @@ secrets. Read both when resuming; never copy their contents into a tracked file.
 
 ### Waiting on Shahaf
 
-1. **Google Cloud OAuth client** — steps are in the session history; scope is
+1. **Share the three Drive folders as Editor**, not Viewer — a viewer cannot
+   grant access it does not have, so "Create a Drive link" fails with exactly
+   that message until this changes. Leave "Editors can change permissions and
+   share" enabled.
+2. **Google Cloud OAuth client** — steps are in the session history; scope is
    `drive.file`, redirect `http://localhost:8080/api/sources/gdrive/callback`.
    Credentials go in `.env` as `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`.
-2. **A real media folder** to point at instead of the synthetic fixture.
-3. **Repo visibility** decision (public today).
+3. **A real media folder** to point at instead of the synthetic fixture.
+4. **Repo visibility** decision (public today).
 
 ---
 
@@ -158,7 +162,8 @@ server/app/       config, db, main, auth, security, prefs, library, scanner,
                   signing, stream, sources/{base,local}
 server/migrations 001_init, 002_natural_sort, 003_search_indexes, 004_user_prefs,
                   005_renderer_pairing, 006_source_remote_id, 007_access_rules,
-                  008_invites, 009_explicit_access, 010_audience
+                  008_invites, 009_explicit_access, 010_audience,
+                  011_device_links
 server/tests/     conftest + scanner, library, security, prefs, streaming
 web/src/          App, Browser, Settings, api, auth, library, prefs, styles.css
 android/          TV shell — Manifest, java/com/homesh/tv/{MainActivity,SetupActivity,
