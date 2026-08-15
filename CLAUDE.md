@@ -64,7 +64,7 @@ secrets. Read both when resuming; never copy their contents into a tracked file.
 | 8 · Optional transcode | ⬜ | May never be needed — see §3.2 of ARCHITECTURE |
 | 9 · Public release | ⬜ | Docs, screenshots, name decision |
 
-**Tests: 238 passing. Migrations: 009. Lint: clean. CI green.**
+**Tests: 251 passing. Migrations: 010. Lint: clean. CI green.**
 
 ### Outstanding tasks
 
@@ -155,7 +155,7 @@ server/app/       config, db, main, auth, security, prefs, library, scanner,
                   signing, stream, sources/{base,local}
 server/migrations 001_init, 002_natural_sort, 003_search_indexes, 004_user_prefs,
                   005_renderer_pairing, 006_source_remote_id, 007_access_rules,
-                  008_invites, 009_explicit_access
+                  008_invites, 009_explicit_access, 010_audience
 server/tests/     conftest + scanner, library, security, prefs, streaming
 web/src/          App, Browser, Settings, api, auth, library, prefs, styles.css
 tools/            probe-denon.ps1, configure-network.ps1, run-tests.ps1
@@ -214,6 +214,11 @@ TOKEN=$(printf "protocol=https\nhost=github.com\n\n" | git credential fill | gre
 - **Access is granted, never assumed.** An account reaches only what it has been
   given. `all_library` / `all_zones` store "everything" as its own fact, so an
   empty rule list means empty — the opposite default fails silently and totally
+- **Every folder and room has an audience** — everyone / admins / selected —
+  applied as a ceiling *before* personal grants, so whole-library access means
+  everything open to the household, not everything on disk. An undecided
+  audience (NULL) reads as admins-only: folders arrive by discovery, so they
+  must arrive closed
 - **The owner is fixed.** One account is `is_owner` and cannot be demoted,
   restricted or removed by anyone, itself included. Admin is grantable so a
   second adult can manage the house; ownership is not, so granting it is never a

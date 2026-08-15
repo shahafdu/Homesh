@@ -596,6 +596,17 @@ checklist at the end.
   looking on screen exactly like the safe case.
 - Grants are revisable at any time; the same operation that scopes an invitation rescopes a
   live account, because children grow up and a guest should not keep last year's access.
+- **Every folder and room carries its own audience** — everyone, administrators only, or a
+  chosen few — applied as a *ceiling before* any personal grant is consulted. This has to be a
+  property of the place rather than a bulk edit of everyone's rules, or "administrators only"
+  would be unenforceable: an account holding whole-library access would pick up a new folder
+  the instant it appeared. Whole-library access therefore means everything open to the
+  household, not everything on the disk.
+- **An undecided audience means administrators only.** Folders arrive by discovery — sharing
+  one with the service account is enough to make it appear — so the safe state on arrival is
+  the closed one. That default is the one you can change without having exposed anything in
+  the meantime; the opposite cannot be undone, because by the time anyone notices, it has
+  already been visible.
 - Scope is enforced on every path out of the catalog — browsing, search, minting a media URL,
   serving the bytes, and sending to a room. Search in particular must not become a way to
   learn what exists.
