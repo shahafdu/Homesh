@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { useLockScroll } from "./useLockScroll";
 import AudiencePicker, { type Choice } from "./Audience";
 import { listPeople, type Person } from "./people";
 import { ApiError } from "./api";
@@ -18,6 +19,7 @@ import {
  * (ARCHITECTURE.md §5.8).
  */
 export default function Zones(props: { onClose: () => void }) {
+  useLockScroll();
   const [zones, setZones] = useState<Zone[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);

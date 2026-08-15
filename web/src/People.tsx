@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { useLockScroll } from "./useLockScroll";
 import { ApiError } from "./api";
 import { AudienceEditor, type Choice } from "./Audience";
 import { copyText } from "./copy";
@@ -33,6 +34,7 @@ const EMPTY: Grant = { library: [], zones: [], all_library: false, all_zones: fa
  * handing your partner the ability to manage the house is not a way to lose it.
  */
 export default function People(props: { onClose: () => void }) {
+  useLockScroll();
   const [people, setPeople] = useState<Person[] | null>(null);
   const [invites, setInvites] = useState<Invite[]>([]);
   const [zones, setZones] = useState<Zone[]>([]);
@@ -206,7 +208,7 @@ function Scope(props: { roots: DirEntry[]; zones: Zone[]; grant: Grant; onChange
 
   return (
     <>
-      <label>Folders</label>
+      <div className="group-head">Folders</div>
       <div className="ticks">
         <button
           className="tick"
@@ -235,7 +237,7 @@ function Scope(props: { roots: DirEntry[]; zones: Zone[]; grant: Grant; onChange
             : "Only the ticked folders will exist for this person."}
       </p>
 
-      <label>Rooms</label>
+      <div className="group-head">Rooms</div>
       <div className="ticks">
         <button
           className="tick"
@@ -458,8 +460,13 @@ function Audiences(props: {
         for, only administrators can see it.
       </p>
 
+      <div className="group-head">Folders</div>
       {props.folders.map((f) => row(f, "folder"))}
+      {props.folders.length === 0 && <p className="muted small">No folders yet.</p>}
+
+      <div className="group-head">Rooms</div>
       {props.rooms.map((r) => row(r, "room"))}
+      {props.rooms.length === 0 && <p className="muted small">No rooms yet.</p>}
     </div>
   );
 }

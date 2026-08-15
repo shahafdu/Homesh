@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useLockScroll } from "./useLockScroll";
 import { ApiError } from "./api";
 import { linkDevice, type DeviceLink } from "./auth";
 
@@ -10,6 +11,7 @@ import { linkDevice, type DeviceLink } from "./auth";
  * by a code that only a signed-in session can produce.
  */
 export default function LinkDevice(props: { onClose: () => void }) {
+  useLockScroll();
   const [link, setLink] = useState<DeviceLink | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [left, setLeft] = useState(0);

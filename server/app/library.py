@@ -120,7 +120,9 @@ async def list_sources(_: CurrentUser = Depends(require_user)) -> list[dict]:
             text(
                 """
                 SELECT s.id, s.kind::text, s.name, s.mount_prefix, s.last_seen_at,
-                       count(r.id) FILTER (WHERE r.available) AS files
+                       count(r.id) FILTER (WHERE r.available) AS files,
+                       s.scan_state, s.scan_seen, s.scan_added, s.scan_error,
+                       s.scan_started_at
                 FROM sources s
                 LEFT JOIN replicas r ON r.source_id = s.id
                 GROUP BY s.id
@@ -137,6 +139,16 @@ async def list_sources(_: CurrentUser = Depends(require_user)) -> list[dict]:
             "mount_prefix": r[3],
             "last_seen_at": r[4].isoformat() if r[4] else None,
             "files": r[5],
+            # Never scanned is a different state from scanned-and-empty, and the
+            # two looked identical before — which is how a folder sat at zero
+            # files without anybody noticing it had simply never run.
+            "scan": {
+                "state": r[6],
+                "seen": r[7],
+                "added": r[8],
+                "error": r[9],
+                "started_at": r[10].isoformat() if r[10] else None,
+            },
         }
         for r in rows
     ]

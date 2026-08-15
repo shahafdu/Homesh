@@ -49,7 +49,45 @@ export function usePlayer() {
   if (audioRef.current === null && typeof Audio !== "undefined") {
     audioRef.current = new Audio();
     audioRef.current.preload = "metadata";
+    // Needed for the element to be allowed to play at all on iOS, and for the
+    // lock-screen controls to attach to it.
+    audioRef.current.setAttribute("playsinline", "");
   }
+
+  // Phones only let an <audio> element play if a gesture started it, and they
+  // judge that by whether play() was called *synchronously* inside the handler.
+  // Ours cannot be: the signed URL has to be fetched first, and by the time it
+  // arrives the gesture has expired — so playback was silently refused on every
+  // phone while working perfectly on a desktop, where the rule does not apply.
+  //
+  // The fix is to spend one real gesture unlocking the element. After a single
+  // play() inside a genuine touch, the phone treats it as user-initiated for the
+  // rest of the page's life.
+  const unlocked = useRef(false);
+  useEffect(() => {
+    const unlock = () => {
+      const audio = audioRef.current;
+      if (!audio || unlocked.current) return;
+      unlocked.current = true;
+      audio.play().then(
+        () => audio.pause(),
+        () => {
+          // Refused before anything was loaded, which is expected and harmless;
+          // the element is activated either way.
+        },
+      );
+    };
+
+    // Once, on the first touch anywhere. Capture, so a handler that stops
+    // propagation cannot cost us the only gesture we need.
+    const opts = { once: true, capture: true } as const;
+    document.addEventListener("pointerdown", unlock, opts);
+    document.addEventListener("keydown", unlock, opts);
+    return () => {
+      document.removeEventListener("pointerdown", unlock, opts);
+      document.removeEventListener("keydown", unlock, opts);
+    };
+  }, []);
 
   // One renewal attempt per track. Without this, a genuinely broken file would
   // loop forever between the error handler and a fresh URL.

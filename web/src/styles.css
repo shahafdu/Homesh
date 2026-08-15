@@ -797,3 +797,12 @@ button.compact:disabled { opacity: .5; cursor: not-allowed; }
   padding: 12px; margin: 4px 0 10px;
   border: 1px solid var(--line); border-radius: 10px; background: var(--bg);
 }
+
+/* Folders and rooms are different kinds of thing. Run together they read as one
+   list of interchangeable toggles, which is exactly the confusion to avoid on a
+   permissions screen. */
+.group-head {
+  font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em;
+  color: var(--muted); margin: 14px 0 6px;
+  padding-bottom: 5px; border-bottom: 1px solid var(--line);
+}

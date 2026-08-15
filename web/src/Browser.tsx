@@ -113,9 +113,22 @@ export default function Browser(props: {
 
   const rescan = async (id: string) => {
     await scanSource(id);
-    // The scan runs in the background; give it a moment before re-reading.
-    window.setTimeout(() => void load(path), 1500);
+    // Re-read straight away so the row flips to "scanning" while the poll below
+    // takes over. Pressing Rescan and seeing nothing change was indistinguishable
+    // from pressing a dead button.
+    listSources().then(setSources).catch(() => undefined);
   };
+
+  // While anything is scanning, keep asking. A Drive folder takes minutes, and a
+  // count that only moves when you happen to reload is not progress.
+  const scanning = sources.some((s) => s.scan?.state === "running");
+  useEffect(() => {
+    if (!scanning) return;
+    const poll = window.setInterval(() => {
+      listSources().then(setSources).catch(() => undefined);
+    }, 2000);
+    return () => window.clearInterval(poll);
+  }, [scanning]);
 
   const atRoot = hits === null && listing?.path === "/";
 
@@ -450,6 +463,26 @@ function Results(props: {
   );
 }
 
+/** One line saying what this source is doing, or last did.
+ *
+ * "Never scanned" is called out because it is the state that hid a folder
+ * sitting at zero files: indistinguishable, until now, from a folder that was
+ * genuinely empty.
+ */
+function describeScan(s: Source): string {
+  const scan = s.scan;
+  const files = `${s.files.toLocaleString()} files`;
+
+  if (scan?.state === "running") {
+    return scan.seen > 0
+      ? `Scanning — ${scan.seen.toLocaleString()} found so far`
+      : "Scanning — starting…";
+  }
+  if (scan?.state === "failed") return `${files} · scan failed: ${scan.error ?? "unknown"}`;
+  if (!scan?.state) return `${files} · never scanned`;
+  return s.last_seen_at ? `${files} · scanned ${formatDate(s.last_seen_at)}` : files;
+}
+
 function SourceList(props: {
   sources: Source[];
   isAdmin: boolean;
@@ -463,14 +496,15 @@ function SourceList(props: {
         <div key={s.id} className="source">
           <div>
             <strong>{s.name}</strong> <span className="muted">{s.mount_prefix}</span>
-            <div className="muted small">
-              {s.files.toLocaleString()} files
-              {s.last_seen_at && ` · scanned ${formatDate(s.last_seen_at)}`}
-            </div>
+            <div className="muted small">{describeScan(s)}</div>
           </div>
           {props.isAdmin && (
-            <button className="compact" onClick={() => props.onScan(s.id)}>
-              Rescan
+            <button
+              className="compact"
+              disabled={s.scan?.state === "running"}
+              onClick={() => props.onScan(s.id)}
+            >
+              {s.scan?.state === "running" ? "Scanning…" : "Rescan"}
             </button>
           )}
         </div>

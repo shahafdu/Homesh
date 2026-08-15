@@ -1,3 +1,4 @@
+import { useLockScroll } from "./useLockScroll";
 import { PALETTES, type Appearance, type Palette, type Prefs } from "./prefs";
 
 const APPEARANCES: { id: Appearance; label: string }[] = [
@@ -12,6 +13,7 @@ export default function Settings(props: {
   onLinkDevice: () => void;
   onClose: () => void;
 }) {
+  useLockScroll();
   const { prefs, onChange, onLinkDevice, onClose } = props;
 
   return (

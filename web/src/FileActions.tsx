@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useLockScroll } from "./useLockScroll";
 import { copyText } from "./copy";
 import type { FileEntry } from "./library";
 import {
@@ -21,6 +22,7 @@ export default function FileActions(props: {
   onSendTo: () => void;
   onClose: () => void;
 }) {
+  useLockScroll();
   const { file } = props;
   const [busy, setBusy] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);

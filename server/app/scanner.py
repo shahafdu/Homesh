@@ -48,11 +48,50 @@ def scan_source(source_id: UUID, connector: LocalConnector) -> ScanResult:
     if not connector.available:
         result.errors.append("source unavailable")
         result.finished_at = datetime.now(UTC)
+        with get_engine().begin() as conn:
+            conn.execute(
+                text(
+                    """
+                    UPDATE sources
+                    SET scan_state = 'failed', scan_ended_at = now(),
+                        scan_error = 'the source could not be reached'
+                    WHERE id = :sid
+                    """
+                ),
+                {"sid": str(source_id)},
+            )
         return result
 
     engine = get_engine()
     seen: set[tuple[str, str]] = set()
     batch: list[dict] = []
+
+    def progress(**fields) -> None:
+        """Publish where the scan has got to.
+
+        Its own transaction, committed as it goes: a scan of nine thousand Drive
+        files takes minutes, and progress nobody can read until the end is not
+        progress. Failures here are swallowed — reporting must never be what
+        breaks a scan.
+        """
+        sets = ", ".join(f"{k} = :{k}" for k in fields)
+        try:
+            with engine.begin() as conn:
+                conn.execute(
+                    text(f"UPDATE sources SET {sets} WHERE id = :sid"),  # noqa: S608
+                    {**fields, "sid": str(source_id)},
+                )
+        except Exception:  # noqa: BLE001
+            log.debug("could not record scan progress", exc_info=True)
+
+    progress(
+        scan_state="running",
+        scan_started_at=datetime.now(UTC),
+        scan_ended_at=None,
+        scan_seen=0,
+        scan_added=0,
+        scan_error=None,
+    )
 
     def flush() -> None:
         if not batch:
@@ -137,8 +176,10 @@ def scan_source(source_id: UUID, connector: LocalConnector) -> ScanResult:
         )
         if len(batch) >= BATCH:
             flush()
+            progress(scan_seen=len(seen), scan_added=result.added)
 
     flush()
+    progress(scan_seen=len(seen), scan_added=result.added)
 
     # Anything previously indexed but no longer present is marked unavailable rather
     # than deleted: it may be a file the user moved, and the catalog is more useful
@@ -163,6 +204,12 @@ def scan_source(source_id: UUID, connector: LocalConnector) -> ScanResult:
         )
 
     result.finished_at = datetime.now(UTC)
+    progress(
+        scan_state="done",
+        scan_ended_at=result.finished_at,
+        scan_seen=len(seen),
+        scan_added=result.added,
+    )
     log.info(
         "scan complete: +%d ~%d -%d (%d playlists) in %.1fs",
         result.added,

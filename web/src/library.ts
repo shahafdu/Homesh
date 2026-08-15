@@ -68,6 +68,16 @@ export interface SearchHit {
   available: boolean;
 }
 
+export interface ScanStatus {
+  /** null means it has never run — which is a different thing from empty, and
+   *  looked identical before. */
+  state: "running" | "done" | "failed" | null;
+  seen: number;
+  added: number;
+  error: string | null;
+  started_at: string | null;
+}
+
 export interface Source {
   id: string;
   kind: string;
@@ -75,6 +85,7 @@ export interface Source {
   mount_prefix: string;
   last_seen_at: string | null;
   files: number;
+  scan: ScanStatus;
 }
 
 export const browse = (path: string) =>
