@@ -9,16 +9,21 @@ import {
   listPeople,
   removePerson,
   revokeInvite,
+  setAdmin,
   setRules,
+  type Grant,
   type Invite,
   type Person,
 } from "./people";
 import { listZones, type Zone } from "./zones";
 
+const EMPTY: Grant = { library: [], zones: [], all_library: false, all_zones: false };
+
 /** Who has an account, and what they can reach.
  *
- * Access is expressed as "everything unless told otherwise", so the adults need
- * no configuration and only the accounts that need scoping have any.
+ * Access is granted, never assumed: a new account reaches nothing until someone
+ * says otherwise. Administration can be shared, but the owner is fixed — so
+ * handing your partner the ability to manage the house is not a way to lose it.
  */
 export default function People(props: { onClose: () => void }) {
   const [people, setPeople] = useState<Person[] | null>(null);
@@ -31,12 +36,7 @@ export default function People(props: { onClose: () => void }) {
 
   const refresh = useCallback(async () => {
     try {
-      const [p, i, z, r] = await Promise.all([
-        listPeople(),
-        listInvites(),
-        listZones(),
-        browse("/"),
-      ]);
+      const [p, i, z, r] = await Promise.all([listPeople(), listInvites(), listZones(), browse("/")]);
       setPeople(p);
       setInvites(i);
       setZones(z);
@@ -49,6 +49,16 @@ export default function People(props: { onClose: () => void }) {
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  const act = async (fn: () => Promise<unknown>) => {
+    setError(null);
+    try {
+      await fn();
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : String(e));
+    }
+    await refresh();
+  };
 
   return (
     <div className="sheet" role="dialog" aria-modal="true" aria-label="People" onClick={props.onClose}>
@@ -65,26 +75,32 @@ export default function People(props: { onClose: () => void }) {
           <div key={person.id} className="zone-card">
             <div className="zone-head">
               <span className="zone-name">{person.display_name}</span>
-              {person.is_admin && <span className="badge">admin</span>}
+              {person.is_owner && <span className="badge">owner</span>}
+              {person.is_admin && !person.is_owner && <span className="badge">admin</span>}
             </div>
             <div className="muted small">{describeAccess(person)}</div>
             <div className="muted small">
               {person.passkeys} passkey{person.passkeys === 1 ? "" : "s"}
             </div>
-            {!person.is_admin && (
+
+            {person.is_owner ? (
+              <div className="muted small">
+                The owner cannot be restricted or removed, by anyone.
+              </div>
+            ) : (
               <div className="zone-controls">
-                <button className="compact" onClick={() => setEditing(person)}>
-                  Change access
-                </button>
+                {!person.is_admin && (
+                  <button className="compact" onClick={() => setEditing(person)}>
+                    Change access
+                  </button>
+                )}
                 <button
                   className="compact"
-                  onClick={async () => {
-                    await removePerson(person.id).catch((e) =>
-                      setError(e instanceof ApiError ? e.message : String(e)),
-                    );
-                    await refresh();
-                  }}
+                  onClick={() => act(() => setAdmin(person.id, !person.is_admin))}
                 >
+                  {person.is_admin ? "Remove admin" : "Make admin"}
+                </button>
+                <button className="compact" onClick={() => act(() => removePerson(person.id))}>
                   Remove
                 </button>
               </div>
@@ -108,13 +124,7 @@ export default function People(props: { onClose: () => void }) {
                   >
                     Copy link
                   </button>
-                  <button
-                    className="compact"
-                    onClick={async () => {
-                      await revokeInvite(invite.code);
-                      await refresh();
-                    }}
-                  >
+                  <button className="compact" onClick={() => act(() => revokeInvite(invite.code))}>
                     Cancel
                   </button>
                 </div>
@@ -158,17 +168,14 @@ export default function People(props: { onClose: () => void }) {
 
 /** Folder and room pickers, shared by inviting and editing.
  *
- * Nothing ticked means no restriction, which is stated rather than implied —
- * an empty list of ticks reading as "no access" would be the opposite of true.
+ * Ticking grants; nothing ticked grants nothing. "Everything" is its own control
+ * rather than the absence of ticks, so the two states cannot be mistaken for one
+ * another — and the summary line says which one is currently chosen, because
+ * this is the screen where being wrong is least recoverable.
  */
-function Scope(props: {
-  roots: DirEntry[];
-  zones: Zone[];
-  library: string[];
-  chosenZones: string[];
-  onLibrary: (next: string[]) => void;
-  onZones: (next: string[]) => void;
-}) {
+function Scope(props: { roots: DirEntry[]; zones: Zone[]; grant: Grant; onChange: (g: Grant) => void }) {
+  const { grant, onChange } = props;
+
   const toggle = (list: string[], value: string) =>
     list.includes(value) ? list.filter((v) => v !== value) : [...list, value];
 
@@ -176,41 +183,63 @@ function Scope(props: {
     <>
       <label>Folders</label>
       <div className="ticks">
-        {props.roots.map((root) => (
-          <button
-            key={root.path}
-            className="tick"
-            aria-pressed={props.library.includes(root.path)}
-            onClick={() => props.onLibrary(toggle(props.library, root.path))}
-          >
-            {props.library.includes(root.path) ? "☑" : "☐"} {root.name}
-          </button>
-        ))}
+        <button
+          className="tick"
+          aria-pressed={grant.all_library}
+          onClick={() => onChange({ ...grant, all_library: !grant.all_library, library: [] })}
+        >
+          {grant.all_library ? "☑" : "☐"} Whole library
+        </button>
+        {!grant.all_library &&
+          props.roots.map((root) => (
+            <button
+              key={root.path}
+              className="tick"
+              aria-pressed={grant.library.includes(root.path)}
+              onClick={() => onChange({ ...grant, library: toggle(grant.library, root.path) })}
+            >
+              {grant.library.includes(root.path) ? "☑" : "☐"} {root.name}
+            </button>
+          ))}
       </div>
       <p className="muted small">
-        {props.library.length === 0
-          ? "Nothing ticked — this person will see the whole library."
-          : "Only the ticked folders will exist for this person."}
+        {grant.all_library
+          ? "Everything in the library, including folders added later."
+          : grant.library.length === 0
+            ? "Nothing ticked — this person will see an empty library."
+            : "Only the ticked folders will exist for this person."}
       </p>
 
       <label>Rooms</label>
       <div className="ticks">
-        {props.zones.map((zone) => (
-          <button
-            key={zone.id}
-            className="tick"
-            aria-pressed={props.chosenZones.includes(zone.id)}
-            onClick={() => props.onZones(toggle(props.chosenZones, zone.id))}
-          >
-            {props.chosenZones.includes(zone.id) ? "☑" : "☐"} {zone.name}
-          </button>
-        ))}
-        {props.zones.length === 0 && <span className="muted small">No rooms set up yet.</span>}
+        <button
+          className="tick"
+          aria-pressed={grant.all_zones}
+          onClick={() => onChange({ ...grant, all_zones: !grant.all_zones, zones: [] })}
+        >
+          {grant.all_zones ? "☑" : "☐"} Any room
+        </button>
+        {!grant.all_zones &&
+          props.zones.map((zone) => (
+            <button
+              key={zone.id}
+              className="tick"
+              aria-pressed={grant.zones.includes(zone.id)}
+              onClick={() => onChange({ ...grant, zones: toggle(grant.zones, zone.id) })}
+            >
+              {grant.zones.includes(zone.id) ? "☑" : "☐"} {zone.name}
+            </button>
+          ))}
+        {props.zones.length === 0 && !grant.all_zones && (
+          <span className="muted small">No rooms set up yet.</span>
+        )}
       </div>
       <p className="muted small">
-        {props.chosenZones.length === 0
-          ? "Nothing ticked — this person can play in any room."
-          : "Only the ticked rooms will be offered."}
+        {grant.all_zones
+          ? "Any room, including rooms added later."
+          : grant.zones.length === 0
+            ? "Nothing ticked — this person cannot play in any room."
+            : "Only the ticked rooms will be offered."}
       </p>
     </>
   );
@@ -224,8 +253,7 @@ function InviteForm(props: {
 }) {
   const [handle, setHandle] = useState("");
   const [displayName, setDisplayName] = useState("");
-  const [library, setLibrary] = useState<string[]>([]);
-  const [zones, setZones] = useState<string[]>([]);
+  const [grant, setGrant] = useState<Grant>(EMPTY);
   const [link, setLink] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -237,8 +265,7 @@ function InviteForm(props: {
       const { code } = await createInvite({
         handle: handle.trim(),
         display_name: displayName.trim(),
-        library,
-        zones,
+        ...grant,
       });
       setLink(inviteLink(code));
     } catch (e) {
@@ -279,14 +306,7 @@ function InviteForm(props: {
       <input id="inv-handle" value={handle} placeholder="noa" autoCapitalize="none"
              onChange={(e) => setHandle(e.target.value)} />
 
-      <Scope
-        roots={props.roots}
-        zones={props.zones}
-        library={library}
-        chosenZones={zones}
-        onLibrary={setLibrary}
-        onZones={setZones}
-      />
+      <Scope roots={props.roots} zones={props.zones} grant={grant} onChange={setGrant} />
 
       {error && <div className="error">{error}</div>}
 
@@ -304,6 +324,8 @@ function InviteForm(props: {
   );
 }
 
+/** Access is revisable at any time — children grow up, and a guest who needed the
+ *  photos folder for an evening should not keep it for a year. */
 function AccessForm(props: {
   person: Person;
   roots: DirEntry[];
@@ -311,8 +333,12 @@ function AccessForm(props: {
   onDone: () => void;
   onCancel: () => void;
 }) {
-  const [library, setLibrary] = useState<string[]>(props.person.library ?? []);
-  const [zones, setZones] = useState<string[]>((props.person.zones ?? []).map((z) => z.id));
+  const [grant, setGrant] = useState<Grant>({
+    library: props.person.library,
+    zones: props.person.zones.map((z) => z.id),
+    all_library: props.person.all_library,
+    all_zones: props.person.all_zones,
+  });
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -320,7 +346,7 @@ function AccessForm(props: {
     setBusy(true);
     setError(null);
     try {
-      await setRules(props.person.id, { library, zones });
+      await setRules(props.person.id, grant);
       props.onDone();
     } catch (e) {
       setError(e instanceof ApiError ? e.message : String(e));
@@ -335,14 +361,7 @@ function AccessForm(props: {
         <span className="zone-name">{props.person.display_name} — access</span>
       </div>
 
-      <Scope
-        roots={props.roots}
-        zones={props.zones}
-        library={library}
-        chosenZones={zones}
-        onLibrary={setLibrary}
-        onZones={setZones}
-      />
+      <Scope roots={props.roots} zones={props.zones} grant={grant} onChange={setGrant} />
 
       {error && <div className="error">{error}</div>}
 

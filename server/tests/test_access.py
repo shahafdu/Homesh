@@ -12,7 +12,7 @@ import uuid
 import pytest
 from sqlalchemy import text
 
-from app.access import can_read, can_traverse, visible
+from app.access import Scope, can_read, can_traverse, visible
 from app.main import app
 from app.scanner import scan_source
 from app.security import CurrentUser, optional_user, require_user
@@ -65,7 +65,7 @@ def _restrict_library(db, person, prefixes):
 
 
 class TestRuleLogic:
-    RULES = ["/local/library/Music"]
+    RULES = Scope(everything=False, allowed=("/local/library/Music",))
 
     def test_reads_inside_the_allowed_prefix(self):
         assert can_read("/local/library/Music", self.RULES)
@@ -84,9 +84,19 @@ class TestRuleLogic:
         assert visible("/local/library", self.RULES)
         assert not can_read("/local/library", self.RULES)
 
-    def test_no_rules_means_no_restriction(self):
-        assert can_read("/anything/at/all", None)
-        assert can_traverse("/anything", None)
+    def test_nothing_granted_means_nothing_reachable(self):
+        """The default must fail closed. This is the whole point of the design."""
+        nothing = Scope(everything=False)
+        assert nothing.nothing
+        assert not can_read("/anything/at/all", nothing)
+        assert not can_traverse("/anything", nothing)
+        assert not visible("/anything", nothing)
+
+    def test_everything_is_its_own_state(self):
+        """'All' and 'none' must not share a representation."""
+        everything = Scope(everything=True)
+        assert can_read("/anything/at/all", everything)
+        assert not everything.nothing
 
 
 class TestBrowsing:
@@ -270,27 +280,164 @@ class TestAdministration:
 
         people = {p["handle"]: p for p in client.get("/api/people").json()}
         assert people["kid"]["library"] == [f"{prefix}/Music"]
-        # None, not [], so "unrestricted" cannot be confused with "nothing".
-        assert people[user.handle]["library"] is None
+        assert people["kid"]["all_library"] is False
+        # The unrestricted account says so with a flag, not by having no rules.
+        assert people[user.handle]["all_library"] is True
+        assert people[user.handle]["library"] == []
 
-    def test_rules_can_be_cleared(self, client, db, scanned, user, child):
+    def test_a_new_account_starts_with_nothing(self, client, db, scanned, user, child):
+        """Access must be granted, never assumed."""
+        _become(child)
+        _sid, prefix, _root = scanned
+        assert client.get("/api/browse?path=/").json()["dirs"] == []
+        assert client.get(f"/api/browse?path={prefix}").status_code == 404
+        assert client.get("/api/search?q=track").json() == []
+
+    def test_clearing_the_ticks_removes_access_rather_than_granting_all(
+        self, client, db, scanned, user, child
+    ):
+        """The inverted reading of this is the bug this design exists to prevent."""
         _sid, prefix, _root = scanned
         _restrict_library(db, child, [f"{prefix}/Music"])
         _become(user)
 
-        client.put(f"/api/people/{child.id}/rules", json={"library": []})
+        client.put(f"/api/people/{child.id}/rules", json={"library": [], "zones": []})
+
         people = {p["handle"]: p for p in client.get("/api/people").json()}
-        assert people["kid"]["library"] is None
+        assert people["kid"]["library"] == []
+        assert people["kid"]["all_library"] is False
+
+        _become(child)
+        assert client.get("/api/browse?path=/").json()["dirs"] == []
+
+    def test_the_whole_library_is_granted_explicitly(self, client, db, scanned, user, child):
+        _become(user)
+        client.put(
+            f"/api/people/{child.id}/rules",
+            json={"library": [], "zones": [], "all_library": True, "all_zones": True},
+        )
+
+        _become(child)
+        _sid, prefix, _root = scanned
+        names = {d["name"] for d in client.get(f"/api/browse?path={prefix}").json()["dirs"]}
+        assert {"Docs", "Music", "Photos", "Videos"} <= names
+
+    def test_access_can_be_changed_after_the_invitation(self, client, db, scanned, user, child):
+        """Children grow up; a guest should not keep last year's access."""
+        _sid, prefix, _root = scanned
+        _become(user)
+        client.put(
+            f"/api/people/{child.id}/rules", json={"library": [f"{prefix}/Music"], "zones": []}
+        )
+
+        _become(child)
+        assert [d["name"] for d in client.get(f"/api/browse?path={prefix}").json()["dirs"]] == [
+            "Music"
+        ]
+
+        _become(user)
+        client.put(
+            f"/api/people/{child.id}/rules",
+            json={"library": [f"{prefix}/Music", f"{prefix}/Videos"], "zones": []},
+        )
+
+        _become(child)
+        assert [d["name"] for d in client.get(f"/api/browse?path={prefix}").json()["dirs"]] == [
+            "Music",
+            "Videos",
+        ]
 
     def test_restricting_an_admin_is_refused(self, client, db, user):
         _become(user)
         r = client.put(f"/api/people/{user.id}/rules", json={"library": ["/nowhere"]})
         assert r.status_code == 409
 
-    def test_the_last_admin_cannot_be_removed(self, client, db, user, child):
-        _become(user)
-        assert client.delete(f"/api/people/{user.id}").status_code == 409
-
     def test_removing_an_unknown_person_404s(self, client, db, user):
         _become(user)
         assert client.delete(f"/api/people/{uuid.uuid4()}").status_code == 404
+
+
+class TestOwnership:
+    """One account cannot be locked out of its own server.
+
+    Administration is shareable so a second adult can manage the household. The
+    owner is not, so sharing it is never a route to losing the house.
+    """
+
+    @staticmethod
+    def _promote(db, person) -> CurrentUser:
+        with db.begin() as conn:
+            conn.execute(
+                text("UPDATE users SET is_admin = TRUE WHERE id = :u"), {"u": str(person.id)}
+            )
+        return CurrentUser(
+            id=person.id, handle=person.handle, display_name=person.display_name, is_admin=True
+        )
+
+    def test_the_owner_cannot_be_removed(self, client, db, user, child):
+        _become(self._promote(db, child))
+        assert client.delete(f"/api/people/{user.id}").status_code == 409
+
+    def test_the_owner_cannot_be_demoted(self, client, db, user, child):
+        _become(self._promote(db, child))
+
+        r = client.put(f"/api/people/{user.id}/admin", json={"is_admin": False})
+        assert r.status_code == 409
+        with db.connect() as conn:
+            assert conn.execute(
+                text("SELECT is_admin FROM users WHERE id = :u"), {"u": str(user.id)}
+            ).scalar_one()
+
+    def test_the_owner_cannot_be_restricted(self, client, db, user, child):
+        _become(self._promote(db, child))
+
+        r = client.put(f"/api/people/{user.id}/rules", json={"library": [], "zones": []})
+        assert r.status_code == 409
+
+    def test_the_owner_cannot_remove_their_own_ownership(self, client, db, user):
+        """Not even by accident, and not even on purpose."""
+        _become(user)
+        r = client.put(f"/api/people/{user.id}/admin", json={"is_admin": False})
+        assert r.status_code == 409
+
+    def test_an_admin_can_grant_administration(self, client, db, user, child):
+        _become(user)
+        r = client.put(f"/api/people/{child.id}/admin", json={"is_admin": True})
+        assert r.status_code == 200
+
+        people = {p["handle"]: p for p in client.get("/api/people").json()}
+        assert people["kid"]["is_admin"] is True
+        assert people["kid"]["is_owner"] is False
+
+    def test_a_granted_admin_can_manage_others(self, client, db, user, child):
+        """The point of sharing administration: no waiting on the owner."""
+        _become(user)
+        client.put(f"/api/people/{child.id}/admin", json={"is_admin": True})
+
+        with db.begin() as conn:
+            third = conn.execute(
+                text(
+                    """
+                    INSERT INTO users (handle, display_name, is_admin)
+                    VALUES ('guest', 'Guest', FALSE) RETURNING id
+                    """
+                )
+            ).scalar_one()
+
+        _become(CurrentUser(id=child.id, handle="kid", display_name="Kid", is_admin=True))
+        r = client.put(
+            f"/api/people/{third}/rules",
+            json={"library": [], "zones": [], "all_library": True, "all_zones": False},
+        )
+        assert r.status_code == 200
+
+    def test_withdrawing_administration_leaves_no_access(self, client, db, scanned, user, child):
+        """Demotion must not fall back to whatever rules predated the promotion."""
+        _sid, prefix, _root = scanned
+        _become(user)
+        client.put(f"/api/people/{child.id}/rules", json={"library": [f"{prefix}/Music"]})
+        client.put(f"/api/people/{child.id}/admin", json={"is_admin": True})
+        client.put(f"/api/people/{child.id}/admin", json={"is_admin": False})
+
+        _become(child)
+        assert client.get("/api/browse?path=/").json()["dirs"] == []

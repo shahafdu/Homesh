@@ -588,6 +588,24 @@ checklist at the end.
 - Sessions: short-lived access token + rotating refresh, bound to device, revocable per-device
   from a UI. Secure/HttpOnly/SameSite=Strict cookies.
 
+**Who may reach what**
+- **Access is granted, never assumed.** An account reaches only what it has been given.
+  "Everything" is stored as its own fact (`all_library`, `all_zones`) rather than inferred
+  from an empty rule set, so the two states cannot be confused. The alternative — no rules
+  meaning no restriction — fails in the worst possible direction: silently, totally, and
+  looking on screen exactly like the safe case.
+- Grants are revisable at any time; the same operation that scopes an invitation rescopes a
+  live account, because children grow up and a guest should not keep last year's access.
+- Scope is enforced on every path out of the catalog — browsing, search, minting a media URL,
+  serving the bytes, and sending to a room. Search in particular must not become a way to
+  learn what exists.
+- A folder outside your scope answers **404, not 403**. 403 confirms it is there.
+- **One account owns the server.** It cannot be demoted, restricted or removed by anyone,
+  itself included, and a partial unique index makes that a property of the schema rather than
+  a convention. Administration *is* grantable, so a second adult can manage the household
+  without waiting on the first — the fixed owner is what stops that from becoming a way to
+  lose the house.
+
 **Media access**
 - No media URL is ever guessable or permanent. Every stream is served from an **HMAC-signed URL**
   scoped to `(item_id, user_id, expiry, client_class)`, typically 5-minute TTL, with a

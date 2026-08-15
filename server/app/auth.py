@@ -290,12 +290,15 @@ async def register_complete(body: CompleteBody, request: Request, response: Resp
         user_id = conn.execute(
             text(
                 """
-                INSERT INTO users (handle, display_name, is_admin)
-                VALUES (:h, :d, :admin)
+                INSERT INTO users (handle, display_name, is_admin, is_owner,
+                                   all_library, all_zones)
+                VALUES (:h, :d, :admin, :owner, :admin, :admin)
                 RETURNING id
                 """
             ),
-            {"h": flow.handle, "d": flow.display_name, "admin": is_first},
+            # The account that sets the server up owns it, permanently. Everyone
+            # else starts with nothing until granted something.
+            {"h": flow.handle, "d": flow.display_name, "admin": is_first, "owner": is_first},
         ).scalar_one()
 
         conn.execute(
@@ -321,7 +324,8 @@ async def register_complete(body: CompleteBody, request: Request, response: Resp
             invite = conn.execute(
                 text(
                     """
-                    SELECT library_rules, zone_rules FROM invites
+                    SELECT library_rules, zone_rules, all_library, all_zones
+                    FROM invites
                     WHERE code = :c AND used_at IS NULL AND expires_at > now()
                     """
                 ),
@@ -329,6 +333,11 @@ async def register_complete(body: CompleteBody, request: Request, response: Resp
             ).first()
             if invite is None:
                 raise HTTPException(status.HTTP_403_FORBIDDEN, "this invitation is not valid")
+
+            conn.execute(
+                text("UPDATE users SET all_library = :a, all_zones = :z WHERE id = :u"),
+                {"a": invite[2], "z": invite[3], "u": str(user_id)},
+            )
 
             for prefix in invite[0] or []:
                 conn.execute(

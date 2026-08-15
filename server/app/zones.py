@@ -21,7 +21,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import text
 
 from . import denon, occupancy
-from .access import can_use_zone, may_access_item, zone_rules
+from .access import can_use_zone, may_access_item, zone_scope
 from .config import get_settings
 from .db import get_engine
 from .security import CurrentUser, require_user
@@ -119,7 +119,8 @@ def _load_zone(zone_id: UUID) -> Zone:
 
 def _require_zone_access(zone_id: UUID, user: CurrentUser) -> None:
     """404 rather than 403: a room outside your scope should not be confirmed."""
-    if not can_use_zone(zone_id, zone_rules(user.id)):
+    any_zone, allowed = zone_scope(user.id)
+    if not can_use_zone(zone_id, any_zone, allowed):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "no such zone")
 
 
@@ -163,12 +164,12 @@ async def list_zones(user: CurrentUser = Depends(require_user)) -> list[dict]:
             )
         ).all()
 
-    allowed = zone_rules(user.id)
+    any_zone, allowed = zone_scope(user.id)
     out = []
     for row in rows:
         # Rooms this person may not use are not listed. A child seeing the living
         # room greyed out learns only that it exists and is out of reach.
-        if not can_use_zone(row[0], allowed):
+        if not can_use_zone(row[0], any_zone, allowed):
             continue
         queue = row[6] or []
         cursor = row[7] or 0

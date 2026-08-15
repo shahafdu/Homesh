@@ -79,8 +79,9 @@ def user(db) -> CurrentUser:
         uid = conn.execute(
             text(
                 """
-                INSERT INTO users (handle, display_name, is_admin)
-                VALUES ('tester', 'Tester', TRUE) RETURNING id
+                INSERT INTO users (handle, display_name, is_admin, is_owner,
+                                   all_library, all_zones)
+                VALUES ('tester', 'Tester', TRUE, TRUE, TRUE, TRUE) RETURNING id
                 """
             )
         ).scalar_one()

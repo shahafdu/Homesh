@@ -13,7 +13,7 @@ from uuid import UUID
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 from sqlalchemy import text
 
-from .access import can_read, library_rules, visible
+from .access import can_read, library_scope, visible
 from .config import get_settings
 from .db import get_engine
 from .metadata import extract_for_source
@@ -153,7 +153,7 @@ async def browse(
     and files, filename first (§2, principles 1 and 2).
     """
     path = "/" + path.strip("/")
-    rules = library_rules(user.id)
+    rules = library_scope(user.id)
 
     with get_engine().connect() as conn:
         sources = conn.execute(
@@ -326,7 +326,7 @@ async def search(
 
     # Filtered after the query rather than inside it: a result someone cannot
     # open must not appear, or search becomes a way to learn what exists.
-    rules = library_rules(user.id)
+    rules = library_scope(user.id)
     return [
         {
             "item_id": str(r[4]),
