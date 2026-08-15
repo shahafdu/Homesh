@@ -699,3 +699,28 @@ button.compact:disabled { opacity: .5; cursor: not-allowed; }
   font-size: 13.5px;
 }
 .takeover p { margin: 0 0 10px; }
+
+/* ── People ─────────────────────────────────────────────────────────────── */
+
+.ticks { display: flex; flex-wrap: wrap; gap: 7px; margin: 4px 0 2px; }
+.tick {
+  padding: 7px 11px; font-size: 13px;
+  background: var(--bg); color: var(--muted);
+  border: 1px solid var(--line); border-radius: 8px; cursor: pointer;
+}
+.tick[aria-pressed="true"] {
+  border-color: var(--accent); color: var(--ink);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+.invite-row {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; padding: 9px 0; border-top: 1px solid var(--line);
+}
+.invite-row:first-of-type { border-top: 0; }
+
+.invite-link {
+  font-family: var(--mono); font-size: 12px;
+  padding: 10px 12px; border-radius: 8px;
+  background: var(--bg); border: 1px dashed var(--line);
+}

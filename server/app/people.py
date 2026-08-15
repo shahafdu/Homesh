@@ -6,7 +6,10 @@ person is allowed to do once proven.
 
 from __future__ import annotations
 
+import json
 import logging
+import secrets
+from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -18,6 +21,16 @@ from .security import CurrentUser, audit, require_user
 
 log = logging.getLogger("homesh.people")
 router = APIRouter(prefix="/api/people", tags=["people"])
+
+
+INVITE_TTL = timedelta(days=7)
+
+
+class InviteCreate(BaseModel):
+    handle: str = Field(min_length=2, max_length=40, pattern=r"^[a-zA-Z0-9_.-]+$")
+    display_name: str = Field(min_length=1, max_length=80)
+    library: list[str] = Field(default_factory=list, max_length=100)
+    zones: list[UUID] = Field(default_factory=list, max_length=50)
 
 
 class RulesUpdate(BaseModel):
@@ -87,6 +100,84 @@ async def list_people(user: CurrentUser = Depends(require_user)) -> list[dict]:
         }
         for p in people
     ]
+
+
+@router.post("/invites", status_code=status.HTTP_201_CREATED)
+async def create_invite(body: InviteCreate, user: CurrentUser = Depends(require_user)) -> dict:
+    """Invite someone, with their access decided up front.
+
+    The invite carries the rules so the account is correctly scoped from its
+    first sign-in, rather than existing briefly with the run of the house.
+    """
+    _require_admin(user)
+
+    with get_engine().connect() as conn:
+        taken = conn.execute(
+            text("SELECT 1 FROM users WHERE handle = :h"), {"h": body.handle}
+        ).first()
+    if taken:
+        raise HTTPException(status.HTTP_409_CONFLICT, "that username is taken")
+
+    # Longer and more random than a pairing code: this one travels by message
+    # and creates an account, so it should not be guessable or shoulder-read.
+    code = secrets.token_urlsafe(12)
+
+    with get_engine().begin() as conn:
+        conn.execute(text("DELETE FROM invites WHERE expires_at < now() AND used_at IS NULL"))
+        conn.execute(
+            text(
+                """
+                INSERT INTO invites (code, handle, display_name, library_rules,
+                                     zone_rules, created_by, expires_at)
+                VALUES (:c, :h, :d, CAST(:lib AS jsonb), CAST(:zones AS jsonb), :by, :exp)
+                """
+            ),
+            {
+                "c": code,
+                "h": body.handle,
+                "d": body.display_name,
+                "lib": json.dumps([f"/{p.strip().strip('/')}" for p in body.library if p.strip()]),
+                "zones": json.dumps([str(z) for z in body.zones]),
+                "by": str(user.id),
+                "exp": datetime.now(UTC) + INVITE_TTL,
+            },
+        )
+        audit(conn, "invite.created", user.id, {"handle": body.handle}, None)
+
+    return {"code": code, "expires_in_days": INVITE_TTL.days}
+
+
+@router.get("/invites")
+async def list_invites(user: CurrentUser = Depends(require_user)) -> list[dict]:
+    _require_admin(user)
+    with get_engine().connect() as conn:
+        rows = conn.execute(
+            text(
+                """
+                SELECT code, handle, display_name, expires_at, used_at
+                FROM invites WHERE used_at IS NULL AND expires_at > now()
+                ORDER BY created_at DESC
+                """
+            )
+        ).all()
+    return [
+        {
+            "code": r[0],
+            "handle": r[1],
+            "display_name": r[2],
+            "expires_at": r[3].isoformat(),
+        }
+        for r in rows
+    ]
+
+
+@router.delete("/invites/{code}")
+async def revoke_invite(code: str, user: CurrentUser = Depends(require_user)) -> dict:
+    _require_admin(user)
+    with get_engine().begin() as conn:
+        conn.execute(text("DELETE FROM invites WHERE code = :c AND used_at IS NULL"),
+                     {"c": code})
+    return {"ok": True}
 
 
 @router.put("/{user_id}/rules")

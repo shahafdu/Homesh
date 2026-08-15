@@ -4,6 +4,7 @@ import { login, logout, passkeysSupported, register } from "./auth";
 import Browser from "./Browser";
 import Player from "./Player";
 import Settings from "./Settings";
+import People from "./People";
 import PlayTo from "./PlayTo";
 import Viewer from "./Viewer";
 import Zones from "./Zones";
@@ -20,6 +21,10 @@ export default function App() {
   const [viewing, setViewing] = useState<{ files: FileEntry[]; index: number } | null>(null);
   const closeViewer = useCallback(() => setViewing(null), []);
   const [showZones, setShowZones] = useState(false);
+  const [showPeople, setShowPeople] = useState(false);
+  // An invite link is how somebody else joins, so it is read before anything
+  // else decides which screen to show.
+  const invite = new URLSearchParams(window.location.search).get("invite");
   const [sendTo, setSendTo] = useState<{ file: FileEntry; siblings: FileEntry[] } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -96,6 +101,7 @@ export default function App() {
           onViewChange={(view) => void changePrefs({ view })}
           onOpenSettings={() => setShowSettings(true)}
           onOpenZones={() => setShowZones(true)}
+          onOpenPeople={state.user.is_admin ? () => setShowPeople(true) : undefined}
           onSendTo={(file, siblings) => setSendTo({ file, siblings })}
           onPlay={player.play}
           onView={(files, index) => {
@@ -122,6 +128,7 @@ export default function App() {
         )}
 
         {showZones && <Zones onClose={() => setShowZones(false)} />}
+        {showPeople && <People onClose={() => setShowPeople(false)} />}
 
         {sendTo && (
           <PlayTo
@@ -169,10 +176,80 @@ export default function App() {
     );
   }
 
+  if (invite) {
+    return (
+      <AcceptInvite
+        code={invite}
+        busy={busy}
+        error={error}
+        onAccept={() => run(() => register("", "", null, invite))}
+      />
+    );
+  }
+
   return state.has_users ? (
     <SignIn busy={busy} error={error} onSignIn={() => run(login)} />
   ) : (
     <FirstRun busy={busy} error={error} onRegister={(h, d, c) => run(() => register(h, d, c))} />
+  );
+}
+
+/** The screen an invited person lands on, on their own device.
+ *
+ * They choose nothing: the name and the access were decided by whoever invited
+ * them, so the only action is to create a passkey.
+ */
+function AcceptInvite(props: {
+  code: string;
+  busy: boolean;
+  error: string | null;
+  onAccept: () => void;
+}) {
+  const [who, setWho] = useState<{ display_name: string } | null>(null);
+  const [invalid, setInvalid] = useState(false);
+
+  useEffect(() => {
+    api
+      .get<{ display_name: string }>(`/api/auth/invite/${encodeURIComponent(props.code)}`)
+      .then(setWho)
+      .catch(() => setInvalid(true));
+  }, [props.code]);
+
+  if (invalid) {
+    return (
+      <div className="shell">
+        <div className="card">
+          <h1>That invitation has expired</h1>
+          <p className="sub">Ask whoever invited you to send a new one.</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="shell">
+      <div className="card">
+        <h1>Welcome{who ? `, ${who.display_name}` : ""}</h1>
+        <p className="sub">
+          Create a passkey on this device to finish. There is no password to choose
+          or remember.
+        </p>
+
+        <button disabled={props.busy || !who || !passkeysSupported()} onClick={props.onAccept}>
+          {props.busy ? "Waiting for passkey…" : "Create passkey"}
+        </button>
+
+        {!passkeysSupported() && (
+          <div className="error">This browser does not support passkeys.</div>
+        )}
+        {props.error && <div className="error">{props.error}</div>}
+
+        <div className="hint">
+          Use the device you will actually watch on — a passkey belongs to the device
+          that creates it.
+        </div>
+      </div>
+    </div>
   );
 }
 

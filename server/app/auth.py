@@ -67,6 +67,7 @@ class _Flow:
     expires_at: datetime
     handle: str | None = None
     display_name: str | None = None
+    invite_code: str | None = None
 
 
 _flows: dict[str, _Flow] = {}
@@ -120,9 +121,13 @@ def ensure_bootstrap_code() -> str | None:
 
 
 class RegisterBegin(BaseModel):
-    handle: str = Field(min_length=2, max_length=40, pattern=r"^[a-zA-Z0-9_.-]+$")
-    display_name: str = Field(min_length=1, max_length=80)
+    # Both are ignored when an invite is used: the inviter chose them, and
+    # letting the invitee override would defeat the point of scoping an account
+    # before it exists.
+    handle: str = Field(default="", max_length=40)
+    display_name: str = Field(default="", max_length=80)
     bootstrap_code: str | None = None
+    invite_code: str | None = None
 
 
 class CompleteBody(BaseModel):
@@ -132,6 +137,28 @@ class CompleteBody(BaseModel):
 
 
 # ── Endpoints ───────────────────────────────────────────────────────────────
+
+
+@router.get("/invite/{code}")
+async def invite_details(code: str) -> dict:
+    """What an invite is for, so the sign-up screen can greet by name.
+
+    Unauthenticated by necessity, since the person has no account yet. It reveals
+    only what they are about to be told anyway.
+    """
+    with get_engine().connect() as conn:
+        row = conn.execute(
+            text(
+                """
+                SELECT handle, display_name FROM invites
+                WHERE code = :c AND used_at IS NULL AND expires_at > now()
+                """
+            ),
+            {"c": code},
+        ).first()
+    if row is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "this invitation is not valid")
+    return {"handle": row[0], "display_name": row[1]}
 
 
 @router.get("/state")
@@ -163,8 +190,27 @@ async def register_begin(
 ) -> dict:
     settings = get_settings()
     first_user = user_count() == 0
+    handle, display_name = body.handle.strip(), body.display_name.strip()
 
-    if first_user:
+    if body.invite_code:
+        # The invite decides who this is. Registration happens on the invitee own
+        # device, which is the whole point: a passkey belongs to the authenticator
+        # that created it, so an admin enrolling someone else would enrol the
+        # wrong fingerprint.
+        with get_engine().connect() as conn:
+            row = conn.execute(
+                text(
+                    """
+                    SELECT handle, display_name FROM invites
+                    WHERE code = :c AND used_at IS NULL AND expires_at > now()
+                    """
+                ),
+                {"c": body.invite_code},
+            ).first()
+        if row is None:
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "this invitation is not valid")
+        handle, display_name = row[0], row[1]
+    elif first_user:
         # secrets.compare_digest to keep the check constant-time.
         if not _bootstrap_code or not body.bootstrap_code:
             raise HTTPException(status.HTTP_403_FORBIDDEN, "bootstrap code required")
@@ -174,9 +220,12 @@ async def register_begin(
         # No public registration, ever.
         raise HTTPException(status.HTTP_403_FORBIDDEN, "an admin must invite new users")
 
+    if not handle or not display_name:
+        raise HTTPException(422, "a username and display name are required")
+
     with get_engine().connect() as conn:
         taken = conn.execute(
-            text("SELECT 1 FROM users WHERE handle = :h"), {"h": body.handle}
+            text("SELECT 1 FROM users WHERE handle = :h"), {"h": handle}
         ).first()
     if taken:
         raise HTTPException(status.HTTP_409_CONFLICT, "handle already taken")
@@ -190,8 +239,8 @@ async def register_begin(
         rp_id=settings.rp_id,
         rp_name=settings.rp_name,
         user_id=user_id.bytes,
-        user_name=body.handle,
-        user_display_name=body.display_name,
+        user_name=handle,
+        user_display_name=display_name,
         authenticator_selection=AuthenticatorSelectionCriteria(
             # Discoverable credentials give a genuinely usernameless login.
             resident_key=ResidentKeyRequirement.REQUIRED,
@@ -202,8 +251,9 @@ async def register_begin(
     flow_id = _new_flow(
         options.challenge,
         "register",
-        handle=body.handle,
-        display_name=body.display_name,
+        handle=handle,
+        display_name=display_name,
+        invite_code=body.invite_code,
     )
     return {
         "flow_id": flow_id,
@@ -264,8 +314,55 @@ async def register_complete(body: CompleteBody, request: Request, response: Resp
             },
         )
 
+        # An invited account arrives already scoped. Applying the rules in the
+        # same transaction as the account means it never exists, even briefly,
+        # with the run of the house.
+        if flow.invite_code:
+            invite = conn.execute(
+                text(
+                    """
+                    SELECT library_rules, zone_rules FROM invites
+                    WHERE code = :c AND used_at IS NULL AND expires_at > now()
+                    """
+                ),
+                {"c": flow.invite_code},
+            ).first()
+            if invite is None:
+                raise HTTPException(status.HTTP_403_FORBIDDEN, "this invitation is not valid")
+
+            for prefix in invite[0] or []:
+                conn.execute(
+                    text(
+                        """
+                        INSERT INTO user_library_rules (user_id, path_prefix)
+                        VALUES (:u, :p) ON CONFLICT DO NOTHING
+                        """
+                    ),
+                    {"u": str(user_id), "p": prefix},
+                )
+            for zone_id in invite[1] or []:
+                conn.execute(
+                    text(
+                        """
+                        INSERT INTO user_zone_rules (user_id, zone_id)
+                        VALUES (:u, :z) ON CONFLICT DO NOTHING
+                        """
+                    ),
+                    {"u": str(user_id), "z": zone_id},
+                )
+            conn.execute(
+                text("UPDATE invites SET used_at = now(), user_id = :u WHERE code = :c"),
+                {"u": str(user_id), "c": flow.invite_code},
+            )
+
         token = create_session(conn, user_id, body.device_label)
-        audit(conn, "auth.register", user_id, {"handle": flow.handle, "first": is_first}, ip)
+        audit(
+            conn,
+            "auth.register",
+            user_id,
+            {"handle": flow.handle, "first": is_first, "invited": bool(flow.invite_code)},
+            ip,
+        )
 
     if is_first:
         global _bootstrap_code

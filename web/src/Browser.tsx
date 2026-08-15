@@ -32,13 +32,15 @@ export default function Browser(props: {
   onViewChange: (v: View) => void;
   onOpenSettings: () => void;
   onOpenZones: () => void;
+  onOpenPeople?: () => void;
   onPlay: (files: FileEntry[], index: number, folderPath: string) => void;
   onView: (files: FileEntry[], index: number) => void;
   onSendTo: (file: FileEntry, siblings: FileEntry[]) => void;
   playingId: string | null;
 }) {
   const {
-    isAdmin, view, onViewChange, onOpenSettings, onOpenZones, onPlay, onView, onSendTo, playingId,
+    isAdmin, view, onViewChange, onOpenSettings, onOpenZones, onOpenPeople,
+    onPlay, onView, onSendTo, playingId,
   } = props;
 
   // The current folder lives in the URL, so the browser's own history works and a
@@ -131,6 +133,11 @@ export default function Browser(props: {
         <button className="iconbtn" onClick={onOpenZones} aria-label="Zones" title="Zones">
           ⧉
         </button>
+        {onOpenPeople && (
+          <button className="iconbtn" onClick={onOpenPeople} aria-label="People" title="People">
+            ☺
+          </button>
+        )}
         <button className="iconbtn" onClick={onOpenSettings} aria-label="Settings" title="Settings">
           ⚙
         </button>

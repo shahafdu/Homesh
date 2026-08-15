@@ -31,11 +31,13 @@ export async function register(
   handle: string,
   displayName: string,
   bootstrapCode: string | null,
+  inviteCode: string | null = null,
 ): Promise<void> {
   const begin = await api.post<BeginResponse>("/api/auth/register/begin", {
     handle,
     display_name: displayName,
     bootstrap_code: bootstrapCode,
+    invite_code: inviteCode,
   });
 
   const credential = await startRegistration({ optionsJSON: begin.options as never });
