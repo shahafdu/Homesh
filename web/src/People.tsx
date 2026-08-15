@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { ApiError } from "./api";
 import { AudienceEditor, type Choice } from "./Audience";
+import { copyText } from "./copy";
 import { browse, type DirEntry } from "./library";
 import {
   createInvite,
@@ -134,12 +135,7 @@ export default function People(props: { onClose: () => void }) {
                   <div className="muted small nm-clip">{inviteLink(invite.code)}</div>
                 </div>
                 <div className="zone-controls">
-                  <button
-                    className="compact"
-                    onClick={() => void navigator.clipboard?.writeText(inviteLink(invite.code))}
-                  >
-                    Copy link
-                  </button>
+                  <CopyButton value={inviteLink(invite.code)} />
                   <button className="compact" onClick={() => act(() => revokeInvite(invite.code))}>
                     Cancel
                   </button>
@@ -314,9 +310,7 @@ function InviteForm(props: {
         </p>
         <div className="invite-link nm-clip">{link}</div>
         <div className="zone-controls">
-          <button className="compact primary" onClick={() => void navigator.clipboard?.writeText(link)}>
-            Copy link
-          </button>
+          <CopyButton value={link} primary />
           <button className="compact" onClick={props.onDone}>Done</button>
         </div>
       </div>
@@ -467,5 +461,28 @@ function Audiences(props: {
       {props.folders.map((f) => row(f, "folder"))}
       {props.rooms.map((r) => row(r, "room"))}
     </div>
+  );
+}
+
+
+/** Copy, and say whether it worked.
+ *
+ * Over plain http the clipboard API is unavailable, so this can genuinely fail.
+ * A button that silently does nothing would leave someone convinced they had
+ * sent an invitation they had not.
+ */
+function CopyButton(props: { value: string; primary?: boolean }) {
+  const [state, setState] = useState<"idle" | "done" | "failed">("idle");
+
+  return (
+    <button
+      className={`compact${props.primary ? " primary" : ""}`}
+      onClick={async () => {
+        setState((await copyText(props.value)) ? "done" : "failed");
+        window.setTimeout(() => setState("idle"), 2500);
+      }}
+    >
+      {state === "done" ? "Copied" : state === "failed" ? "Select it above" : "Copy link"}
+    </button>
   );
 }

@@ -57,7 +57,7 @@ secrets. Read both when resuming; never copy their contents into a tracked file.
 | 1 · Sources & catalog | ✅ done | Local connector, scanner, folder tree, search |
 | 2 · Playback | ✅ done | Signed URLs, range streaming, thumbnails, audio player with folder queue, video direct-play, photo and document viewer |
 | 3 · Control tower & zones | 🔨 | Denon control + zones/sessions done and verified against the real receiver; control tower UI next. 
-| 4 · TV apps | ⬜ | **One Android TV app may cover every screen** — most already have an Android box in front of them, including the LG. webOS dropped. Tizen only if a screen turns out to have no box |
+| 4 · TV apps | ✅ | Android TV shell built, verified end to end on an emulator (pair → socket → play → position reported). No Gradle: aapt2/javac/d8/apksigner, 21 KB, built by CI every commit. webOS dropped; Tizen only if a screen turns out to have no box |
 | 5 · Playlists & music intelligence | ⬜ | Winamp `.m3u`/`.pls` import with path repair, AcoustID tag repair |
 | 6 · AI | ⬜ | CPU-only CLIP/text embeddings, NL search; Whisper on-demand only |
 | 7 · Photo availability | ⬜ | RAID→Drive sync, Wake-on-LAN, Takeout gap-fill |
@@ -75,6 +75,9 @@ secrets. Read both when resuming; never copy their contents into a tracked file.
 - [ ] Google Drive connector — **blocked on Shahaf creating the OAuth client**
 - [ ] Go agent + WireGuard (Mode B split; only needed when the core moves off the PC)
 - [ ] Deploy to Oracle Always Free (phase 0.5)
+- [ ] Install the TV app on the real boxes — `docs/TV_APP.md` has the ADB steps.
+      A box installed from a different machine must be uninstalled first, because
+      the signing key is per-machine and never committed
 - [ ] "Add another passkey" flow — currently a passkey can only be registered while
       creating an account, which is a real gap for a multi-device household
 
@@ -158,8 +161,11 @@ server/migrations 001_init, 002_natural_sort, 003_search_indexes, 004_user_prefs
                   008_invites, 009_explicit_access, 010_audience
 server/tests/     conftest + scanner, library, security, prefs, streaming
 web/src/          App, Browser, Settings, api, auth, library, prefs, styles.css
-tools/            probe-denon.ps1, configure-network.ps1, run-tests.ps1
-docs/             ARCHITECTURE.md, USER_GUIDE.md
+android/          TV shell — Manifest, java/com/homesh/tv/{MainActivity,SetupActivity,
+                  Prefs,ServerAddress}, res/, test/ServerAddressTest.java
+tools/            probe-denon.ps1, configure-network.ps1, run-tests.ps1,
+                  build-tv-apk.sh
+docs/             ARCHITECTURE.md, USER_GUIDE.md, TV_APP.md
 ```
 
 ---
@@ -211,6 +217,11 @@ TOKEN=$(printf "protocol=https\nhost=github.com\n\n" | git credential fill | gre
 - No media URL is guessable or long-lived
 - No inbound ports at home; agents dial out
 - Path confinement checked *after* symlink resolution
+- **No secure-context-only browser APIs.** Screens reach the server over plain
+  http at a LAN address, which is not a secure context: `crypto.randomUUID`,
+  `navigator.clipboard` and friends are undefined there. They work on the
+  developer's localhost and fail on every device in the house — use
+  `randomId()` from `web/src/id.ts` and guard the rest
 - **Access is granted, never assumed.** An account reaches only what it has been
   given. `all_library` / `all_zones` store "everything" as its own fact, so an
   empty rule list means empty — the opposite default fails silently and totally
