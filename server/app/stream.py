@@ -16,6 +16,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response,
 from fastapi.responses import StreamingResponse
 from sqlalchemy import text
 
+from .access import may_access_item
 from .config import get_settings
 from .db import get_engine
 from .security import CurrentUser, optional_user, require_user
@@ -112,6 +113,9 @@ async def signed_url(item_id: UUID, user: CurrentUser = Depends(require_user)) -
     if not exists:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "no such item")
 
+    if not may_access_item(item_id, user.id):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "no such item")
+
     ttl = get_settings().media_url_ttl_minutes * 60
     return {
         "url": f"/api/stream/{item_id}?t={mint(item_id, user.id, 'stream')}",
@@ -140,6 +144,13 @@ async def thumbnail(
             authorised = False
     if not authorised:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "authentication required")
+
+    # A thumbnail is a small copy of the thing itself, so it needs the same scope
+    # check — otherwise a restricted account could browse the library in
+    # miniature.
+    viewer = user.id if user else (verify(t, "thumb").user_id if t else None)
+    if viewer and not may_access_item(item_id, viewer):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "no such item")
 
     path = cache_path(item_id, size)
 
@@ -202,6 +213,12 @@ async def stream(
     if claim.item_id != item_id:
         # A token for one item must not unlock another.
         raise HTTPException(status.HTTP_403_FORBIDDEN, "token does not match item")
+
+    # Checked again at serving time, not only at minting time. The token names
+    # the user it was issued to, so access revoked in between takes effect on the
+    # next request rather than whenever the token happens to expire.
+    if not may_access_item(item_id, claim.user_id):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "not available to this account")
 
     connector, rel, filename, size, ext = resolve_playable(item_id)
     media_type = MIME.get(ext.lower(), "application/octet-stream")

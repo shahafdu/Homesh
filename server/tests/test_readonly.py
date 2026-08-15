@@ -25,6 +25,14 @@ ALLOWED_MUTATING_ROUTES = {
     ("POST", "/api/auth/logout"),
     ("POST", "/api/sources/{source_id}/scan"),
     ("PUT", "/api/prefs"),
+    ("PUT", "/api/people/{user_id}/rules"),
+    ("DELETE", "/api/people/{user_id}"),
+    ("POST", "/api/renderers/pair/begin"),
+    ("POST", "/api/renderers/pair/claim"),
+    ("POST", "/api/zones"),
+    ("POST", "/api/zones/{zone_id}/play"),
+    ("POST", "/api/zones/{zone_id}/stop"),
+    ("POST", "/api/zones/{zone_id}/volume"),
 }
 
 

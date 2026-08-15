@@ -21,6 +21,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import text
 
 from . import denon, occupancy
+from .access import can_use_zone, may_access_item, zone_rules
 from .config import get_settings
 from .db import get_engine
 from .security import CurrentUser, require_user
@@ -116,6 +117,12 @@ def _load_zone(zone_id: UUID) -> Zone:
     )
 
 
+def _require_zone_access(zone_id: UUID, user: CurrentUser) -> None:
+    """404 rather than 403: a room outside your scope should not be confirmed."""
+    if not can_use_zone(zone_id, zone_rules(user.id)):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "no such zone")
+
+
 async def _run_commands(zone: Zone, commands: list[dict]) -> list[str]:
     """Execute a zone's orchestration steps.
 
@@ -139,7 +146,7 @@ async def _run_commands(zone: Zone, commands: list[dict]) -> list[str]:
 
 
 @router.get("")
-async def list_zones(_: CurrentUser = Depends(require_user)) -> list[dict]:
+async def list_zones(user: CurrentUser = Depends(require_user)) -> list[dict]:
     """Every zone with its current session — this is the control tower's view."""
     with get_engine().connect() as conn:
         rows = conn.execute(
@@ -156,8 +163,13 @@ async def list_zones(_: CurrentUser = Depends(require_user)) -> list[dict]:
             )
         ).all()
 
+    allowed = zone_rules(user.id)
     out = []
     for row in rows:
+        # Rooms this person may not use are not listed. A child seeing the living
+        # room greyed out learns only that it exists and is out of reach.
+        if not can_use_zone(row[0], allowed):
+            continue
         queue = row[6] or []
         cursor = row[7] or 0
         kind = row[2]
@@ -243,6 +255,14 @@ async def play(
 ) -> dict:
     """Start playback in a zone: record the session, orchestrate, then push audio."""
     zone = _load_zone(zone_id)
+    _require_zone_access(zone_id, user)
+
+    # Sending something you cannot open to a room would be a way around the
+    # library scope, so the content is checked as well as the room.
+    for item in body.item_ids:
+        if not may_access_item(item, user.id):
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "no such item")
+
     if zone.renderer_kind is None:
         raise HTTPException(status.HTTP_409_CONFLICT, "zone has no renderer bound")
 
@@ -395,6 +415,7 @@ async def _push_to_screen(zone: Zone, item_id: UUID, user: CurrentUser) -> dict:
 @router.post("/{zone_id}/stop")
 async def stop(zone_id: UUID, user: CurrentUser = Depends(require_user)) -> dict:
     zone = _load_zone(zone_id)
+    _require_zone_access(zone_id, user)
     settings = get_settings()
 
     if zone.renderer_kind == "tvapp" and zone.renderer_id:
@@ -428,6 +449,7 @@ async def set_volume(
     zone_id: UUID, body: VolumeRequest, user: CurrentUser = Depends(require_user)
 ) -> dict:
     zone = _load_zone(zone_id)
+    _require_zone_access(zone_id, user)
     settings = get_settings()
 
     if zone.renderer_kind == "tvapp" and zone.renderer_id:
@@ -459,9 +481,10 @@ async def set_volume(
 
 
 @router.get("/{zone_id}/device")
-async def device_state(zone_id: UUID, _: CurrentUser = Depends(require_user)) -> dict:
+async def device_state(zone_id: UUID, user: CurrentUser = Depends(require_user)) -> dict:
     """What the hardware actually reports, as opposed to what we last asked for."""
     zone = _load_zone(zone_id)
+    _require_zone_access(zone_id, user)
     host = get_settings().denon_host.strip()
 
     if zone.renderer_kind != "heos" or not host:

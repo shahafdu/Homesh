@@ -13,6 +13,7 @@ from uuid import UUID
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 from sqlalchemy import text
 
+from .access import can_read, library_rules, visible
 from .config import get_settings
 from .db import get_engine
 from .metadata import extract_for_source
@@ -144,7 +145,7 @@ async def list_sources(_: CurrentUser = Depends(require_user)) -> list[dict]:
 @router.get("/browse")
 async def browse(
     path: str = Query("", description="Virtual path, e.g. /local/raid/Music"),
-    _: CurrentUser = Depends(require_user),
+    user: CurrentUser = Depends(require_user),
 ) -> dict:
     """List one level of the unified namespace.
 
@@ -152,6 +153,7 @@ async def browse(
     and files, filename first (§2, principles 1 and 2).
     """
     path = "/" + path.strip("/")
+    rules = library_rules(user.id)
 
     with get_engine().connect() as conn:
         sources = conn.execute(
@@ -162,14 +164,24 @@ async def browse(
             return {
                 "path": "/",
                 "parent": None,
+                # A source the person cannot reach into is not listed at all.
+                # Absent rather than greyed out: there is nothing to be done
+                # about it, so showing it would only invite the question.
                 "dirs": [
-                    {"name": s[1], "path": s[2], "source": str(s[0])} for s in sources
+                    {"name": s[1], "path": s[2], "source": str(s[0])}
+                    for s in sources
+                    if visible(s[2], rules)
                 ],
                 "files": [],
             }
 
         match = next((s for s in sources if path == s[2] or path.startswith(s[2] + "/")), None)
         if match is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "no source mounted at that path")
+
+        if not visible(path, rules):
+            # 404 rather than 403: a folder outside your scope should not be
+            # confirmed to exist.
             raise HTTPException(status.HTTP_404_NOT_FOUND, "no source mounted at that path")
 
         source_id, _name, prefix = match
@@ -237,11 +249,18 @@ async def browse(
     # Up from a source root goes to the namespace root, not to a phantom "/local"
     # that nothing is mounted at.
     parent = "/" if path == prefix else (path.rsplit("/", 1)[0] or "/")
+    # Files are only listed where the folder itself is readable; a folder merely
+    # on the way to an allowed one shows its subfolders and nothing else.
+    readable_here = can_read(path, rules)
     return {
         "path": path,
         "parent": parent,
-        "dirs": [{"name": d[0], "path": f"{path}/{d[0]}"} for d in dirs],
-        "files": [
+        "dirs": [
+            {"name": d[0], "path": f"{path}/{d[0]}"}
+            for d in dirs
+            if visible(f"{path}/{d[0]}", rules)
+        ],
+        "files": [] if not readable_here else [
             {
                 "item_id": str(f[4]),
                 # The filename is the primary label, always. Metadata may add to it,
@@ -265,7 +284,7 @@ async def browse(
 async def search(
     q: str = Query(min_length=1, max_length=200),
     limit: int = Query(50, ge=1, le=200),
-    _: CurrentUser = Depends(require_user),
+    user: CurrentUser = Depends(require_user),
 ) -> list[dict]:
     """Filename search, typo-tolerant via trigram similarity.
 
@@ -305,6 +324,9 @@ async def search(
             {"q": q, "lim": limit},
         ).all()
 
+    # Filtered after the query rather than inside it: a result someone cannot
+    # open must not appear, or search becomes a way to learn what exists.
+    rules = library_rules(user.id)
     return [
         {
             "item_id": str(r[4]),
@@ -315,6 +337,7 @@ async def search(
             "available": r[3],
         }
         for r in rows
+        if can_read(f"{r[2]}/{r[1]}".rstrip("/"), rules)
     ]
 
 
