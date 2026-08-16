@@ -187,3 +187,60 @@ export function crumbs(
   }
   return out;
 }
+
+
+/** What the details view can be ordered by. */
+export type SortKey = "name" | "title" | "artist" | "album" | "duration" | "size" | "date";
+
+export interface Sort {
+  key: SortKey;
+  desc: boolean;
+}
+
+/** Numeric-aware, locale-aware comparison.
+ *
+ * "track2" before "track10", and Hebrew sorted as Hebrew — the same rule the
+ * server's natsort collation applies, so re-sorting in the browser cannot
+ * disagree with the order the server sent.
+ */
+const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
+
+function field(f: FileEntry, key: SortKey): string | number | null {
+  switch (key) {
+    case "name":
+      return f.filename;
+    case "title":
+      return f.meta?.title ?? null;
+    case "artist":
+      return f.meta?.artist ?? f.meta?.albumartist ?? null;
+    case "album":
+      return f.meta?.album ?? null;
+    case "duration":
+      return f.duration_ms ?? null;
+    case "size":
+      return f.size ?? null;
+    case "date":
+      return f.mtime ?? null;
+  }
+}
+
+export function sortFiles(files: FileEntry[], sort: Sort): FileEntry[] {
+  const sorted = [...files].sort((a, b) => {
+    const x = field(a, sort.key);
+    const y = field(b, sort.key);
+
+    // Files with no tag sink to the bottom whichever way the column is sorted.
+    // Flipping them to the top on a reverse sort would bury everything that
+    // actually has the value you asked to sort by.
+    if (x === null && y === null) return collator.compare(a.filename, b.filename);
+    if (x === null) return 1;
+    if (y === null) return -1;
+
+    const cmp =
+      typeof x === "number" && typeof y === "number"
+        ? x - y
+        : collator.compare(String(x), String(y));
+    return sort.desc ? -cmp : cmp;
+  });
+  return sorted;
+}

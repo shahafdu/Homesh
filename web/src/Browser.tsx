@@ -8,6 +8,9 @@ import {
   formatSize,
   listSources,
   scanSource,
+  sortFiles,
+  type Sort,
+  type SortKey,
   search,
   type FileEntry,
   type Kind,
@@ -130,6 +133,11 @@ export default function Browser(props: {
     return () => window.clearInterval(poll);
   }, [scanning]);
 
+  // Ordering is a property of how you are looking at a folder, so it sits
+  // beside the view mode rather than in saved preferences: you sort by artist to
+  // answer a question, not forever.
+  const [sort, setSort] = useState<Sort>({ key: "name", desc: false });
+
   const atRoot = hits === null && listing?.path === "/";
 
   return (
@@ -201,12 +209,41 @@ export default function Browser(props: {
           onPlay={onPlay}
           onView={onView}
           onActions={onActions}
+          sort={sort}
+          onSort={setSort}
           playingId={playingId}
         />
       )}
 
       {atRoot && <SourceList sources={sources} isAdmin={isAdmin} onScan={rescan} />}
     </div>
+  );
+}
+
+/** One clickable column heading.
+ *
+ * Clicking the column you are already sorted by reverses it, which is what every
+ * file browser does and therefore what fingers expect.
+ */
+function SortHead(props: {
+  label: string;
+  col: SortKey;
+  sort: Sort;
+  onSort: (s: Sort) => void;
+}) {
+  const active = props.sort.key === props.col;
+  return (
+    <button
+      className={`sorthead${active ? " active" : ""}`}
+      aria-sort={active ? (props.sort.desc ? "descending" : "ascending") : "none"}
+      onClick={(e) => {
+        e.stopPropagation();
+        props.onSort({ key: props.col, desc: active ? !props.sort.desc : false });
+      }}
+    >
+      {props.label}
+      <span className="arrow">{active ? (props.sort.desc ? "▾" : "▴") : ""}</span>
+    </button>
   );
 }
 
@@ -288,12 +325,23 @@ function FileRow(props: {
   return (
     <li className={cls} onClick={click}>
       <span className={`ic ${f.kind}`}>{isPlaying ? "▶" : GLYPH[f.kind]}</span>
+      {/* The filename is never replaced by a tag, only accompanied by one — a
+          corrupt tag must never leave you unable to tell what a file is. That is
+          why these are separate columns rather than a title that falls back to
+          the filename. */}
       <span className="nm" title={f.filename}>
         {f.filename}
-        {/* Additive: tags sit beneath the filename, never in place of it, so a
-            corrupt tag can never leave you wondering what a file is. */}
+        {/* The same metadata, folded under the filename. Columns need width a
+            phone does not have, and dropping the tags there entirely would make
+            the small screen the one that tells you least. Only one of the two is
+            ever visible — see the media query. */}
         {tags && <span className="tags">{tags}</span>}
       </span>
+      <span className="col" title={f.meta?.title ?? ""}>{f.meta?.title ?? ""}</span>
+      <span className="col" title={f.meta?.artist ?? f.meta?.albumartist ?? ""}>
+        {f.meta?.artist ?? f.meta?.albumartist ?? ""}
+      </span>
+      <span className="col" title={f.meta?.album ?? ""}>{f.meta?.album ?? ""}</span>
       <span className="meta dur">{formatDuration(f.duration_ms)}</span>
       <span className="meta">
         {f.available ? (
@@ -320,7 +368,8 @@ function containerClass(view: View): string {
   if (view === "columns") return "cols";
   if (view === "tiles-small") return "tiles small";
   if (view === "tiles-large") return "tiles large";
-  return "rows";
+  // The details view is the only one with columns, and its grid differs.
+  return "rows details";
 }
 
 function Folder(props: {
@@ -332,8 +381,11 @@ function Folder(props: {
   onView: (files: FileEntry[], index: number) => void;
   onActions: (file: FileEntry, siblings: FileEntry[]) => void;
   playingId: string | null;
+  sort: Sort;
+  onSort: (s: Sort) => void;
 }) {
-  const { listing, loading, view, onOpen, onPlay, onView, onActions, playingId } = props;
+  const { listing, loading, view, onOpen, onPlay, onView, onActions, playingId, sort, onSort } =
+    props;
   if (!listing) return <p className="muted">{loading ? "Loading…" : ""}</p>;
 
   if (listing.dirs.length === 0 && listing.files.length === 0) {
@@ -359,6 +411,9 @@ function Folder(props: {
               <span className="nm">..</span>
               {view === "details" && (
                 <>
+                  <span className="col" />
+                  <span className="col" />
+                  <span className="col" />
                   <span className="meta" />
                   <span className="meta date" />
                 </>
@@ -384,6 +439,9 @@ function Folder(props: {
               <span className="nm">{d.name}</span>
               {view === "details" && (
                 <>
+                  <span className="col" />
+                  <span className="col" />
+                  <span className="col" />
                   <span className="meta" />
                   <span className="meta date" />
                 </>
@@ -393,7 +451,19 @@ function Folder(props: {
         </li>
       ))}
 
-      {listing.files.map((f, i) => (
+      {view === "details" && (
+        <li className="rowhead">
+          <span />
+          <SortHead label="Name" col="name" sort={sort} onSort={onSort} />
+          <SortHead label="Title" col="title" sort={sort} onSort={onSort} />
+          <SortHead label="Artist" col="artist" sort={sort} onSort={onSort} />
+          <SortHead label="Album" col="album" sort={sort} onSort={onSort} />
+          <SortHead label="Time" col="duration" sort={sort} onSort={onSort} />
+          <span />
+        </li>
+      )}
+
+      {sortFiles(listing.files, sort).map((f, i) => (
         <FileRow
           key={f.item_id}
           f={f}

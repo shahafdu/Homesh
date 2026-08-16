@@ -7,6 +7,10 @@ import {
   listZones,
   pairDevice,
   setZoneVolume,
+  nextInZone,
+  pauseZone,
+  previousInZone,
+  resumeZone,
   stopZone,
   zoneStatus,
   type Zone,
@@ -73,6 +77,13 @@ export default function Zones(props: { onClose: () => void }) {
             zone={zone}
             onStop={() => act(() => stopZone(zone.id))}
             onVolume={(v) => act(() => setZoneVolume(zone.id, v))}
+            onToggle={() =>
+              act(() =>
+                zone.session?.state === "playing" ? pauseZone(zone.id) : resumeZone(zone.id),
+              )
+            }
+            onNext={() => act(() => nextInZone(zone.id))}
+            onPrevious={() => act(() => previousInZone(zone.id))}
           />
         ))}
 
@@ -98,6 +109,9 @@ function ZoneCard(props: {
   zone: Zone;
   onStop: () => void;
   onVolume: (level: number) => void;
+  onToggle: () => void;
+  onNext: () => void;
+  onPrevious: () => void;
 }) {
   const { zone } = props;
   const status = zoneStatus(zone);
@@ -125,6 +139,36 @@ function ZoneCard(props: {
               : "Playing"}
           </div>
           <div className="zone-controls">
+            {/* The same four controls whatever is in the room. A phone should not
+                have to know whether it is driving a television or a receiver. */}
+            <button
+              className="compact"
+              onClick={props.onPrevious}
+              aria-label={`Previous track in ${zone.name}`}
+              title="Previous"
+            >
+              ⏮
+            </button>
+            <button
+              className="compact"
+              onClick={props.onToggle}
+              aria-label={
+                zone.session?.state === "playing"
+                  ? `Pause ${zone.name}`
+                  : `Resume ${zone.name}`
+              }
+              title={zone.session?.state === "playing" ? "Pause" : "Play"}
+            >
+              {zone.session?.state === "playing" ? "⏸" : "▶"}
+            </button>
+            <button
+              className="compact"
+              onClick={props.onNext}
+              aria-label={`Next track in ${zone.name}`}
+              title="Next"
+            >
+              ⏭
+            </button>
             <button className="compact" onClick={props.onStop}>Stop</button>
             <input
               className="zone-vol"

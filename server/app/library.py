@@ -387,12 +387,12 @@ def _scan_then_extract(source_id: UUID, connector) -> None:
     """
     scan_source(source_id, connector)
 
-    # Tag extraction reads bytes. Over a network that is slow enough to be worth
-    # doing separately, so remote sources are indexed now and described later.
-    from .sources.gdrive import GoogleDriveConnector
-
-    if not isinstance(connector, GoogleDriveConnector):
-        extract_for_source(source_id, connector)
+    # Tag extraction reads bytes, which over a network is slow — hence the two
+    # passes. It is no longer skipped for remote sources, though: doing so left
+    # nine thousand Drive files with no artist, album or title at all, which is
+    # most of the library. Only the tag header is fetched, so the cost is
+    # kilobytes per file rather than the file.
+    extract_for_source(source_id, connector)
 
 
 def connector_for(source_id: UUID):

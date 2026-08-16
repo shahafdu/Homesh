@@ -12,7 +12,10 @@ from __future__ import annotations
 
 import json
 import logging
+import pathlib
 import subprocess
+import tempfile
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -177,6 +180,86 @@ def read_video(path: Path) -> tuple[dict[str, str], int | None]:
 READERS = {"audio": read_audio, "photo": read_photo, "video": read_video}
 
 
+# ── Reading tags from a source that is not a filesystem ─────────────────────
+#
+# The readers below take a path, because that is what mutagen and Pillow want.
+# A Drive file has no path, so a bounded prefix is fetched and written to a
+# temporary one. The point is the bound: a music library is 9,500 files, and
+# fetching all of every one to read three strings would move hundreds of
+# gigabytes to learn something that lives in the first few kilobytes.
+
+# Enough for a photo's EXIF, or an ID3 tag carrying cover art.
+_PREFIX_BYTES = 256 * 1024
+
+# ID3v2 declares its own length in its first ten bytes, so an MP3 usually needs
+# only that much fetched — a few kilobytes rather than a quarter of a megabyte.
+_ID3_HEADER = 10
+
+
+def _id3_length(head: bytes) -> int | None:
+    """Total ID3v2 tag length from its header, if this is one."""
+    if len(head) < _ID3_HEADER or head[:3] != b"ID3":
+        return None
+    # A syncsafe integer: seven bits per byte, so the high bit never collides
+    # with an MPEG frame sync.
+    size = 0
+    for byte in head[6:10]:
+        if byte & 0x80:
+            return None
+        size = (size << 7) | byte
+    return _ID3_HEADER + size
+
+
+def _fetch_prefix(connector, rel_path: str, want: int) -> bytes:
+    collected = bytearray()
+    for chunk in connector.open_range(rel_path, 0, want - 1):
+        collected += chunk
+        if len(collected) >= want:
+            break
+    return bytes(collected)
+
+
+# Audio frames fetched past the end of the tag. mutagen refuses a file it cannot
+# sync to an MPEG frame in, so the tag alone parses as nothing at all — which is
+# exactly what happened: every Drive track came back untagged despite having
+# perfectly good tags.
+_FRAME_MARGIN = 64 * 1024
+
+
+@contextmanager
+def _local_copy(connector, rel_path: str, filename: str):
+    """A real file holding enough of a remote one to read its tags.
+
+    Yields (path, partial). Local sources are handed straight through and are
+    never partial; a remote one is a prefix, and the flag says so because a
+    truncated file still parses — it simply reports the duration of the fragment
+    rather than of the track. A wrong duration is worse than no duration.
+    """
+    resolve = getattr(connector, "_resolve", None)
+    if resolve is not None:
+        path = resolve(rel_path)
+        if path.is_file():
+            yield path, False
+            return
+
+    head = _fetch_prefix(connector, rel_path, _ID3_HEADER)
+    tag_len = _id3_length(head)
+    want = min(tag_len + _FRAME_MARGIN, _PREFIX_BYTES) if tag_len else _PREFIX_BYTES
+
+    data = _fetch_prefix(connector, rel_path, want)
+    if not data:
+        raise OSError("could not read any of the file")
+
+    suffix = pathlib.Path(filename).suffix or ".bin"
+    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+        tmp.write(data)
+        tmp_path = pathlib.Path(tmp.name)
+    try:
+        yield tmp_path, True
+    finally:
+        tmp_path.unlink(missing_ok=True)
+
+
 def extract_for_source(
     source_id: UUID, connector: LocalConnector, limit: int | None = None
 ) -> ExtractResult:
@@ -219,10 +302,12 @@ def extract_for_source(
         rel = f"{dir_path}/{filename}" if dir_path else filename
 
         try:
-            path = connector._resolve(rel)  # noqa: SLF001 - same package boundary
-            if not path.is_file():
-                continue
-            tags, duration_ms = READERS[kind](path)
+            with _local_copy(connector, rel, filename) as (path, partial):
+                tags, duration_ms = READERS[kind](path)
+                if partial:
+                    # Measured from a fragment, so it would be the length of the
+                    # fragment. Left unset rather than recorded wrongly.
+                    duration_ms = None
         except Exception as exc:  # noqa: BLE001 - one bad file must not stop the pass
             result.failed += 1
             log.debug("metadata failed for %s: %s", filename, exc)

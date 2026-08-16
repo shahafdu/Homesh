@@ -63,8 +63,11 @@ async def _scan_one(source_id: UUID, name: str) -> None:
     The scanner is synchronous and network-bound; on a thread it cannot block
     playback, which is the one thing on this server nobody will forgive.
     """
-    from .library import connector_for
-    from .scanner import scan_source
+    # The same two passes the manual button runs: index first so the folder is
+    # browsable, then read tags. Calling the scanner alone would leave every new
+    # file with no artist or album — which is precisely the state this is meant
+    # to stop the library drifting into.
+    from .library import _scan_then_extract, connector_for
 
     connector = connector_for(source_id)
     if connector is None:
@@ -73,9 +76,8 @@ async def _scan_one(source_id: UUID, name: str) -> None:
 
     log.info("scheduled scan starting: %s", name)
     try:
-        result = await asyncio.to_thread(scan_source, source_id, connector)
-        log.info("scheduled scan of %s: +%d ~%d -%d",
-                 name, result.added, result.updated, result.vanished)
+        await asyncio.to_thread(_scan_then_extract, source_id, connector)
+        log.info("scheduled scan of %s finished", name)
     except Exception:  # noqa: BLE001
         # One unreachable source must never stop the loop that scans the others,
         # nor take the server down with it.

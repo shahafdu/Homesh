@@ -50,6 +50,17 @@ export const playInZone = (
 
 export const stopZone = (zoneId: string) => api.post(`/api/zones/${zoneId}/stop`);
 
+/** Transport for a room.
+ *
+ * Pausing is the renderer's job — it holds the stream. Skipping is the server's:
+ * the receiver is sent one URL at a time and has no idea a queue exists, so the
+ * queue lives here and the next track is pushed the same way the first was.
+ */
+export const pauseZone = (zoneId: string) => api.post(`/api/zones/${zoneId}/pause`);
+export const resumeZone = (zoneId: string) => api.post(`/api/zones/${zoneId}/resume`);
+export const nextInZone = (zoneId: string) => api.post(`/api/zones/${zoneId}/next`);
+export const previousInZone = (zoneId: string) => api.post(`/api/zones/${zoneId}/previous`);
+
 export const setZoneVolume = (zoneId: string, level: number) =>
   api.post(`/api/zones/${zoneId}/volume`, { level });
 

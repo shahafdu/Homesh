@@ -329,13 +329,27 @@ async def play(
         # Cast and browser renderers arrive in later phases.
         return {"zone": zone.name, "state": "buffering", "pushed": False}
 
+    return await _stream_to_receiver(zone, item_id, user, with_preroll=True)
+
+
+async def _stream_to_receiver(
+    zone: Zone, item_id: UUID, user: CurrentUser, *, with_preroll: bool
+) -> dict:
+    """Point the receiver at one item.
+
+    Extracted so that starting a queue and skipping within one take exactly the
+    same path. The preroll — powering a zone, selecting its input — is skipped
+    when skipping: the zone is already on, and re-sending those commands makes
+    the receiver click between tracks.
+    """
     settings = get_settings()
     host = settings.denon_host.strip()
     if not host:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "DENON_HOST is not set")
 
     try:
-        await _run_commands(zone, zone.preroll)
+        if with_preroll:
+            await _run_commands(zone, zone.preroll)
 
         # A receiver pulls for the length of a track, so the short browser TTL
         # would expire mid-song. This URL is LAN-scoped and still bound to one
@@ -351,15 +365,15 @@ async def play(
         with get_engine().begin() as conn:
             conn.execute(
                 text("UPDATE play_sessions SET state = 'idle' WHERE zone_id = :z"),
-                {"z": str(zone_id)},
+                {"z": str(zone.id)},
             )
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(exc)) from exc
 
     with get_engine().begin() as conn:
         conn.execute(
-            text("UPDATE play_sessions SET state = 'playing', updated_at = now() "
-                 "WHERE zone_id = :z"),
-            {"z": str(zone_id)},
+            text("UPDATE play_sessions SET state = 'playing', position_ms = 0, "
+                 "updated_at = now() WHERE zone_id = :z"),
+            {"z": str(zone.id)},
         )
     occupancy.invalidate()
 
@@ -526,3 +540,122 @@ async def device_state(zone_id: UUID, user: CurrentUser = Depends(require_user))
         "main_volume": state.main_volume,
         "source": state.source,
     }
+
+
+# ── Transport ───────────────────────────────────────────────────────────────
+#
+# The receiver is sent one URL at a time and has no idea a queue exists, so
+# skipping is the server's job rather than the hardware's. Pausing is the
+# opposite: the receiver holds the stream, so only it can pause it.
+#
+# Both kinds of renderer answer the same four endpoints, because a phone should
+# not have to know what is in the room to control it.
+
+
+def _queue_of(zone_id: UUID) -> tuple[list[str], int]:
+    with get_engine().connect() as conn:
+        row = conn.execute(
+            text("SELECT queue, cursor FROM play_sessions WHERE zone_id = :z"),
+            {"z": str(zone_id)},
+        ).first()
+    if row is None:
+        raise HTTPException(status.HTTP_409_CONFLICT, "nothing is playing in that room")
+    return list(row[0] or []), int(row[1] or 0)
+
+
+async def _set_paused(zone: Zone, paused: bool) -> None:
+    settings = get_settings()
+    if zone.renderer_kind == "tvapp" and zone.renderer_id:
+        from .renderers import hub
+
+        await hub.send(zone.renderer_id, {"type": "pause" if paused else "resume"})
+    elif zone.renderer_kind == "heos" and settings.denon_host.strip():
+        host = settings.denon_host.strip()
+        players = await denon.get_players(host)
+        if not players:
+            raise HTTPException(status.HTTP_502_BAD_GATEWAY, "the receiver reports no player")
+        await denon.set_play_state(host, players[0].pid, "pause" if paused else "play")
+
+
+@router.post("/{zone_id}/pause")
+async def pause(zone_id: UUID, user: CurrentUser = Depends(require_user)) -> dict:
+    zone = _load_zone(zone_id)
+    _require_zone_access(zone_id, user)
+    try:
+        await _set_paused(zone, True)
+    except denon.DenonError as exc:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(exc)) from exc
+
+    with get_engine().begin() as conn:
+        conn.execute(
+            text("UPDATE play_sessions SET state = 'paused', updated_at = now() "
+                 "WHERE zone_id = :z"),
+            {"z": str(zone_id)},
+        )
+    occupancy.invalidate()
+    return {"zone": zone.name, "state": "paused"}
+
+
+@router.post("/{zone_id}/resume")
+async def resume(zone_id: UUID, user: CurrentUser = Depends(require_user)) -> dict:
+    zone = _load_zone(zone_id)
+    _require_zone_access(zone_id, user)
+    try:
+        await _set_paused(zone, False)
+    except denon.DenonError as exc:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(exc)) from exc
+
+    with get_engine().begin() as conn:
+        conn.execute(
+            text("UPDATE play_sessions SET state = 'playing', updated_at = now() "
+                 "WHERE zone_id = :z"),
+            {"z": str(zone_id)},
+        )
+    occupancy.invalidate()
+    return {"zone": zone.name, "state": "playing"}
+
+
+async def _skip(zone_id: UUID, user: CurrentUser, delta: int) -> dict:
+    zone = _load_zone(zone_id)
+    _require_zone_access(zone_id, user)
+
+    queue, cursor = _queue_of(zone_id)
+    if not queue:
+        raise HTTPException(status.HTTP_409_CONFLICT, "nothing is playing in that room")
+
+    target = cursor + delta
+    if target < 0:
+        # Back from the first track restarts it, which is what every music player
+        # does and what the button is reached for.
+        target = 0
+    if target >= len(queue):
+        return await stop(zone_id, user)
+
+    item_id = UUID(queue[target])
+    if not may_access_item(item_id, user.id):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "no such item")
+
+    with get_engine().begin() as conn:
+        conn.execute(
+            text("UPDATE play_sessions SET cursor = :c, position_ms = 0, "
+                 "updated_at = now() WHERE zone_id = :z"),
+            {"c": target, "z": str(zone_id)},
+        )
+
+    if zone.renderer_kind == "tvapp":
+        return await _push_to_screen(zone, item_id, user)
+    if zone.renderer_kind == "heos":
+        # No preroll: the zone is already on, and re-running it makes the
+        # receiver click between tracks.
+        return await _stream_to_receiver(zone, item_id, user, with_preroll=False)
+    return {"zone": zone.name, "state": "buffering", "pushed": False}
+
+
+@router.post("/{zone_id}/next")
+async def next_track(zone_id: UUID, user: CurrentUser = Depends(require_user)) -> dict:
+    return await _skip(zone_id, user, 1)
+
+
+@router.post("/{zone_id}/previous")
+async def previous_track(zone_id: UUID, user: CurrentUser = Depends(require_user)) -> dict:
+    return await _skip(zone_id, user, -1)

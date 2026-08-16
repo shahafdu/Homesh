@@ -806,3 +806,53 @@ button.compact:disabled { opacity: .5; cursor: not-allowed; }
   color: var(--muted); margin: 14px 0 6px;
   padding-bottom: 5px; border-bottom: 1px solid var(--line);
 }
+
+/* ── Details view: metadata as columns ──────────────────────────────────────── */
+
+/* Seven cells: icon | name | title | artist | album | time | actions.
+   minmax(0,…) on every flexible one, so a long album name truncates instead of
+   pushing the row wider than the screen. */
+.rows.details li {
+  grid-template-columns:
+    22px minmax(0, 2fr) minmax(0, 1.5fr) minmax(0, 1.2fr) minmax(0, 1.2fr) auto auto;
+}
+
+/* Above the breakpoint the columns carry the metadata, so the tag line under the
+   filename would be the same thing twice. */
+.rows.details .tags { display: none; }
+
+.rows .col {
+  font-size: 13px; color: var(--muted);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+.rows li.rowhead {
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 6px; margin-bottom: 2px;
+  position: sticky; top: 0; z-index: 2;
+  background: var(--bg);
+}
+.rows li.rowhead:hover { background: var(--bg); }
+
+.sorthead {
+  display: flex; align-items: center; gap: 4px;
+  background: none; border: 0; padding: 2px 0; cursor: pointer;
+  font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.07em;
+  color: var(--muted); text-align: left;
+}
+.sorthead:hover { color: var(--ink); }
+.sorthead.active { color: var(--ink); }
+.sorthead .arrow { font-size: 9px; }
+
+/* A phone has no room for five columns. The filename is the one that must never
+   be dropped, so the tags fold back under it and the rest go. */
+@media (max-width: 720px) {
+  .rows.details li {
+    grid-template-columns: 22px minmax(0, 1fr) auto auto;
+  }
+  .rows.details .col { display: none; }
+  .rows li.rowhead { display: none; }
+  /* …and the tags come back under the filename, so the phone still shows what
+     the columns would have. */
+  .rows.details .tags { display: block; }
+}

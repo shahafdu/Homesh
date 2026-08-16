@@ -262,6 +262,22 @@ async def get_now_playing(host: str, pid: int) -> dict:
     }
 
 
+async def set_play_state(host: str, pid: int, state: str) -> None:
+    """play, pause or stop the receiver's own player.
+
+    Pausing is the receiver's job — it holds the stream. Skipping is not: we send
+    one URL at a time, so the receiver has no idea there is a next track. That
+    belongs to the server, which owns the queue (ARCHITECTURE.md §5.8).
+    """
+    if state not in ("play", "pause", "stop"):
+        raise DenonError(f"unknown play state {state!r}")
+    await _heos_command(
+        host,
+        f"heos://player/set_play_state?pid={pid}&state={state}",
+        "player/set_play_state",
+    )
+
+
 async def player_stop(host: str, pid: int) -> None:
     await _heos_command(
         host, f"heos://player/set_play_state?pid={pid}&state=stop", "player/set_play_state"
