@@ -156,3 +156,36 @@ class TestAccess:
         for action in ("next", "previous", "pause", "resume"):
             r = client.post(f"/api/zones/{screen}/{action}")
             assert r.status_code == 404, f"{action} leaked a room the account cannot use"
+
+
+class TestNowPlaying:
+    """The tower has to say what is on, not merely that something is."""
+
+    def test_a_room_reports_the_track_by_name(self, client, db, scanned, screen):
+        client.post(f"/api/zones/{screen}/play", json={"item_ids": _tracks(db)})
+
+        room = next(z for z in client.get("/api/zones").json() if z["id"] == screen)
+        now = room["session"]["now"]
+        assert now is not None, "a playing room said nothing about what it was playing"
+        # The filename is the guarantee. Tags may be missing on any given file —
+        # plenty of these fixtures have none — but the name always exists.
+        assert now["filename"]
+        assert set(now) == {"filename", "title", "artist"}
+
+    def test_the_name_follows_a_skip(self, client, db, scanned, screen):
+        queue = _tracks(db)
+        client.post(f"/api/zones/{screen}/play", json={"item_ids": queue})
+        first = next(
+            z for z in client.get("/api/zones").json() if z["id"] == screen
+        )["session"]["now"]["filename"]
+
+        client.post(f"/api/zones/{screen}/next")
+        second = next(
+            z for z in client.get("/api/zones").json() if z["id"] == screen
+        )["session"]["now"]["filename"]
+
+        assert first != second, "the tower kept naming the track that had been skipped"
+
+    def test_an_idle_room_reports_nothing(self, client, db, scanned, screen):
+        room = next(z for z in client.get("/api/zones").json() if z["id"] == screen)
+        assert room["session"] is None

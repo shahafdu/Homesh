@@ -153,6 +153,46 @@ async def _run_commands(zone: Zone, commands: list[dict]) -> list[str]:
 # ── Endpoints ───────────────────────────────────────────────────────────────
 
 
+def _describe(item_ids: list[str]) -> dict[str, dict]:
+    """Filename and tags for the tracks a tower is about to display.
+
+    One query for every room rather than one per room: the tower polls every few
+    seconds, and a listing that opened a connection per zone would spend more
+    time describing music than playing it.
+    """
+    if not item_ids:
+        return {}
+
+    with get_engine().connect() as conn:
+        rows = conn.execute(
+            text(
+                """
+                SELECT i.id,
+                       min(r.filename) AS filename,
+                       max(CASE WHEN m.key = 'title'  THEN m.value END) AS title,
+                       max(CASE WHEN m.key = 'artist' THEN m.value END) AS artist
+                FROM items i
+                JOIN replicas r ON r.item_id = i.id
+                LEFT JOIN item_metadata m ON m.item_id = i.id
+                WHERE i.id = ANY(CAST(:ids AS uuid[]))
+                GROUP BY i.id
+                """
+            ),
+            {"ids": item_ids},
+        ).all()
+
+    return {
+        str(r[0]): {
+            # The filename is always there and always sent. A tag may be missing
+            # or wrong; the name of the file is neither.
+            "filename": r[1],
+            "title": r[2],
+            "artist": r[3],
+        }
+        for r in rows
+    }
+
+
 @router.get("")
 async def list_zones(user: CurrentUser = Depends(require_user)) -> list[dict]:
     """Every zone with its current session — this is the control tower's view."""
@@ -172,6 +212,15 @@ async def list_zones(user: CurrentUser = Depends(require_user)) -> list[dict]:
         ).all()
 
     any_zone, allowed = zone_scope(user.id)
+
+    # Everything currently playing anywhere, described in one go.
+    playing_now = [
+        (row[6] or [])[row[7] or 0]
+        for row in rows
+        if row[5] and (row[7] or 0) < len(row[6] or [])
+    ]
+    described = _describe(playing_now)
+
     out = []
     for row in rows:
         # Rooms this person may not use are not listed. A child seeing the living
@@ -206,6 +255,11 @@ async def list_zones(user: CurrentUser = Depends(require_user)) -> list[dict]:
                     "queue_length": len(queue),
                     "cursor": cursor,
                     "current_item": queue[cursor] if cursor < len(queue) else None,
+                    # What it actually is. A tower that says "track 2 of 5"
+                    # answers a question nobody asked: the thing you want to know
+                    # from the next room is what is playing, not where it sits in
+                    # a list.
+                    "now": described.get(queue[cursor]) if cursor < len(queue) else None,
                     "position_ms": row[8],
                     "volume": row[9],
                     "updated_at": row[10].isoformat() if row[10] else None,

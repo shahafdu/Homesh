@@ -133,11 +133,21 @@ function ZoneCard(props: {
 
       {live && zone.session && (
         <>
-          <div className="muted small">
-            {zone.session.queue_length > 1
-              ? `Track ${zone.session.cursor + 1} of ${zone.session.queue_length}`
-              : "Playing"}
+          {/* The name first, the position second. Standing in the kitchen you
+              want to know what is on, not that it is the second of five. */}
+          <div className="now-playing">
+            <span className="now-title">
+              {zone.session.now?.title ?? zone.session.now?.filename ?? "Playing"}
+            </span>
+            {zone.session.now?.artist && (
+              <span className="now-artist">{zone.session.now.artist}</span>
+            )}
           </div>
+          {zone.session.queue_length > 1 && (
+            <div className="muted small">
+              Track {zone.session.cursor + 1} of {zone.session.queue_length}
+            </div>
+          )}
           <div className="zone-controls">
             {/* The same four controls whatever is in the room. A phone should not
                 have to know whether it is driving a television or a receiver. */}

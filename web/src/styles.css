@@ -877,3 +877,11 @@ button.compact:disabled { opacity: .5; cursor: not-allowed; }
      the columns would have. */
   .rows.details .tags { display: block; }
 }
+
+/* What is on in a room. The title carries the weight; the artist is context. */
+.now-playing { display: flex; flex-direction: column; gap: 1px; margin: 2px 0 4px; }
+.now-title {
+  font-size: 14.5px; font-weight: 600; color: var(--ink);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.now-artist { font-size: 12.5px; color: var(--muted); }

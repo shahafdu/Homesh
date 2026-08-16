@@ -6,11 +6,20 @@ export interface ZoneRenderer {
   name: string | null;
 }
 
+/** What is playing, as opposed to where it sits in a queue. */
+export interface NowPlaying {
+  /** Always present. A tag can be missing or wrong; the filename is neither. */
+  filename: string;
+  title: string | null;
+  artist: string | null;
+}
+
 export interface ZoneSession {
   state: "idle" | "playing" | "paused" | "buffering";
   queue_length: number;
   cursor: number;
   current_item: string | null;
+  now: NowPlaying | null;
   position_ms: number | null;
   volume: number | null;
   updated_at: string | null;
