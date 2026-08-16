@@ -20,6 +20,9 @@ import {
 export default function FileActions(props: {
   file: FileEntry;
   onSendTo: () => void;
+  /** Present only when the file was reached by searching: from within its own
+   *  folder, showing it in that folder means nothing. */
+  onReveal?: () => void;
   onClose: () => void;
 }) {
   useLockScroll();
@@ -68,6 +71,16 @@ export default function FileActions(props: {
               <span className="muted small">Play it on a screen or the receiver</span>
             </span>
           </button>
+
+          {props.onReveal && (
+            <button className="action" onClick={props.onReveal}>
+              <span className="action-ic">⇥</span>
+              <span>
+                Show in folder
+                <span className="muted small">Open where this file lives</span>
+              </span>
+            </button>
+          )}
 
           <button
             className="action"

@@ -269,6 +269,30 @@ async def list_zones(user: CurrentUser = Depends(require_user)) -> list[dict]:
                 external = {"busy": True, "detail": seen.detail}
             elif not seen.reachable:
                 external = {"busy": False, "unreachable": True, "detail": seen.detail}
+            elif seen.note:
+                external = {"busy": False, "detail": seen.note}
+
+            # Our own record can outlive the music: the receiver is handed one
+            # track and never told there was a queue, so when it finishes nothing
+            # tells the server. Left alone the tower goes on naming a song that
+            # stopped an hour ago.
+            if session_state in ("playing", "buffering") and not seen.busy and seen.reachable:
+                # Only once the session has had time to become true. A receiver
+                # takes a moment to pick up a stream, and reconciling on the
+                # first poll would cancel the track we had just started.
+                with get_engine().begin() as conn:
+                    cleared = conn.execute(
+                        text(
+                            """
+                            UPDATE play_sessions SET state = 'idle', updated_at = now()
+                            WHERE zone_id = :z
+                              AND updated_at < now() - interval '60 seconds'
+                            """
+                        ),
+                        {"z": str(row[0])},
+                    ).rowcount
+                if cleared:
+                    session_state = "idle"
 
         out.append(
             {
@@ -279,7 +303,7 @@ async def list_zones(user: CurrentUser = Depends(require_user)) -> list[dict]:
                 if row[2]
                 else None,
                 "session": {
-                    "state": row[5],
+                    "state": session_state,
                     "queue_length": len(queue),
                     "cursor": cursor,
                     "current_item": queue[cursor] if cursor < len(queue) else None,

@@ -31,8 +31,12 @@ export interface ZoneSession {
  * tower asks it rather than trusting its own records.
  */
 export interface ZoneExternal {
+  /** Something is actually playing. Only this justifies calling a room in use. */
   busy?: boolean;
   unreachable?: boolean;
+  /** With busy false this is a note — what the amplifier is switched to. The
+   *  receiver cannot say whether anybody is listening, and one left on after the
+   *  television went off looks exactly like one in use. */
   detail: string | null;
 }
 
@@ -106,6 +110,13 @@ export function zoneStatus(zone: Zone): { label: string; tone: "live" | "idle" |
     return { label: zone.external.detail ?? "in use", tone: "live" };
   }
   if (zone.external?.unreachable) return { label: "not responding", tone: "off" };
+
+  // The amplifier is on and switched to something else. Worth showing, but it is
+  // not occupancy: nothing is playing, and claiming otherwise would refuse a
+  // free room.
+  if (zone.external?.detail && zone.session?.state !== "playing") {
+    return { label: zone.external.detail, tone: "idle" };
+  }
 
   if (zone.renderer.state === "unavailable") {
     // A screen that is not connected is a different thing from a receiver that is

@@ -3,6 +3,7 @@ import { ApiError } from "./api";
 import {
   browse,
   crumbs,
+  hitAsFile,
   formatDate,
   formatDuration,
   formatSize,
@@ -36,8 +37,11 @@ export default function Browser(props: {
   onOpenPeople?: () => void;
   onPlay: (files: FileEntry[], index: number, folderPath: string) => void;
   onView: (files: FileEntry[], index: number) => void;
-  onActions: (file: FileEntry, siblings: FileEntry[]) => void;
+  onActions: (file: FileEntry, siblings: FileEntry[], foundAt?: string) => void;
   playingId: string | null;
+  /** Set when something asked to be shown in its folder. */
+  reveal: { path: string; itemId: string } | null;
+  onRevealed: () => void;
 }) {
   const {
     view, onViewChange, onOpenSettings, onOpenZones, onOpenPeople,
@@ -79,6 +83,18 @@ export default function Browser(props: {
     listSources().then(setSources).catch(() => undefined);
   }, []);
 
+  useEffect(() => {
+    if (!props.reveal) return;
+    // Leaving search is part of revealing: the point is to be standing in the
+    // folder, and a results list is not one.
+    setQuery("");
+    setHits(null);
+    setHighlight(props.reveal.itemId);
+    navigate(props.reveal.path);
+    props.onRevealed();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [props.reveal]);
+
   // Debounced so typing doesn't fire a query per keystroke.
   const timer = useRef<number>();
   useEffect(() => {
@@ -119,6 +135,10 @@ export default function Browser(props: {
   // beside the view mode rather than in saved preferences: you sort by artist to
   // answer a question, not forever.
   const [sort, setSort] = useState<Sort>({ key: "name", desc: false });
+
+  // The file a reveal asked to land on. Cleared once shown, so returning to the
+  // folder later does not flash it again for no reason.
+  const [highlight, setHighlight] = useState<string | null>(null);
 
   return (
     <div className="browser">
@@ -179,7 +199,15 @@ export default function Browser(props: {
       {error && <div className="error">{error}</div>}
 
       {hits !== null ? (
-        <Results hits={hits} query={query} view={view} onOpen={navigate} />
+        <Results
+          hits={hits}
+          query={query}
+          view={view}
+          onPlay={onPlay}
+          onView={onView}
+          onActions={onActions}
+          playingId={playingId}
+        />
       ) : (
         <Folder
           listing={listing}
@@ -192,6 +220,8 @@ export default function Browser(props: {
           sort={sort}
           onSort={setSort}
           playingId={playingId}
+          highlight={highlight}
+          onHighlightShown={() => setHighlight(null)}
         />
       )}
 
@@ -265,6 +295,8 @@ function FileRow(props: {
   onPlay?: () => void;
   onActions?: () => void;
   isPlaying?: boolean;
+  rowRef?: (node: HTMLLIElement | null) => void;
+  revealed?: boolean;
 }) {
   const { f, view, onPlay, onActions, isPlaying } = props;
   // Audio goes to the player bar; photos, video and documents open the viewer.
@@ -275,12 +307,13 @@ function FileRow(props: {
     f.available ? "" : "offline",
     playable ? "playable" : "",
     isPlaying ? "nowplaying" : "",
+    props.revealed ? "revealed" : "",
   ].filter(Boolean).join(" ");
   const click = playable ? onPlay : undefined;
 
   if (view === "columns") {
     return (
-      <li className={cls} onClick={click}>
+      <li className={cls} ref={props.rowRef} onClick={click}>
         <span className={`ic ${f.kind}`}>{isPlaying ? "▶" : GLYPH[f.kind]}</span>
         {f.filename}
       </li>
@@ -289,7 +322,7 @@ function FileRow(props: {
 
   if (view.startsWith("tiles")) {
     return (
-      <li className={cls} onClick={click}>
+      <li className={cls} ref={props.rowRef} onClick={click}>
         <Thumb item={f} size={view === "tiles-large" ? "large" : "small"} />
         <span className="nm" title={f.filename}>
           {f.filename}
@@ -302,7 +335,7 @@ function FileRow(props: {
   const tags = tagLine(f.meta);
 
   return (
-    <li className={cls} onClick={click}>
+    <li className={cls} ref={props.rowRef} onClick={click}>
       <span className={`ic ${f.kind}`}>{isPlaying ? "▶" : GLYPH[f.kind]}</span>
       {/* The filename is never replaced by a tag, only accompanied by one — a
           corrupt tag must never leave you unable to tell what a file is. That is
@@ -358,13 +391,27 @@ function Folder(props: {
   onOpen: (p: string) => void;
   onPlay: (files: FileEntry[], index: number, folderPath: string) => void;
   onView: (files: FileEntry[], index: number) => void;
-  onActions: (file: FileEntry, siblings: FileEntry[]) => void;
+  onActions: (file: FileEntry, siblings: FileEntry[], foundAt?: string) => void;
   playingId: string | null;
   sort: Sort;
   onSort: (s: Sort) => void;
+  highlight: string | null;
+  onHighlightShown: () => void;
 }) {
   const { listing, loading, view, onOpen, onPlay, onView, onActions, playingId, sort, onSort } =
     props;
+
+  // Scroll the revealed file into view once it exists. A ref callback rather
+  // than an effect: the row is not in the DOM until the folder has loaded, and
+  // this fires exactly when it arrives.
+  const revealRef = useCallback(
+    (node: HTMLLIElement | null) => {
+      if (!node) return;
+      node.scrollIntoView({ block: "center", behavior: "smooth" });
+      window.setTimeout(props.onHighlightShown, 2000);
+    },
+    [props.onHighlightShown],
+  );
   if (!listing) return <p className="muted">{loading ? "Loading…" : ""}</p>;
 
   if (listing.dirs.length === 0 && listing.files.length === 0) {
@@ -449,6 +496,8 @@ function Folder(props: {
         <FileRow
           key={f.item_id}
           f={f}
+          rowRef={f.item_id === props.highlight ? revealRef : undefined}
+          revealed={f.item_id === props.highlight}
           view={view}
           isPlaying={playingId === f.item_id}
           onPlay={() =>
@@ -467,20 +516,38 @@ function Results(props: {
   hits: SearchHit[];
   query: string;
   view: View;
-  onOpen: (p: string) => void;
+  onPlay: (files: FileEntry[], index: number, folderPath: string) => void;
+  onView: (files: FileEntry[], index: number) => void;
+  onActions: (file: FileEntry, siblings: FileEntry[], foundAt?: string) => void;
+  playingId: string | null;
 }) {
-  const { hits, query, view, onOpen } = props;
+  const { hits, query, view, onPlay, onView, onActions, playingId } = props;
+
+  // A result should do what the same file does in a folder: play, open, or offer
+  // its menu. Jumping to the top of the containing folder — which is what this
+  // used to do — makes you find the file a second time by hand.
+  const files = hits.map(hitAsFile);
   if (hits.length === 0) return <p className="muted">Nothing matches “{query}”.</p>;
 
   const tiles = view.startsWith("tiles");
 
   return (
     <ul className={containerClass(view)}>
-      {hits.map((h) => (
+      {hits.map((h, i) => (
         <li
           key={h.item_id}
-          className={`hit${h.available ? "" : " offline"}`}
-          onClick={() => onOpen(h.path)}
+          className={`hit${h.available ? "" : " offline"}${
+            playingId === h.item_id ? " nowplaying" : ""
+          }`}
+          onClick={() =>
+            h.available &&
+            (h.kind === "audio"
+              ? onPlay(files.filter((f) => f.kind === "audio"), Math.max(0,
+                  files.filter((f) => f.kind === "audio").findIndex((f) => f.item_id === h.item_id)),
+                  "")
+              : onView(files.filter((f) => f.kind === h.kind), Math.max(0,
+                  files.filter((f) => f.kind === h.kind).findIndex((f) => f.item_id === h.item_id))))
+          }
         >
           {tiles ? (
             <>
@@ -504,8 +571,22 @@ function Results(props: {
                 <span className="where">{h.path}</span>
               </span>
               <span className="meta">{formatSize(h.size)}</span>
-              <span className="meta date">
-                {h.available ? "" : <span className="badge">offline</span>}
+              <span className="meta">
+                {h.available ? (
+                  <button
+                    className="sendbtn"
+                    aria-label="Actions"
+                    title={`What to do with ${h.filename}`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onActions(files[i], files, h.path);
+                    }}
+                  >
+                    ⋯
+                  </button>
+                ) : (
+                  <span className="badge">offline</span>
+                )}
               </span>
             </>
           )}

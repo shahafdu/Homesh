@@ -244,3 +244,24 @@ export function sortFiles(files: FileEntry[], sort: Sort): FileEntry[] {
   });
   return sorted;
 }
+
+
+/** A search hit as a file the rest of the app already knows how to handle.
+ *
+ * Search returns less than a listing does — no tags, no duration — but a result
+ * you cannot play, download or send anywhere is a dead end, and finding
+ * something in order to then go and find it again is not searching.
+ */
+export function hitAsFile(hit: SearchHit): FileEntry {
+  return {
+    item_id: hit.item_id,
+    filename: hit.filename,
+    ext: hit.filename.includes(".") ? hit.filename.split(".").pop()! : null,
+    kind: hit.kind,
+    size: hit.size,
+    duration_ms: null,
+    meta: undefined,
+    mtime: null,
+    available: hit.available,
+  };
+}

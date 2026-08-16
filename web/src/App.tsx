@@ -27,9 +27,16 @@ export default function App() {
   const [showZones, setShowZones] = useState(false);
   const [showPeople, setShowPeople] = useState(false);
   const [linking, setLinking] = useState(false);
-  const [actionsFor, setActionsFor] = useState<{ file: FileEntry; siblings: FileEntry[] } | null>(
-    null,
-  );
+  const [actionsFor, setActionsFor] = useState<{
+    file: FileEntry;
+    siblings: FileEntry[];
+    /** Where the file lives, when it was reached by searching rather than by
+     *  standing in its folder. */
+    foundAt?: string;
+  } | null>(null);
+  // A request to show a file where it lives. Held here because the browser owns
+  // navigation and the actions sheet does not.
+  const [reveal, setReveal] = useState<{ path: string; itemId: string } | null>(null);
   // An invite link is how somebody else joins, so it is read before anything
   // else decides which screen to show.
   const invite = new URLSearchParams(window.location.search).get("invite");
@@ -109,7 +116,7 @@ export default function App() {
           onOpenSettings={() => setShowSettings(true)}
           onOpenZones={() => setShowZones(true)}
           onOpenPeople={state.user.is_admin ? () => setShowPeople(true) : undefined}
-          onActions={(file, siblings) => setActionsFor({ file, siblings })}
+          onActions={(file, siblings, foundAt) => setActionsFor({ file, siblings, foundAt })}
           onPlay={player.play}
           onView={(files, index) => {
             // Arrowing through a folder should stay within the kind you opened —
@@ -123,6 +130,8 @@ export default function App() {
             });
           }}
           playingId={player.current?.item_id ?? null}
+          reveal={reveal}
+          onRevealed={() => setReveal(null)}
         />
 
         {viewing && (
@@ -140,6 +149,16 @@ export default function App() {
         {actionsFor && (
           <FileActions
             file={actionsFor.file}
+            onReveal={
+              // Only offered for a file found by searching; from inside its own
+              // folder the command would go nowhere.
+              actionsFor.foundAt
+                ? () => {
+                    setReveal({ path: actionsFor.foundAt as string, itemId: actionsFor.file.item_id });
+                    setActionsFor(null);
+                  }
+                : undefined
+            }
             onSendTo={() => {
               // Chained rather than duplicated: the room picker already exists
               // and knows which rooms will accept this kind of file.

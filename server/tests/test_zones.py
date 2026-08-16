@@ -451,15 +451,22 @@ class TestTelevisionOccupancy:
     SITV, which is exactly that situation.
     """
 
-    def test_the_main_zone_on_a_television_input_reads_as_busy(
+    def test_the_main_zone_reports_what_it_is_switched_to(
         self, client, db, scanned, receiver
     ):
+        """A note, not a verdict.
+
+        The receiver cannot say whether sound is coming out: one left on after
+        the television was switched off reports exactly what one in use reports.
+        So the tower says what is known and leaves the conclusion to whoever is
+        standing in the room.
+        """
         # No Z2 commands: this room is the main zone.
         _make_zone(client, name="Living Room", preroll=[{"avr": "PWON"}, {"avr": "SINET"}])
 
         room = next(z for z in client.get("/api/zones").json() if z["name"] == "Living Room")
-        assert room["external"], "a television playing through the receiver went unnoticed"
-        assert room["external"]["busy"] is True
+        assert room["external"], "the receiver being on a television input went unmentioned"
+        assert room["external"]["busy"] is False, "nothing is playing; this is not occupancy"
         assert "TV" in (room["external"]["detail"] or "")
 
     def test_zone_two_is_judged_on_its_own_power_not_the_main_zone(
@@ -471,17 +478,22 @@ class TestTelevisionOccupancy:
         room = next(z for z in client.get("/api/zones").json() if z["name"] == "Balcony")
         assert room["external"] is None
 
-    def test_playing_into_an_occupied_main_zone_needs_a_decision(
+    def test_a_selected_input_does_not_block_playing_there(
         self, client, db, scanned, receiver
     ):
+        """Choosing a room is choosing to use it.
+
+        An amplifier sitting on its television input is not evidence that anyone
+        is listening, so refusing here would mean a room that can never be used
+        without an override — for a television that may well be off.
+
+        The protection that matters is elsewhere: a room that is genuinely
+        playing something still refuses, and the balcony no longer touches the
+        main zone at all.
+        """
         zone_id = _make_zone(
             client, name="Living Room", preroll=[{"avr": "PWON"}, {"avr": "SINET"}]
         )
 
-        refused = client.post(f"/api/zones/{zone_id}/play", json={"item_ids": _items(db)})
-        assert refused.status_code == 409, "the app cut across a television without asking"
-
-        allowed = client.post(
-            f"/api/zones/{zone_id}/play", json={"item_ids": _items(db), "take_over": True}
-        )
-        assert allowed.status_code == 200
+        r = client.post(f"/api/zones/{zone_id}/play", json={"item_ids": _items(db)})
+        assert r.status_code == 200

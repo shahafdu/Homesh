@@ -37,12 +37,20 @@ SOURCE_NAMES = {
 
 @dataclass
 class Occupancy:
-    """What a zone is doing, and whether we are the cause."""
+    """What a zone is doing, and whether we are the cause.
+
+    `busy` means something is actually playing. `note` is weaker: the amplifier
+    is switched on with an input selected, which is worth showing and is not
+    evidence that anybody is listening. A receiver left on after the television
+    was switched off looks identical to one in use, and reporting that as
+    occupied claims to know something we do not.
+    """
 
     busy: bool
     ours: bool
     detail: str | None = None
     reachable: bool = True
+    note: str | None = None
 
 
 _cache: dict[str, tuple[float, Occupancy]] = {}
@@ -68,18 +76,22 @@ def _describe(now_playing: dict) -> str:
 NETWORK_INPUTS = {"NET", "HEOS", "BT", "AUX"}
 
 
-def _avr_busy(state: denon.AvrState, zone2: bool) -> str | None:
-    """Whether the AVR shows this zone in use by something that is not us.
+def _avr_note(state: denon.AvrState, zone2: bool) -> str | None:
+    """What the amplifier is switched to, when it is not us.
 
     The case that prompted this: a child watching television through the
-    receiver. The HEOS player is idle, so asking only HEOS reports the living
-    room as free — while it is audibly, visibly in use. The main zone being
-    powered on with a non-network input is the evidence, and it is evidence the
-    receiver was willing to give all along.
+    receiver. HEOS is idle, so asking only HEOS reported the living room as free
+    while it was plainly in use.
+
+    It is deliberately a note rather than a verdict. The receiver cannot say
+    whether sound is coming out — an amplifier left on after the television was
+    switched off reports exactly what one in use reports. So this says what is
+    known, "on, TV input", and leaves the conclusion to whoever is standing in
+    the room.
     """
     if zone2:
         if state.zone2 and state.zone2_source and state.zone2_source not in NETWORK_INPUTS:
-            return f"in use ({state.zone2_source})"
+            return f"on · {state.zone2_source}"
         return None
 
     # Positive evidence only. A receiver that has not said it is on must not be
@@ -87,7 +99,7 @@ def _avr_busy(state: denon.AvrState, zone2: bool) -> str | None:
     # busy would block playback in a free room.
     powered = state.power is True or state.main_zone is True
     if powered and state.source and state.source not in NETWORK_INPUTS:
-        return f"in use ({state.source})"
+        return f"on · {state.source}"
     return None
 
 
@@ -126,14 +138,13 @@ async def receiver_occupancy(
                 # HEOS untouched while the main zone is plainly in use.
                 try:
                     avr = await denon.query_state(host)
-                    reason = _avr_busy(avr, zone2)
+                    note = _avr_note(avr, zone2)
                 except denon.DenonError:
-                    reason = None
-                result = (
-                    Occupancy(busy=True, ours=False, detail=reason)
-                    if reason
-                    else Occupancy(busy=False, ours=False)
-                )
+                    note = None
+                # Not busy: nothing is playing. The note travels alongside so the
+                # tower can say what the receiver is switched to without claiming
+                # the room is occupied.
+                result = Occupancy(busy=False, ours=False, note=note)
             else:
                 ours = our_session_state in ("playing", "buffering")
                 detail = None
