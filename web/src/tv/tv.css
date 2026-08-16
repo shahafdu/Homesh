@@ -166,3 +166,12 @@ body {
   padding: 12px 20px; border-radius: 999px;
 }
 .offline .dot { background: #dd7a6b; }
+
+/* A photograph fills the screen. No letterboxed player frame around it, and no
+   scrub bar underneath: neither means anything for a still image. */
+.tv-photo {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+.player.photo .stage { background: #000; }

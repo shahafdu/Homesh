@@ -165,13 +165,16 @@ export default function TvApp() {
       case "play":
         setNow(cmd);
         setPhase("playing");
+        // A photo has nothing to start: it is an <img>, and there is no media
+        // element to hand a source to.
+        if (cmd.kind === "photo") break;
         // The element mounts with this render, so defer until it exists.
         window.setTimeout(() => {
           const el = mediaRef.current;
           if (!el || !cmd.url) return;
           el.src = cmd.url;
           if (cmd.position_ms) el.currentTime = cmd.position_ms / 1000;
-          void el.play().catch(() => undefined);
+          void el.play().catch((e) => setFault(`Cannot play ${cmd.filename ?? "this"}: ${e}`));
         }, 0);
         break;
       case "pause":
@@ -303,14 +306,24 @@ export default function TvApp() {
   }
 
   if (phase === "playing" && now) {
+    // Three kinds arrive here and each needs a different element. A photo sent
+    // to a video tag renders nothing at all: the screen showed a player with a
+    // scrub bar frozen at 0:00 and no picture, which looks like a broken film
+    // rather than a photograph nobody displayed.
     const isVideo = now.kind === "video";
+    const isPhoto = now.kind === "photo";
+
     return (
       <div className="tv">
-        <div className="player">
+        <div className={`player${isPhoto ? " photo" : ""}`}>
           <div className="stage">
-            {isVideo ? (
-              <video ref={mediaRef} playsInline />
-            ) : (
+            {isVideo && <video ref={mediaRef} playsInline />}
+
+            {isPhoto && now.url && (
+              <img className="tv-photo" src={now.url} alt={now.filename ?? ""} />
+            )}
+
+            {!isVideo && !isPhoto && (
               <>
                 <div className="art">♪</div>
                 {/* Audio still needs a media element; it is simply not shown. */}
@@ -321,13 +334,15 @@ export default function TvApp() {
           <div className="meta">
             <div className="title">{now.filename ?? "Playing"}</div>
             {now.tags && <div className="tags">{now.tags}</div>}
-            <div className="scrub">
-              <span className="time">{formatTime(position)}</span>
-              <div className="bar">
-                <i style={{ width: duration ? `${(position / duration) * 100}%` : "0%" }} />
+            {!isPhoto && (
+              <div className="scrub">
+                <span className="time">{formatTime(position)}</span>
+                <div className="bar">
+                  <i style={{ width: duration ? `${(position / duration) * 100}%` : "0%" }} />
+                </div>
+                <span className="time right">{formatTime(duration)}</span>
               </div>
-              <span className="time right">{formatTime(duration)}</span>
-            </div>
+            )}
           </div>
         </div>
         {!connected && (

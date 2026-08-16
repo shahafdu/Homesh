@@ -26,7 +26,7 @@ from .access import can_use_zone, may_access_item, zone_scope
 from .config import get_settings
 from .db import get_engine
 from .people import ROOM, AudienceUpdate, apply_audience
-from .security import CurrentUser, require_user
+from .security import CurrentUser, audit, require_user
 from .signing import mint
 
 log = logging.getLogger("homesh.zones")
@@ -77,6 +77,10 @@ class PlayRequest(BaseModel):
 
 class VolumeRequest(BaseModel):
     level: int = Field(ge=0, le=100)
+
+
+class ZoneUpdate(BaseModel):
+    name: str = Field(min_length=1, max_length=60)
 
 
 # ── Helpers ─────────────────────────────────────────────────────────────────
@@ -765,3 +769,64 @@ async def next_track(zone_id: UUID, user: CurrentUser = Depends(require_user)) -
 @router.post("/{zone_id}/previous")
 async def previous_track(zone_id: UUID, user: CurrentUser = Depends(require_user)) -> dict:
     return await _skip(zone_id, user, -1)
+
+
+# ── Looking after rooms ─────────────────────────────────────────────────────
+#
+# A room could be created and never renamed or removed, which meant a typo at
+# pairing time was permanent and a screen taken out of the house stayed on the
+# list for ever.
+
+
+@router.put("/{zone_id}")
+async def rename_zone(
+    zone_id: UUID, body: ZoneUpdate, user: CurrentUser = Depends(require_user)
+) -> dict:
+    if not user.is_admin:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "admin only")
+    _load_zone(zone_id)
+
+    with get_engine().begin() as conn:
+        try:
+            conn.execute(
+                text("UPDATE zones SET name = :n WHERE id = :z"),
+                {"n": body.name.strip(), "z": str(zone_id)},
+            )
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(
+                status.HTTP_409_CONFLICT, "a room with that name already exists"
+            ) from exc
+
+    return {"id": str(zone_id), "name": body.name.strip()}
+
+
+@router.delete("/{zone_id}")
+async def remove_zone(zone_id: UUID, user: CurrentUser = Depends(require_user)) -> dict:
+    """Forget a room, and the screen behind it.
+
+    The renderer goes too. Leaving it would mean a device that still holds a
+    valid credential and can still be sent to, which is not what "remove" means
+    to anybody — and re-pairing the same screen creates a fresh one anyway.
+    """
+    if not user.is_admin:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "admin only")
+
+    zone = _load_zone(zone_id)
+
+    with get_engine().begin() as conn:
+        conn.execute(text("DELETE FROM zones WHERE id = :z"), {"z": str(zone_id)})
+        if zone.renderer_id:
+            conn.execute(
+                text("DELETE FROM renderers WHERE id = :r"), {"r": str(zone.renderer_id)}
+            )
+        audit(conn, "zone.removed", user.id, {"name": zone.name}, None)
+
+    # Any socket it still holds is now unauthenticated; drop it so an uninstalled
+    # or re-homed screen cannot go on receiving commands.
+    if zone.renderer_id:
+        from .renderers import hub
+
+        await hub.disconnect(zone.renderer_id)
+
+    occupancy.invalidate()
+    return {"ok": True}

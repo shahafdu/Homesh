@@ -21,7 +21,12 @@ _KINDS: dict[str, str] = {
         "audio",
     ),
     **dict.fromkeys(
-        ["mp4", "mkv", "avi", "mov", "wmv", "m4v", "mpg", "mpeg", "webm", "flv", "ts", "m2ts"],
+        ["mp4", "mkv", "avi", "mov", "wmv", "m4v", "mpg", "mpeg", "webm", "flv", "ts", "m2ts",
+         # Camcorder and DVD containers. These are video and were being catalogued
+         # as "other", which left five wedding tapes sitting in the library as
+         # unopenable files of unknown type.
+         "m2t", "mts", "vob", "mod", "tod", "dv", "mxf", "ogv", "3gp", "rm", "rmvb",
+         "divx", "asf", "m1v", "m2v"],
         "video",
     ),
     **dict.fromkeys(
@@ -35,6 +40,15 @@ _KINDS: dict[str, str] = {
         "doc",
     ),
 }
+
+# Files that accompany media without being media: editing indexes, waveform
+# caches, DVD structure. Catalogued like anything else — nothing is hidden — but
+# named so the interface can keep them out of the way of the thing they belong to.
+#
+# .ese2 and .ewc2 are Edius sidecars: a seek index and a waveform cache. They are
+# not the audio for a .m2t, which carries its own; deleting them would cost only
+# some scrubbing speed in the editor that made them.
+SIDECAR_EXTS = {"ese2", "ewc2", "ifo", "bup", "sfk", "pek", "cfa", "xmp", "thm", "ini"}
 
 # Playlists are catalogued but are not media items; they become playlists (§5.2).
 PLAYLIST_EXTS = {"m3u", "m3u8", "pls", "asx", "wpl"}

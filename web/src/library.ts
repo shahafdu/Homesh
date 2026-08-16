@@ -265,3 +265,35 @@ export function hitAsFile(hit: SearchHit): FileEntry {
     available: hit.available,
   };
 }
+
+
+/** Containers whose video no browser can decode.
+ *
+ * MPEG-2 — a DVD rip, an HDV camcorder tape — has no decoder in any current
+ * browser. It is not a setting or a missing plugin; the codec was never shipped.
+ * A television box usually decodes it in hardware, which is why sending it to a
+ * room works when watching it here does not.
+ */
+const UNDECODABLE = new Set([
+  "m2t", "mts", "vob", "mpg", "mpeg", "m1v", "m2v", "mod", "tod",
+  "dv", "mxf", "rm", "rmvb", "asf", "divx",
+]);
+
+export function needsVideoConversion(ext: string | null): boolean {
+  return UNDECODABLE.has((ext ?? "").toLowerCase());
+}
+
+export interface Conversion {
+  needed: boolean;
+  state: "queued" | "running" | "done" | "failed" | null;
+  progress: number;
+  error?: string | null;
+}
+
+export const conversionStatus = (itemId: string) =>
+  api.get<Conversion>(`/api/videos/${itemId}/conversion`);
+
+export const startConversion = (itemId: string) =>
+  api.post<Conversion>(`/api/videos/${itemId}/conversion`);
+
+export const convertedUrl = (itemId: string) => `/api/videos/${itemId}/converted`;

@@ -20,6 +20,7 @@ from .auth import ensure_bootstrap_code
 from .auth import router as auth_router
 from .config import get_settings
 from .db import check_connection, run_migrations
+from .discovery import serve as serve_discovery
 from .documents import router as documents_router
 from .library import register_sources
 from .library import router as library_router
@@ -28,6 +29,7 @@ from .prefs import router as prefs_router
 from .renderers import router as renderers_router
 from .sharing import router as sharing_router
 from .stream import router as stream_router
+from .transcode import router as transcode_router
 from .upkeep import run_forever as scan_forever
 from .zones import router as zones_router
 
@@ -99,11 +101,16 @@ async def lifespan(app: FastAPI):
     # rather than leaving a scan writing into a closing connection pool.
     upkeep = asyncio.create_task(scan_forever())
 
+    # Answers "where is the server?" on the LAN, so a television never has to be
+    # told an address with a remote control.
+    finder = asyncio.create_task(serve_discovery())
+
     yield
 
-    upkeep.cancel()
-    with suppress(asyncio.CancelledError):
-        await upkeep
+    for task in (upkeep, finder):
+        task.cancel()
+        with suppress(asyncio.CancelledError):
+            await task
     log.info("Homesh stopped")
 
 
@@ -134,6 +141,7 @@ app.include_router(prefs_router)
 app.include_router(sharing_router)
 app.include_router(renderers_router)
 app.include_router(stream_router)
+app.include_router(transcode_router)
 app.include_router(zones_router)
 
 
@@ -179,6 +187,20 @@ def _tv_apk_path() -> Path:
     before it would hand out a build made a minute after it booted.
     """
     return Path(os.environ.get("TV_APK_PATH", "/app/tv-app/homesh-tv.apk"))
+
+
+@app.get("/tv.json", include_in_schema=False)
+async def tv_version() -> Response:
+    """What build the server is offering.
+
+    The app reads this on launch and updates itself. Unauthenticated for the same
+    reason the APK is: a television has no account, and a version number is not a
+    secret.
+    """
+    info = _tv_apk_path().with_name("homesh-tv.json")
+    if not info.is_file():
+        return JSONResponse({"detail": "no TV app build present"}, status_code=404)
+    return FileResponse(info, media_type="application/json")
 
 
 @app.get("/tv.apk", include_in_schema=False)

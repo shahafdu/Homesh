@@ -1,6 +1,18 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "./api";
-import { canPreview, documentUrl, downloadUrl, formatSize, needsConversion, type FileEntry } from "./library";
+import {
+  canPreview,
+  type Conversion,
+  conversionStatus,
+  convertedUrl,
+  documentUrl,
+  downloadUrl,
+  type FileEntry,
+  formatSize,
+  needsConversion,
+  needsVideoConversion,
+  startConversion,
+} from "./library";
 
 /** Full-screen viewer for the kinds that need a viewport rather than a player bar.
  *
@@ -142,9 +154,13 @@ export default function Viewer(props: {
             <img className="v-img" src={url} alt={file.filename} />
           )}
 
-          {url && file.kind === "video" && (
+          {url && file.kind === "video" && !needsVideoConversion(file.ext) && (
             // Direct play: these are the original bytes, decoded by the browser.
             <video className="v-video" src={url} controls autoPlay playsInline />
+          )}
+
+          {file.kind === "video" && needsVideoConversion(file.ext) && (
+            <Convertible file={file} />
           )}
 
           {url && file.kind === "doc" && text !== null && <pre className="v-text">{text}</pre>}
@@ -186,6 +202,87 @@ export default function Viewer(props: {
           </button>
         )}
       </div>
+    </div>
+  );
+}
+
+
+/** A video in a format no browser decodes.
+ *
+ * Rather than an empty black player, it says what the file is and what can be
+ * done about it. Converting is offered, not started: an hour of tape takes tens
+ * of minutes on this hardware, and it is only worth doing for someone who
+ * actually wants to watch it here rather than send it to a screen that can
+ * already decode it.
+ */
+function Convertible(props: { file: FileEntry }) {
+  const [status, setStatus] = useState<Conversion | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const read = useCallback(() => {
+    conversionStatus(props.file.item_id).then(setStatus).catch(() => undefined);
+  }, [props.file.item_id]);
+
+  useEffect(() => {
+    read();
+  }, [read]);
+
+  // Only while something is happening. Polling a finished conversion for the
+  // rest of the evening would be asking a question already answered.
+  const working = status?.state === "queued" || status?.state === "running";
+  useEffect(() => {
+    if (!working) return;
+    const poll = window.setInterval(read, 3000);
+    return () => window.clearInterval(poll);
+  }, [working, read]);
+
+  if (status?.state === "done") {
+    return <video className="v-video" src={convertedUrl(props.file.item_id)} controls autoPlay playsInline />;
+  }
+
+  return (
+    <div className="v-nopreview">
+      <p className="muted">
+        This is <b>MPEG-2</b> video — a DVD or a camcorder tape. No browser can
+        decode it.
+      </p>
+
+      {working ? (
+        <>
+          <p className="muted small">
+            Converting… {status?.progress ?? 0}%. It keeps going if you close this.
+          </p>
+          <div className="bar wide">
+            <i style={{ width: `${status?.progress ?? 0}%` }} />
+          </div>
+        </>
+      ) : (
+        <>
+          <p className="muted small">
+            Send it to a television and it will play as it is — a set-top box
+            decodes this in hardware. To watch it here, it has to be converted
+            once, which takes a while for a long tape.
+          </p>
+          <button
+            className="v-btn"
+            onClick={async () => {
+              setError(null);
+              try {
+                setStatus(await startConversion(props.file.item_id));
+              } catch (e) {
+                setError(e instanceof Error ? e.message : String(e));
+              }
+            }}
+          >
+            Convert for playback here
+          </button>
+        </>
+      )}
+
+      {status?.state === "failed" && (
+        <div className="error">Conversion failed: {status.error}</div>
+      )}
+      {error && <div className="error">{error}</div>}
     </div>
   );
 }

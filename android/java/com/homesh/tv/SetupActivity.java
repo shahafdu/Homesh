@@ -23,9 +23,14 @@ import java.net.URL;
 /**
  * Where the server is.
  *
- * <p>Asked rather than discovered, and asked once. The alternative — scanning
- * the subnet — is slow, looks exactly like something unwelcome on the network,
- * and still fails on the setups it would be most useful for.
+ * <p>Found rather than asked for, wherever possible. The server answers a
+ * broadcast on the local network, so this screen usually arrives with the
+ * address already filled in and nothing to type. Scanning the subnet would have
+ * been the wrong way to do it — slow, and indistinguishable from something
+ * unwelcome — but a server that answers when asked is neither.
+ *
+ * <p>The field stays, because a house can have no server running, two of them,
+ * or a network that drops broadcasts.
  *
  * <p>The address is checked before it is saved. A typo caught here is one
  * sentence; a typo saved is a black screen on a television with a remote control
@@ -96,6 +101,26 @@ public class SetupActivity extends Activity {
 
         setContentView(root);
         field.requestFocus();
+
+        // Ask the network before asking the person. Typing a URL on a television
+        // is the worst part of setting this up, and the server is on the same
+        // wire — so most of the time nobody should have to.
+        status.setText(R.string.setup_searching);
+        new Thread(() -> {
+            String found = Discovery.find();
+            main.post(() -> {
+                if (found == null) {
+                    status.setText(R.string.setup_not_found);
+                    return;
+                }
+                // Filled in rather than accepted silently: the screen should show
+                // what it is about to connect to, and a house with two servers
+                // should not have one chosen without being seen.
+                field.setText(found);
+                status.setText(getString(R.string.setup_found, found));
+                connect.requestFocus();
+            });
+        }).start();
     }
 
     private int dp(int value) {

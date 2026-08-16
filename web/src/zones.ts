@@ -132,3 +132,13 @@ export function zoneStatus(zone: Zone): { label: string; tone: "live" | "idle" |
   if (state === "buffering") return { label: "starting…", tone: "idle" };
   return { label: "ready", tone: "idle" };
 }
+
+/** Looking after rooms.
+ *
+ * A typo at pairing time used to be permanent, and a screen taken out of the
+ * house stayed on the list for good.
+ */
+export const renameZone = (zoneId: string, name: string) =>
+  api.put<{ id: string; name: string }>(`/api/zones/${zoneId}`, { name });
+
+export const removeZone = (zoneId: string) => api.delete(`/api/zones/${zoneId}`);

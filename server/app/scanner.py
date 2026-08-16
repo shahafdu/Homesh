@@ -150,9 +150,19 @@ def scan_source(source_id: UUID, connector: LocalConnector) -> ScanResult:
                         ),
                         {"mtime": row["mtime"], "rid": str(existing[0])},
                     )
+                    # Kind as well as size: the classifier improves over time, and
+                    # a file catalogued as "other" under an older version should
+                    # not stay that way for the life of the library. Five wedding
+                    # tapes sat unopenable for exactly this reason.
                     conn.execute(
-                        text("UPDATE items SET size_bytes = :size WHERE id = :iid"),
-                        {"size": row["size"], "iid": str(existing[1])},
+                        text(
+                            """
+                            UPDATE items
+                            SET size_bytes = :size, kind = CAST(:kind AS item_kind)
+                            WHERE id = :iid
+                            """
+                        ),
+                        {"size": row["size"], "kind": row["kind"], "iid": str(existing[1])},
                     )
                     result.updated += 1
         batch.clear()

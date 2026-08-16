@@ -919,3 +919,13 @@ button.compact:disabled { opacity: .5; cursor: not-allowed; }
   0%, 55% { background: color-mix(in srgb, var(--accent) 18%, transparent); }
   100% { background: transparent; box-shadow: none; }
 }
+
+/* Conversion progress. Wider than the player's scrub bar because it is the only
+   thing on the screen and it may sit there for half an hour. */
+.bar.wide { width: min(420px, 80%); height: 6px; margin: 10px auto; }
+
+.zone-rename {
+  flex: 1; min-width: 0; font-size: 14.5px; font-weight: 600;
+  padding: 3px 7px; margin: 0;
+}
+.iconbtn.tiny { padding: 2px 7px; font-size: 12px; }

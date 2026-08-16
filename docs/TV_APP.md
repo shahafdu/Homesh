@@ -87,3 +87,34 @@ paired from a signed-in phone.
 If you would rather fetch it over the internet than off the LAN, attach the APK
 to a GitHub release. Sign it with the same key each time or installs will refuse
 to upgrade.
+
+## Setting up a screen without typing
+
+The app broadcasts on the local network on first launch and the server answers
+with its own address, so the setup screen normally arrives already filled in and
+there is nothing to spell out on an on-screen keyboard. The field stays for the
+cases discovery cannot cover: a network that drops broadcasts, two servers, or a
+server that is off.
+
+Installing still needs the URL entered once in Downloader. To avoid even that,
+push it from a machine with ADB instead:
+
+```bash
+adb connect <box-address>:5555     # enable network debugging on the box first
+adb install -r build/homesh-tv.apk
+```
+
+## Updating
+
+The app checks `/tv.json` on every launch and installs a newer build itself.
+Android still shows its own installer prompt — an ordinary app cannot skip that
+confirmation, and should not be able to — but the typing, the downloader and
+having to know an update exists are gone.
+
+The version comes from `AndroidManifest.xml` and is published beside the APK by
+`tools/build-tv-apk.sh`. Bump `android:versionCode` for the update to be offered;
+`versionName` is what people read.
+
+Signing still applies: an update only installs over a build signed with the same
+key. Since the key lives on the machine that built it, updates work as long as
+the same machine keeps building them.

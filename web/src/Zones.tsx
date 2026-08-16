@@ -10,6 +10,8 @@ import {
   nextInZone,
   pauseZone,
   previousInZone,
+  removeZone,
+  renameZone,
   resumeZone,
   stopZone,
   zoneStatus,
@@ -84,6 +86,8 @@ export default function Zones(props: { onClose: () => void }) {
             }
             onNext={() => act(() => nextInZone(zone.id))}
             onPrevious={() => act(() => previousInZone(zone.id))}
+            onRename={(name) => act(() => renameZone(zone.id, name))}
+            onRemove={() => act(() => removeZone(zone.id))}
           />
         ))}
 
@@ -112,7 +116,12 @@ function ZoneCard(props: {
   onToggle: () => void;
   onNext: () => void;
   onPrevious: () => void;
+  onRename: (name: string) => void;
+  onRemove: () => void;
 }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+  const [confirming, setConfirming] = useState(false);
   const { zone } = props;
   const status = zoneStatus(zone);
   const live = zone.session?.state === "playing" || zone.session?.state === "paused";
@@ -121,9 +130,65 @@ function ZoneCard(props: {
     <div className={`zone-card${live ? " live" : ""}`}>
       <div className="zone-head">
         <span className={`dot ${status.tone}`} />
-        <span className="zone-name">{zone.name}</span>
+        {editing ? (
+          <input
+            className="zone-rename"
+            value={draft}
+            autoFocus
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && draft.trim()) {
+                props.onRename(draft.trim());
+                setEditing(false);
+              }
+              if (e.key === "Escape") setEditing(false);
+            }}
+          />
+        ) : (
+          <span className="zone-name">{zone.name}</span>
+        )}
         <span className="zone-state">{status.label}</span>
+        <button
+          className="iconbtn tiny"
+          title={`Rename or remove ${zone.name}`}
+          aria-label="Room settings"
+          onClick={() => {
+            setDraft(zone.name);
+            setEditing((e) => !e);
+            setConfirming(false);
+          }}
+        >
+          ⚙
+        </button>
       </div>
+
+      {editing && (
+        <div className="zone-controls">
+          <button
+            className="compact primary"
+            disabled={!draft.trim() || draft.trim() === zone.name}
+            onClick={() => {
+              props.onRename(draft.trim());
+              setEditing(false);
+            }}
+          >
+            Rename
+          </button>
+          {confirming ? (
+            <>
+              {/* Removing takes the paired screen with it, which is not obvious
+                  from the word "remove" — so it is said before it happens. */}
+              <span className="muted small">
+                Remove {zone.name} and unpair its screen?
+              </span>
+              <button className="compact" onClick={props.onRemove}>Yes, remove</button>
+              <button className="compact" onClick={() => setConfirming(false)}>Cancel</button>
+            </>
+          ) : (
+            <button className="compact" onClick={() => setConfirming(true)}>Remove…</button>
+          )}
+        </div>
+      )}
 
       {zone.renderer && (
         <div className="muted small">
@@ -202,7 +267,10 @@ function ZoneCard(props: {
       )}
 
       {!live && zone.renderer?.state === "unavailable" && zone.renderer.kind === "tvapp" && (
-        <div className="muted small">Open Homesh on that screen to use this zone.</div>
+        <div className="muted small">
+          Not connected. Open Homesh on that screen — or remove the room if the
+          app is gone from it.
+        </div>
       )}
     </div>
   );

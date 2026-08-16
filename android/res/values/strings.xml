@@ -7,6 +7,9 @@
     <string name="setup_placeholder">homesh.local</string>
     <string name="setup_connect">Connect</string>
     <string name="setup_checking">Looking for it…</string>
+    <string name="setup_searching">Looking for Homesh on this network…</string>
+    <string name="setup_found">Found Homesh at %1$s</string>
+    <string name="setup_not_found">Nothing found automatically — type the address shown in Settings on your phone.</string>
     <string name="setup_empty">Type an address first.</string>
     <string name="setup_failed">Nothing answered at %1$s. Check the address and that the server is running.</string>
 

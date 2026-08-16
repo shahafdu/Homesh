@@ -48,6 +48,10 @@ services:
       - ./.secrets:/run/secrets:ro
     ports:
       - "8080:8080"
+      # Discovery. UDP, LAN only, and it answers one question — where the server
+      # is — to a probe that names this application. It is what saves spelling an
+      # address out on a television with a remote control.
+      - "45877:45877/udp"
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8080/api/health').status==200 else 1)\""]
       interval: 10s

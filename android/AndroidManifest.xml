@@ -1,11 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.homesh.tv"
-    android:versionCode="1"
-    android:versionName="0.1.0">
+    android:versionCode="2"
+    android:versionName="0.2.0">
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- Offering its own update. Android still shows its installer prompt; what
+         this removes is walking to each screen and typing a URL with a remote. -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <!-- A set-top box has no touchscreen. Without saying so the app is filtered
          out of the store listing and, on some launchers, out of the drawer. -->
@@ -40,6 +43,15 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- Passes the downloaded APK to the system installer as content, which
+             is the only form Android accepts for a package. Not exported: the
+             installer is granted access per-URI by the intent that starts it. -->
+        <provider
+            android:name=".UpdateProvider"
+            android:authorities="com.homesh.tv.updates"
+            android:exported="false"
+            android:grantUriPermissions="true" />
 
         <activity
             android:name=".SetupActivity"

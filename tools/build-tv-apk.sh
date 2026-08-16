@@ -167,6 +167,18 @@ fi
   --out "$OUT" "$WORK/aligned.apk"
 
 "$APKSIGNER" verify "$OUT" >/dev/null
+
+# ── 6. Publish the version ───────────────────────────────────────────────────
+# The app checks this on launch and updates itself, so nobody has to walk to a
+# television and type a URL to install a new build. Read from the manifest rather
+# than repeated here, because two places to change a version number means one
+# that gets forgotten.
+VERSION_CODE=$(grep -o 'android:versionCode="[0-9]*"' "$SRC/AndroidManifest.xml" | grep -o '[0-9]*')
+VERSION_NAME=$(grep -o 'android:versionName="[^"]*"' "$SRC/AndroidManifest.xml" | cut -d'"' -f2)
+cat > "$(dirname "$OUT")/homesh-tv.json" <<EOF
+{"versionCode": ${VERSION_CODE:-1}, "versionName": "${VERSION_NAME:-0}"}
+EOF
+echo "published version ${VERSION_NAME:-0} (${VERSION_CODE:-1})"
 echo
 echo "Built $OUT"
 ls -la "$OUT" | awk '{print "  " $5 " bytes"}'

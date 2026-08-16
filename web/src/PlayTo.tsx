@@ -33,7 +33,12 @@ export default function PlayTo(props: {
     try {
       // Send the whole folder so a zone behaves like an album, matching what
       // playing here does.
-      const queue = siblings.filter((f) => f.kind === file.kind && f.available);
+      const siblingQueue = siblings.filter((f) => f.kind === file.kind && f.available);
+      // Never an empty list. A folder holding one unavailable sibling, or a
+      // result opened on its own, filtered down to nothing and the server
+      // rejected the request as malformed — which reached the screen as
+      // "unprocessable entity", a sentence about JSON in answer to "play this".
+      const queue = siblingQueue.length > 0 ? siblingQueue : [file];
       const index = Math.max(0, queue.findIndex((f) => f.item_id === file.item_id));
       await playInZone(zone.id, queue.map((f) => f.item_id), index, takeOver);
       props.onClose();

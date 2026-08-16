@@ -54,3 +54,34 @@ class TestApkDownload:
         monkeypatch.setenv("TV_APK_PATH", str(apk))
 
         assert anon_client.get("/tv.apk").status_code == 200
+
+
+class TestUpdateOffer:
+    """The version the app checks on launch.
+
+    Without it, every change to the app means walking to each television, opening
+    a downloader and typing a URL with a remote control.
+    """
+
+    def test_the_version_is_published_beside_the_apk(self, anon_client, tmp_path, monkeypatch):
+        apk = tmp_path / "homesh-tv.apk"
+        apk.write_bytes(b"PK")
+        (tmp_path / "homesh-tv.json").write_text('{"versionCode": 7, "versionName": "0.7.0"}')
+        monkeypatch.setenv("TV_APK_PATH", str(apk))
+
+        r = anon_client.get("/tv.json")
+        assert r.status_code == 200
+        assert r.json()["versionCode"] == 7
+
+    def test_no_build_means_nothing_to_offer(self, anon_client, tmp_path, monkeypatch):
+        """Rather than the web app's HTML, which the catch-all would otherwise serve."""
+        monkeypatch.setenv("TV_APK_PATH", str(tmp_path / "absent.apk"))
+        assert anon_client.get("/tv.json").status_code == 404
+
+    def test_it_needs_no_account(self, anon_client, tmp_path, monkeypatch):
+        """A television has no session, and a version number is not a secret."""
+        apk = tmp_path / "homesh-tv.apk"
+        apk.write_bytes(b"PK")
+        (tmp_path / "homesh-tv.json").write_text('{"versionCode": 1}')
+        monkeypatch.setenv("TV_APK_PATH", str(apk))
+        assert anon_client.get("/tv.json").status_code == 200

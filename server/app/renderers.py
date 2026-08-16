@@ -96,6 +96,23 @@ class Hub:
     def is_connected(self, renderer_id: UUID) -> bool:
         return renderer_id in self._renderers
 
+    async def disconnect(self, renderer_id: UUID) -> None:
+        """Close a renderer's socket and forget it.
+
+        Used when a room is removed: the credential it holds has just been
+        deleted, so the socket is authenticating against nothing. Leaving it open
+        would mean a screen that had been removed could still be sent to until it
+        happened to reconnect.
+        """
+        async with self._lock:
+            conn = self._renderers.pop(renderer_id, None)
+        if conn is not None:
+            try:
+                await conn.socket.close()
+            except Exception as exc:  # noqa: BLE001
+                log.debug("closing a removed renderer's socket: %s", exc)
+        await self.broadcast_presence()
+
     async def send(self, renderer_id: UUID, message: dict) -> bool:
         conn = self._renderers.get(renderer_id)
         if conn is None:

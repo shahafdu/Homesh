@@ -6,6 +6,7 @@ import android.content.Intent;
 import android.graphics.Color;
 import android.os.Build;
 import android.os.Bundle;
+import android.util.Log;
 import android.view.KeyEvent;
 import android.view.View;
 import android.view.WindowManager;
@@ -92,6 +93,29 @@ public class MainActivity extends Activity {
 
         immersive();
         web.loadUrl(server + "/tv");
+
+        checkForUpdate();
+    }
+
+    /**
+     * Ask the server whether it has a newer build, and install it if so.
+     *
+     * <p>On every launch, in the background, after the screen is already
+     * working: an update is not worth delaying the thing somebody just opened.
+     * Without this, every change means walking to each television and typing a
+     * URL with a remote control.
+     */
+    private void checkForUpdate() {
+        new Thread(() -> {
+            Integer offered = Updater.availableVersion(server);
+            if (offered == null) return;
+
+            int installed = Updater.installedVersion(this);
+            if (offered <= installed) return;
+
+            Log.i("Homesh", "update available: " + installed + " -> " + offered);
+            Updater.downloadAndInstall(this, server);
+        }).start();
     }
 
     private void configure(WebSettings s) {
