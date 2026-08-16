@@ -60,6 +60,11 @@ class Settings(BaseSettings):
     # itself rather than receiving it from the browser.
     lan_base_url: str = ""
 
+    # How often every source is rescanned without being asked. 0 disables it.
+    # Daily by design: Drive charges quota per listing, and photos dropped into a
+    # shared folder are not urgent — anything that is has the manual button.
+    scan_interval_hours: int = 24
+
     # Service-account key for Google Drive. A credential, so it lives outside the
     # repository and is referenced by path rather than pasted into config.
     gdrive_key_file: str = "/run/secrets/gdrive.json"

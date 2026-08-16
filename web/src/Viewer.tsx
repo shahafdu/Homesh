@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "./api";
-import { canPreview, downloadUrl, formatSize, type FileEntry } from "./library";
+import { canPreview, documentUrl, downloadUrl, formatSize, needsConversion, type FileEntry } from "./library";
 
 /** Full-screen viewer for the kinds that need a viewport rather than a player bar.
  *
@@ -150,7 +150,14 @@ export default function Viewer(props: {
           {url && file.kind === "doc" && text !== null && <pre className="v-text">{text}</pre>}
 
           {url && file.kind === "doc" && text === null && previewable && (
-            <iframe className="v-frame" src={url} title={file.filename} />
+            // An office document is rendered by the server and arrives as a PDF;
+            // a PDF is already one. Either way the browser shows a PDF, so there
+            // is a single viewer rather than one per format.
+            <iframe
+              className="v-frame"
+              src={needsConversion(file.ext) ? documentUrl(file.item_id) : url}
+              title={file.filename}
+            />
           )}
 
           {url && !previewable && (

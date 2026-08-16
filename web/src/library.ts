@@ -107,11 +107,35 @@ export async function downloadUrl(itemId: string): Promise<string> {
   return `${url}&download=1`;
 }
 
-/** Formats the browser can display. Anything else is offered as a download. */
+/** Office formats the server renders to PDF on request.
+ *
+ * No browser can display these, and no browser ever will — they need a layout
+ * engine rather than a parser. The server converts them so the file never has to
+ * leave the house to be read.
+ */
+const CONVERTIBLE = new Set([
+  "doc", "docx", "odt", "rtf", "dot", "dotx", "wpd",
+  "xls", "xlsx", "ods", "csv", "xlsm", "xlt", "xltx",
+  "ppt", "pptx", "odp", "pps", "ppsx", "pot", "potx",
+  "abw", "sxw", "fodt", "fods",
+]);
+
+export function needsConversion(ext: string | null): boolean {
+  return CONVERTIBLE.has((ext ?? "").toLowerCase());
+}
+
+/** Formats the viewer can show, directly or after conversion. */
 export function canPreview(kind: Kind, ext: string | null): boolean {
   if (kind === "photo" || kind === "video" || kind === "audio") return true;
-  return ["pdf", "txt", "md"].includes((ext ?? "").toLowerCase());
+  const e = (ext ?? "").toLowerCase();
+  return ["pdf", "txt", "md", "log", "json", "xml", "csv"].includes(e) || needsConversion(ext);
 }
+
+/** Where the viewer should point for a document.
+ *
+ * Converted formats come from their own endpoint; a PDF is served as itself.
+ */
+export const documentUrl = (itemId: string) => `/api/documents/${itemId}`;
 
 export const scanSource = (id: string) => api.post(`/api/sources/${id}/scan`);
 

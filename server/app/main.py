@@ -6,9 +6,10 @@ Auth, sources and the control tower land in the phases that follow.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 
 from fastapi import FastAPI, Response
@@ -19,6 +20,7 @@ from .auth import ensure_bootstrap_code
 from .auth import router as auth_router
 from .config import get_settings
 from .db import check_connection, run_migrations
+from .documents import router as documents_router
 from .library import register_sources
 from .library import router as library_router
 from .people import router as people_router
@@ -26,6 +28,7 @@ from .prefs import router as prefs_router
 from .renderers import router as renderers_router
 from .sharing import router as sharing_router
 from .stream import router as stream_router
+from .upkeep import run_forever as scan_forever
 from .zones import router as zones_router
 
 settings = get_settings()
@@ -92,7 +95,15 @@ async def lifespan(app: FastAPI):
                 settings.public_origin,
             )
 
+    # Keeps the catalog current on its own. Held so shutdown can cancel it
+    # rather than leaving a scan writing into a closing connection pool.
+    upkeep = asyncio.create_task(scan_forever())
+
     yield
+
+    upkeep.cancel()
+    with suppress(asyncio.CancelledError):
+        await upkeep
     log.info("Homesh stopped")
 
 
@@ -116,6 +127,7 @@ if not settings.secure_cookies:
 
 
 app.include_router(auth_router)
+app.include_router(documents_router)
 app.include_router(library_router)
 app.include_router(people_router)
 app.include_router(prefs_router)

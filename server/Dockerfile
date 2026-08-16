@@ -22,8 +22,21 @@ ENV PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1
 
 # ffmpeg is used for remux and thumbnails — not transcoding (ARCHITECTURE.md §3.2).
+#
+# LibreOffice renders the office formats no browser can display — doc, docx, xls,
+# xlsx, ppt, pptx and the rest — to PDF, which every browser can. It is a heavy
+# dependency for a media server and it is still the right one: the alternatives
+# are a different JavaScript library per format with worse fidelity, or handing
+# the file to Microsoft's or Google's online viewer, which means uploading a
+# private document to a third party in order to read it. Conversions are cached.
 RUN apt-get update \
- && apt-get install -y --no-install-recommends ffmpeg \
+ && apt-get install -y --no-install-recommends \
+      ffmpeg \
+      libreoffice-writer-nogui \
+      libreoffice-calc-nogui \
+      libreoffice-impress-nogui \
+      fonts-dejavu \
+      fonts-liberation \
  && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
