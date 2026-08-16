@@ -63,7 +63,37 @@ def _describe(now_playing: dict) -> str:
     return "playing something else"
 
 
-async def receiver_occupancy(our_session_state: str | None) -> Occupancy:
+# Inputs that mean the network player — anything else on the main zone is some
+# other box: a television, a console, a turntable.
+NETWORK_INPUTS = {"NET", "HEOS", "BT", "AUX"}
+
+
+def _avr_busy(state: denon.AvrState, zone2: bool) -> str | None:
+    """Whether the AVR shows this zone in use by something that is not us.
+
+    The case that prompted this: a child watching television through the
+    receiver. The HEOS player is idle, so asking only HEOS reports the living
+    room as free — while it is audibly, visibly in use. The main zone being
+    powered on with a non-network input is the evidence, and it is evidence the
+    receiver was willing to give all along.
+    """
+    if zone2:
+        if state.zone2 and state.zone2_source and state.zone2_source not in NETWORK_INPUTS:
+            return f"in use ({state.zone2_source})"
+        return None
+
+    # Positive evidence only. A receiver that has not said it is on must not be
+    # reported as occupied — a silent amplifier is the normal case, and guessing
+    # busy would block playback in a free room.
+    powered = state.power is True or state.main_zone is True
+    if powered and state.source and state.source not in NETWORK_INPUTS:
+        return f"in use ({state.source})"
+    return None
+
+
+async def receiver_occupancy(
+    our_session_state: str | None, zone2: bool = False
+) -> Occupancy:
     """Ask the receiver what it is doing.
 
     `our_session_state` is what we believe we started; when the receiver is busy
@@ -74,8 +104,9 @@ async def receiver_occupancy(our_session_state: str | None) -> Occupancy:
     if not host:
         return Occupancy(busy=False, ours=False, reachable=False, detail="no receiver configured")
 
+    key = f"{host}:{'z2' if zone2 else 'main'}"
     async with _lock:
-        cached = _cache.get(host)
+        cached = _cache.get(key)
         if cached and time.monotonic() - cached[0] < CACHE_TTL:
             return cached[1]
 
@@ -90,7 +121,19 @@ async def receiver_occupancy(our_session_state: str | None) -> Occupancy:
             playing = state == "play"
 
             if not playing:
-                result = Occupancy(busy=False, ours=False)
+                # The network player being idle does not mean the room is. Ask
+                # the amplifier itself: a television watched through it leaves
+                # HEOS untouched while the main zone is plainly in use.
+                try:
+                    avr = await denon.query_state(host)
+                    reason = _avr_busy(avr, zone2)
+                except denon.DenonError:
+                    reason = None
+                result = (
+                    Occupancy(busy=True, ours=False, detail=reason)
+                    if reason
+                    else Occupancy(busy=False, ours=False)
+                )
             else:
                 ours = our_session_state in ("playing", "buffering")
                 detail = None
@@ -108,7 +151,7 @@ async def receiver_occupancy(our_session_state: str | None) -> Occupancy:
         result = Occupancy(busy=False, ours=False, reachable=False, detail=str(exc))
 
     async with _lock:
-        _cache[host] = (time.monotonic(), result)
+        _cache[key] = (time.monotonic(), result)
     return result
 
 

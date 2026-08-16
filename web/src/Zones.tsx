@@ -180,6 +180,13 @@ function ZoneCard(props: {
               ⏭
             </button>
             <button className="compact" onClick={props.onStop}>Stop</button>
+          </div>
+
+          {/* Its own row beneath the buttons. Six controls on one line pushed the
+              slider past the edge of the card, and the slider is the one that
+              needs the width. */}
+          <div className="zone-volume">
+            <span className="vol-ic" aria-hidden="true">🔈</span>
             <input
               className="zone-vol"
               type="range"

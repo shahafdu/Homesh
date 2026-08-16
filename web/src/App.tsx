@@ -11,6 +11,7 @@ import PlayTo from "./PlayTo";
 import Viewer from "./Viewer";
 import Zones from "./Zones";
 import { usePlayer } from "./player";
+import { useRoomActivity } from "./rooms";
 import type { FileEntry } from "./library";
 import { applyPrefs, DEFAULT_PREFS, getPrefs, savePrefs, type Prefs } from "./prefs";
 
@@ -20,6 +21,7 @@ export default function App() {
   const [prefs, setPrefs] = useState<Prefs>(DEFAULT_PREFS);
   const [showSettings, setShowSettings] = useState(false);
   const player = usePlayer();
+  const rooms = useRoomActivity();
   const [viewing, setViewing] = useState<{ files: FileEntry[]; index: number } | null>(null);
   const closeViewer = useCallback(() => setViewing(null), []);
   const [showZones, setShowZones] = useState(false);
@@ -193,6 +195,22 @@ export default function App() {
             <span className={`dot${health?.status === "ok" ? "" : " bad"}`} />
             {state.user.display_name} · server {health?.version} · db {health?.database}
           </span>
+
+          {/* Clickable, because the next thing anybody wants after reading it is
+              to see which room — and pressing the text that told you is the
+              obvious way to ask. */}
+          <button
+            className="rooms-status"
+            onClick={() => setShowZones(true)}
+            title="Open the control tower"
+          >
+            <span className={`dot${rooms.playing.length ? " live" : ""}`} />
+            {rooms.playing.length === 0
+              ? "Nothing playing"
+              : rooms.playing.length === 1
+                ? `1 room playing · ${rooms.playing[0].name}`
+                : `${rooms.playing.length} rooms playing`}
+          </button>
           <button className="linklike" disabled={busy} onClick={() => run(logout)}>
             Sign out
           </button>

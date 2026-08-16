@@ -20,7 +20,11 @@ from app.scanner import scan_source
 from app.sources.local import LocalConnector
 from tests.test_denon import FakeAvr, FakeHeos
 
-BALCONY_PREROLL = [{"avr": "PWON"}, {"avr": "Z2ON"}, {"avr": "Z2NET"}]
+# ZONE2 only. PWON was here once, and it is exactly the bug that made starting
+# the balcony interrupt the television: PWON powers the *main* zone. A room that
+# touches the main zone is judged by the main zone, so leaving it in would also
+# make the balcony look busy whenever anybody was watching something.
+BALCONY_PREROLL = [{"avr": "Z2ON"}, {"avr": "Z2NET"}]
 
 
 @pytest.fixture
@@ -176,9 +180,10 @@ class TestPlayback:
         assert r.status_code == 200, r.text
         assert r.json()["state"] == "playing"
 
-        # Power and zone selection must happen before audio is pushed, or the
-        # receiver drops the stream on a sleeping zone.
-        assert avr.received == ["PWON", "Z2ON", "Z2NET"]
+        # Zone power and input selection must happen before audio is pushed, or
+        # the receiver drops the stream on a sleeping zone. ZONE2 only: powering
+        # the main zone from here is what used to interrupt the television.
+        assert avr.received == ["Z2ON", "Z2NET"]
         assert any("play_stream" in c for c in heos.received)
 
     def test_pushed_url_is_lan_reachable(self, client, db, scanned, receiver):
@@ -341,7 +346,7 @@ class TestExternalUse:
     ):
         _make_zone(client)
 
-        async def busy_elsewhere(_state):
+        async def busy_elsewhere(_state, **_kw):
             from app.occupancy import Occupancy
 
             return Occupancy(busy=True, ours=False, detail="Bohemian Rhapsody — via Spotify")
@@ -357,7 +362,7 @@ class TestExternalUse:
     ):
         _make_zone(client)
 
-        async def ours(_state):
+        async def ours(_state, **_kw):
             from app.occupancy import Occupancy
 
             return Occupancy(busy=True, ours=True)
@@ -370,7 +375,7 @@ class TestExternalUse:
     ):
         zone_id = _make_zone(client)
 
-        async def busy_elsewhere(_state):
+        async def busy_elsewhere(_state, **_kw):
             from app.occupancy import Occupancy
 
             return Occupancy(busy=True, ours=False, detail="Bohemian Rhapsody — via Spotify")
@@ -386,7 +391,7 @@ class TestExternalUse:
         """Interrupting is allowed — it just has to be a decision."""
         zone_id = _make_zone(client)
 
-        async def busy_elsewhere(_state):
+        async def busy_elsewhere(_state, **_kw):
             from app.occupancy import Occupancy
 
             return Occupancy(busy=True, ours=False, detail="something else")
@@ -406,7 +411,7 @@ class TestExternalUse:
         """Unreachable and idle are different things, and only one is actionable."""
         _make_zone(client)
 
-        async def unreachable(_state):
+        async def unreachable(_state, **_kw):
             from app.occupancy import Occupancy
 
             return Occupancy(busy=False, ours=False, reachable=False, detail="cannot reach")
@@ -420,7 +425,7 @@ class TestExternalUse:
         """Only the receiver can be driven by something else behind our back."""
         called = False
 
-        async def tracker(_state):
+        async def tracker(_state, **_kw):
             nonlocal called
             called = True
             from app.occupancy import Occupancy
@@ -435,3 +440,48 @@ class TestExternalUse:
         )
         client.get("/api/zones")
         assert called is False, "a screen was probed as though it were a receiver"
+
+
+class TestTelevisionOccupancy:
+    """A room in use by something that is not the network player.
+
+    The case this was blind to: a child watching television through the receiver.
+    HEOS is idle, so asking only HEOS reported the living room as ready — while
+    it was audibly and visibly in use. The fake receiver reports PWON / ZMON /
+    SITV, which is exactly that situation.
+    """
+
+    def test_the_main_zone_on_a_television_input_reads_as_busy(
+        self, client, db, scanned, receiver
+    ):
+        # No Z2 commands: this room is the main zone.
+        _make_zone(client, name="Living Room", preroll=[{"avr": "PWON"}, {"avr": "SINET"}])
+
+        room = next(z for z in client.get("/api/zones").json() if z["name"] == "Living Room")
+        assert room["external"], "a television playing through the receiver went unnoticed"
+        assert room["external"]["busy"] is True
+        assert "TV" in (room["external"]["detail"] or "")
+
+    def test_zone_two_is_judged_on_its_own_power_not_the_main_zone(
+        self, client, db, scanned, receiver
+    ):
+        """Otherwise the television downstairs would make the balcony unusable."""
+        _make_zone(client, name="Balcony")  # the default preroll is a ZONE2 one
+
+        room = next(z for z in client.get("/api/zones").json() if z["name"] == "Balcony")
+        assert room["external"] is None
+
+    def test_playing_into_an_occupied_main_zone_needs_a_decision(
+        self, client, db, scanned, receiver
+    ):
+        zone_id = _make_zone(
+            client, name="Living Room", preroll=[{"avr": "PWON"}, {"avr": "SINET"}]
+        )
+
+        refused = client.post(f"/api/zones/{zone_id}/play", json={"item_ids": _items(db)})
+        assert refused.status_code == 409, "the app cut across a television without asking"
+
+        allowed = client.post(
+            f"/api/zones/{zone_id}/play", json={"item_ids": _items(db), "take_over": True}
+        )
+        assert allowed.status_code == 200

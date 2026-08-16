@@ -885,3 +885,24 @@ button.compact:disabled { opacity: .5; cursor: not-allowed; }
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .now-artist { font-size: 12.5px; color: var(--muted); }
+
+/* Volume sits under the transport row, full width, so it cannot be squeezed out
+   of the card by the buttons beside it. */
+.zone-volume {
+  display: flex; align-items: center; gap: 10px;
+  margin-top: 8px; width: 100%; min-width: 0;
+}
+.zone-volume .zone-vol { flex: 1 1 auto; min-width: 0; }
+.vol-ic { font-size: 13px; opacity: .7; }
+.zone-controls { flex-wrap: wrap; }
+
+/* The standing answer to "is anything still on?", in the footer where it costs
+   no screen space and is visible from every view. */
+.rooms-status {
+  display: inline-flex; align-items: center; gap: 7px;
+  background: none; border: 0; cursor: pointer;
+  font-size: 12.5px; color: var(--muted); padding: 4px 8px;
+  border-radius: 6px;
+}
+.rooms-status:hover { color: var(--ink); background: var(--surface); }
+.rooms-status .dot.live { background: var(--accent); }

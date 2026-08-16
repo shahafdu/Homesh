@@ -334,6 +334,18 @@ async def avr_command(host: str, commands: list[str], read_for: float = 1.5) -> 
             pass
 
 
+# The input names the AVR reports. A zone query answers with more than its input
+# — sleep timer, mute, tone settings all come back on the same connection — so
+# anything not in this set is status, not a source. Without the distinction
+# "Z2SLPOFF" reads as an input called SLPOFF and the room looks permanently busy.
+AVR_INPUTS = {
+    "PHONO", "CD", "TUNER", "DVD", "BD", "TV", "SAT/CBL", "SAT", "MPLAY",
+    "GAME", "AUX1", "AUX2", "AUX", "NET", "BT", "USB", "USB/IPOD", "IPOD",
+    "SPOTIFY", "IRADIO", "SERVER", "FAVORITES", "HDRADIO", "MEDIA PLAYER",
+    "8K", "CBL/SAT", "SOURCE",
+}
+
+
 def parse_avr_state(lines: list[str]) -> AvrState:
     """Interpret AVR status lines.
 
@@ -359,7 +371,7 @@ def parse_avr_state(lines: list[str]) -> AvrState:
             rest = line[2:]
             if rest.isdigit():
                 state.zone2_volume = _decode_volume(rest)
-            elif rest:
+            elif rest in AVR_INPUTS:
                 state.zone2_source = rest
         elif line.startswith("MVMAX"):
             continue  # a limit, not the current level

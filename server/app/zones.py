@@ -82,6 +82,29 @@ class VolumeRequest(BaseModel):
 # ── Helpers ─────────────────────────────────────────────────────────────────
 
 
+# Commands that act on the main zone. A room that sends any of these is using it.
+_MAIN_ZONE_PREFIXES = ("PW", "ZM", "SI", "MV")
+
+
+def _is_zone2(preroll: list[dict] | None) -> bool:
+    """Whether a room uses the receiver's second zone *and nothing else*.
+
+    It decides which zone's power and input the occupancy check reads, and both
+    mistakes are visible: judging the balcony by the main zone makes a television
+    downstairs look like the balcony being busy, and judging the living room by
+    zone 2 makes that television invisible.
+
+    A room that drives both — "Living Room + Balcony" — is not zone 2. It occupies
+    the main zone, so it has to be judged by it.
+    """
+    commands = [c.get("avr", "") for c in (preroll or [])]
+    touches_zone2 = any(c.startswith("Z2") for c in commands)
+    touches_main = any(
+        c.startswith(p) for c in commands for p in _MAIN_ZONE_PREFIXES if not c.startswith("Z2")
+    )
+    return touches_zone2 and not touches_main
+
+
 def _media_base() -> str:
     """The origin a *device on the LAN* can fetch media from.
 
@@ -202,7 +225,7 @@ async def list_zones(user: CurrentUser = Depends(require_user)) -> list[dict]:
                 """
                 SELECT z.id, z.name, r.kind::text, r.state::text, r.name,
                        s.state::text, s.queue, s.cursor, s.position_ms, s.volume,
-                       s.updated_at
+                       s.updated_at, z.preroll
                 FROM zones z
                 LEFT JOIN renderers r ON r.id = z.renderer_id
                 LEFT JOIN play_sessions s ON s.zone_id = z.id
@@ -236,7 +259,12 @@ async def list_zones(user: CurrentUser = Depends(require_user)) -> list[dict]:
         # way the tower can be honest about whether a room is free.
         external = None
         if kind == "heos":
-            seen = await occupancy.receiver_occupancy(session_state)
+            # Which half of the receiver this room is, so the check looks at the
+            # right zone's power and input rather than at the amplifier in
+            # general.
+            seen = await occupancy.receiver_occupancy(
+                session_state, zone2=_is_zone2(row[11])
+            )
             if seen.busy and not seen.ours:
                 external = {"busy": True, "detail": seen.detail}
             elif not seen.reachable:
@@ -345,7 +373,7 @@ async def play(
     item_id = body.item_ids[index]
 
     if zone.renderer_kind == "heos" and not body.take_over:
-        seen = await occupancy.receiver_occupancy(None)
+        seen = await occupancy.receiver_occupancy(None, zone2=_is_zone2(zone.preroll))
         if seen.busy and not seen.ours:
             # 409 rather than 403: nothing is forbidden, the room is simply busy,
             # and the caller can repeat the request having decided to interrupt.
