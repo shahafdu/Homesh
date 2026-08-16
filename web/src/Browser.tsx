@@ -7,7 +7,6 @@ import {
   formatDuration,
   formatSize,
   listSources,
-  scanSource,
   sortFiles,
   type Sort,
   type SortKey,
@@ -30,7 +29,6 @@ const GLYPH: Record<Kind, string> = {
 };
 
 export default function Browser(props: {
-  isAdmin: boolean;
   view: View;
   onViewChange: (v: View) => void;
   onOpenSettings: () => void;
@@ -42,7 +40,7 @@ export default function Browser(props: {
   playingId: string | null;
 }) {
   const {
-    isAdmin, view, onViewChange, onOpenSettings, onOpenZones, onOpenPeople,
+    view, onViewChange, onOpenSettings, onOpenZones, onOpenPeople,
     onPlay, onView, onActions, playingId,
   } = props;
 
@@ -54,6 +52,9 @@ export default function Browser(props: {
   const [listing, setListing] = useState<Listing | null>(null);
   const [hits, setHits] = useState<SearchHit[] | null>(null);
   const [query, setQuery] = useState("");
+  // Not for administering — for naming: the breadcrumbs turn /drive/music into
+  // "music", which needs the source list even though scanning now lives in
+  // Settings.
   const [sources, setSources] = useState<Source[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -114,31 +115,10 @@ export default function Browser(props: {
     return () => window.removeEventListener("popstate", onPop);
   }, []);
 
-  const rescan = async (id: string) => {
-    await scanSource(id);
-    // Re-read straight away so the row flips to "scanning" while the poll below
-    // takes over. Pressing Rescan and seeing nothing change was indistinguishable
-    // from pressing a dead button.
-    listSources().then(setSources).catch(() => undefined);
-  };
-
-  // While anything is scanning, keep asking. A Drive folder takes minutes, and a
-  // count that only moves when you happen to reload is not progress.
-  const scanning = sources.some((s) => s.scan?.state === "running");
-  useEffect(() => {
-    if (!scanning) return;
-    const poll = window.setInterval(() => {
-      listSources().then(setSources).catch(() => undefined);
-    }, 2000);
-    return () => window.clearInterval(poll);
-  }, [scanning]);
-
   // Ordering is a property of how you are looking at a folder, so it sits
   // beside the view mode rather than in saved preferences: you sort by artist to
   // answer a question, not forever.
   const [sort, setSort] = useState<Sort>({ key: "name", desc: false });
-
-  const atRoot = hits === null && listing?.path === "/";
 
   return (
     <div className="browser">
@@ -215,7 +195,6 @@ export default function Browser(props: {
         />
       )}
 
-      {atRoot && <SourceList sources={sources} isAdmin={isAdmin} onScan={rescan} />}
     </div>
   );
 }
@@ -415,6 +394,7 @@ function Folder(props: {
                   <span className="col" />
                   <span className="col" />
                   <span className="meta" />
+                  <span className="meta" />
                   <span className="meta date" />
                 </>
               )}
@@ -443,6 +423,7 @@ function Folder(props: {
                   <span className="col" />
                   <span className="col" />
                   <span className="meta" />
+                  <span className="meta" />
                   <span className="meta date" />
                 </>
               )}
@@ -460,6 +441,7 @@ function Folder(props: {
           <SortHead label="Album" col="album" sort={sort} onSort={onSort} />
           <SortHead label="Time" col="duration" sort={sort} onSort={onSort} />
           <span />
+          <SortHead label="Modified" col="date" sort={sort} onSort={onSort} />
         </li>
       )}
 
@@ -530,55 +512,5 @@ function Results(props: {
         </li>
       ))}
     </ul>
-  );
-}
-
-/** One line saying what this source is doing, or last did.
- *
- * "Never scanned" is called out because it is the state that hid a folder
- * sitting at zero files: indistinguishable, until now, from a folder that was
- * genuinely empty.
- */
-function describeScan(s: Source): string {
-  const scan = s.scan;
-  const files = `${s.files.toLocaleString()} files`;
-
-  if (scan?.state === "running") {
-    return scan.seen > 0
-      ? `Scanning — ${scan.seen.toLocaleString()} found so far`
-      : "Scanning — starting…";
-  }
-  if (scan?.state === "failed") return `${files} · scan failed: ${scan.error ?? "unknown"}`;
-  if (!scan?.state) return `${files} · never scanned`;
-  return s.last_seen_at ? `${files} · scanned ${formatDate(s.last_seen_at)}` : files;
-}
-
-function SourceList(props: {
-  sources: Source[];
-  isAdmin: boolean;
-  onScan: (id: string) => void;
-}) {
-  if (props.sources.length === 0) return null;
-  return (
-    <div className="sources">
-      <h2>Sources</h2>
-      {props.sources.map((s) => (
-        <div key={s.id} className="source">
-          <div>
-            <strong>{s.name}</strong> <span className="muted">{s.mount_prefix}</span>
-            <div className="muted small">{describeScan(s)}</div>
-          </div>
-          {props.isAdmin && (
-            <button
-              className="compact"
-              disabled={s.scan?.state === "running"}
-              onClick={() => props.onScan(s.id)}
-            >
-              {s.scan?.state === "running" ? "Scanning…" : "Rescan"}
-            </button>
-          )}
-        </div>
-      ))}
-    </div>
   );
 }

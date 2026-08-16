@@ -102,7 +102,6 @@ export default function App() {
     return (
       <div className="app">
         <Browser
-          isAdmin={state.user.is_admin}
           view={prefs.view}
           onViewChange={(view) => void changePrefs({ view })}
           onOpenSettings={() => setShowSettings(true)}
@@ -166,6 +165,7 @@ export default function App() {
 
         {showSettings && (
           <Settings
+            isAdmin={state.user.is_admin}
             prefs={prefs}
             onChange={(patch) => void changePrefs(patch)}
             onLinkDevice={() => {

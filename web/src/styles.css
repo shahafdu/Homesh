@@ -12,154 +12,163 @@
  * Components only ever read the tokens, never a literal colour.
  */
 
-/* ── Listening Room: warm graphite, valve-amp amber ─────────────────────────── */
+/* ── Hearth: warm charcoal, lit amber ────────────────────────────────────────── */
 :root,
 :root[data-palette="warm"] {
-  --bg: #faf7f2;
+  --bg: #fdfaf6;
   --surface: #ffffff;
-  --line: #e8e2d8;
-  --ink: #26221e;
-  --muted: #6b635a;
-  --accent: #b8762a;
+  --line: #ece4d9;
+  --ink: #1f1b16;
+  --muted: #6e6459;
+  --accent: #c2670f;
   --accent-ink: #ffffff;
-  --audio: #a8702a;
-  --video: #ac5a42;
-  --photo: #4c7a4a;
-  --doc: #6a5da8;
-  --ok: #3f7d52;
-  --danger: #b04336;
+  --audio: #c2670f;
+  --video: #b0453a;
+  --photo: #3e7a4e;
+  --doc: #5b57b8;
+  --ok: #2f7a4b;
+  --danger: #b33a2b;
+  --shadow: 0 1px 2px rgba(31,27,22,.06), 0 8px 24px rgba(31,27,22,.08);
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-appearance="light"]),
   :root[data-palette="warm"]:not([data-appearance="light"]) {
-    --bg: #1b1917;
-    --surface: #232120;
-    --line: #34302d;
-    --ink: #ece7e0;
-    --muted: #a09890;
-    --accent: #e0a458;
-    --accent-ink: #24201a;
-    --audio: #d9a05c;
-    --video: #c97b62;
-    --photo: #7fa87c;
-    --doc: #9b8fc4;
-    --ok: #6fae7f;
-    --danger: #dd7a6b;
+    --bg: #17130f;
+    --surface: #221d18;
+    --line: #372f27;
+    --ink: #f2ebe2;
+    --muted: #a79b8d;
+    --accent: #f5a94d;
+    --accent-ink: #231808;
+    --audio: #f5a94d;
+    --video: #e28068;
+    --photo: #7fc08b;
+    --doc: #a99bf0;
+    --ok: #6fc98c;
+    --danger: #ec8272;
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 10px 30px rgba(0,0,0,.45);
   }
 }
 :root[data-appearance="dark"],
 :root[data-palette="warm"][data-appearance="dark"] {
-  --bg: #1b1917;
-  --surface: #232120;
-  --line: #34302d;
-  --ink: #ece7e0;
-  --muted: #a09890;
-  --accent: #e0a458;
-  --accent-ink: #24201a;
-  --audio: #d9a05c;
-  --video: #c97b62;
-  --photo: #7fa87c;
-  --doc: #9b8fc4;
-  --ok: #6fae7f;
-  --danger: #dd7a6b;
+  --bg: #17130f;
+  --surface: #221d18;
+  --line: #372f27;
+  --ink: #f2ebe2;
+  --muted: #a79b8d;
+  --accent: #f5a94d;
+  --accent-ink: #231808;
+  --audio: #f5a94d;
+  --video: #e28068;
+  --photo: #7fc08b;
+  --doc: #a99bf0;
+  --ok: #6fc98c;
+  --danger: #ec8272;
+  --shadow: 0 1px 2px rgba(0,0,0,.4), 0 10px 30px rgba(0,0,0,.45);
 }
 
-/* ── Studio: cool slate, VU-needle teal ─────────────────────────────────────── */
+/* ── Studio: deep slate, instrument cyan ─────────────────────────────────────── */
 :root[data-palette="studio"] {
-  --bg: #f3f6f7;
+  --bg: #f7f9fb;
   --surface: #ffffff;
-  --line: #dce4e7;
-  --ink: #1a2226;
-  --muted: #5d6b71;
-  --accent: #2c8279;
+  --line: #e1e8ee;
+  --ink: #131a21;
+  --muted: #5b6875;
+  --accent: #0f7fa8;
   --accent-ink: #ffffff;
-  --audio: #2c8279;
-  --video: #a95a3c;
-  --photo: #47733f;
-  --doc: #4f5a99;
-  --ok: #35795a;
-  --danger: #a8402f;
+  --audio: #0f7fa8;
+  --video: #a9503a;
+  --photo: #3c7a4e;
+  --doc: #5d51a8;
+  --ok: #2e7a55;
+  --danger: #ac3b2e;
+  --shadow: 0 1px 2px rgba(19,26,33,.06), 0 8px 24px rgba(19,26,33,.09);
 }
 @media (prefers-color-scheme: dark) {
   :root[data-palette="studio"]:not([data-appearance="light"]) {
-    --bg: #14181a;
-    --surface: #1c2124;
-    --line: #2c3336;
-    --ink: #e3eaec;
-    --muted: #94a2a8;
-    --accent: #59b6ab;
-    --accent-ink: #10201e;
-    --audio: #59b6ab;
-    --video: #d8896a;
-    --photo: #86b57f;
-    --doc: #9aa6d6;
-    --ok: #67b78d;
-    --danger: #dd7f6c;
+    --bg: #0e1318;
+    --surface: #171e25;
+    --line: #273139;
+    --ink: #e6edf3;
+    --muted: #90a0ae;
+    --accent: #4cc2e8;
+    --accent-ink: #06202a;
+    --audio: #4cc2e8;
+    --video: #e08a6c;
+    --photo: #7ec489;
+    --doc: #a79bee;
+    --ok: #64c48e;
+    --danger: #ed8271;
+    --shadow: 0 1px 2px rgba(0,0,0,.45), 0 10px 30px rgba(0,0,0,.5);
   }
 }
 :root[data-palette="studio"][data-appearance="dark"] {
-  --bg: #14181a;
-  --surface: #1c2124;
-  --line: #2c3336;
-  --ink: #e3eaec;
-  --muted: #94a2a8;
-  --accent: #59b6ab;
-  --accent-ink: #10201e;
-  --audio: #59b6ab;
-  --video: #d8896a;
-  --photo: #86b57f;
-  --doc: #9aa6d6;
-  --ok: #67b78d;
-  --danger: #dd7f6c;
+  --bg: #0e1318;
+  --surface: #171e25;
+  --line: #273139;
+  --ink: #e6edf3;
+  --muted: #90a0ae;
+  --accent: #4cc2e8;
+  --accent-ink: #06202a;
+  --audio: #4cc2e8;
+  --video: #e08a6c;
+  --photo: #7ec489;
+  --doc: #a79bee;
+  --ok: #64c48e;
+  --danger: #ed8271;
+  --shadow: 0 1px 2px rgba(0,0,0,.45), 0 10px 30px rgba(0,0,0,.5);
 }
 
-/* ── Daylight: warm paper, indigo ───────────────────────────────────────────── */
+/* ── Violet: ink and orchid ──────────────────────────────────────────────────── */
 :root[data-palette="daylight"] {
-  --bg: #f6f4ef;
-  --surface: #fffdfa;
-  --line: #e4dfd4;
-  --ink: #232026;
-  --muted: #6a6472;
-  --accent: #4a4b96;
+  --bg: #faf8fc;
+  --surface: #ffffff;
+  --line: #e8e2ef;
+  --ink: #1d1826;
+  --muted: #675e75;
+  --accent: #6d4aa8;
   --accent-ink: #ffffff;
-  --audio: #4a4b96;
-  --video: #a8543f;
-  --photo: #47713f;
-  --doc: #7a4a86;
-  --ok: #3d7a55;
-  --danger: #a8433a;
+  --audio: #6d4aa8;
+  --video: #a85440;
+  --photo: #3f7a4f;
+  --doc: #a0479b;
+  --ok: #327a54;
+  --danger: #ae3b31;
+  --shadow: 0 1px 2px rgba(29,24,38,.06), 0 8px 24px rgba(29,24,38,.09);
 }
 @media (prefers-color-scheme: dark) {
   :root[data-palette="daylight"]:not([data-appearance="light"]) {
-    --bg: #1a1922;
-    --surface: #23212c;
-    --line: #33303d;
-    --ink: #e8e5ee;
-    --muted: #9a94a6;
-    --accent: #9899e0;
-    --accent-ink: #1a1926;
-    --audio: #9899e0;
-    --video: #d98a70;
-    --photo: #8ab982;
-    --doc: #c294d0;
-    --ok: #75b78e;
-    --danger: #dd8070;
+    --bg: #14111c;
+    --surface: #1e1929;
+    --line: #312a3f;
+    --ink: #ede8f5;
+    --muted: #9e94b0;
+    --accent: #b79bff;
+    --accent-ink: #1a1030;
+    --audio: #b79bff;
+    --video: #e08a6c;
+    --photo: #85c58f;
+    --doc: #e39bd8;
+    --ok: #6cc791;
+    --danger: #ed8272;
+    --shadow: 0 1px 2px rgba(0,0,0,.45), 0 10px 30px rgba(0,0,0,.5);
   }
 }
 :root[data-palette="daylight"][data-appearance="dark"] {
-  --bg: #1a1922;
-  --surface: #23212c;
-  --line: #33303d;
-  --ink: #e8e5ee;
-  --muted: #9a94a6;
-  --accent: #9899e0;
-  --accent-ink: #1a1926;
-  --audio: #9899e0;
-  --video: #d98a70;
-  --photo: #8ab982;
-  --doc: #c294d0;
-  --ok: #75b78e;
-  --danger: #dd8070;
+  --bg: #14111c;
+  --surface: #1e1929;
+  --line: #312a3f;
+  --ink: #ede8f5;
+  --muted: #9e94b0;
+  --accent: #b79bff;
+  --accent-ink: #1a1030;
+  --audio: #b79bff;
+  --video: #e08a6c;
+  --photo: #85c58f;
+  --doc: #e39bd8;
+  --ok: #6cc791;
+  --danger: #ed8272;
+  --shadow: 0 1px 2px rgba(0,0,0,.45), 0 10px 30px rgba(0,0,0,.5);
 }
 
 /* ── Type ───────────────────────────────────────────────────────────────────── */
@@ -188,6 +197,7 @@ button, input { font: inherit; }
 .shell { min-height: 100dvh; display: grid; place-items: center; padding: 24px; }
 
 .card {
+  box-shadow: var(--shadow);
   width: 100%; max-width: 400px;
   background: var(--surface);
   border: 1px solid var(--line);
@@ -276,8 +286,13 @@ input[type="text"], input:not([type]), input[type="search"] {
   border: 1px solid var(--line); border-radius: 7px; cursor: pointer;
 }
 .seg button:hover { color: var(--ink); }
+/* Tinted rather than inverted. Filling the selected view with --ink puts a
+   glaring white slab in the middle of a dark interface, which draws the eye to
+   the least interesting control on the screen. */
 .seg button[aria-pressed="true"] {
-  background: var(--ink); border-color: var(--ink); color: var(--bg);
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--line));
+  color: var(--ink);
 }
 
 .crumbs { display: flex; flex-wrap: wrap; align-items: center; font-size: 13px; }
@@ -395,6 +410,7 @@ input[type="text"], input:not([type]), input[type="search"] {
   display: grid; place-items: center; padding: 20px;
 }
 .sheet-inner {
+  box-shadow: var(--shadow);
   width: 100%; max-width: 460px;
   background: var(--surface); border: 1px solid var(--line);
   border-radius: 14px; padding: 24px;
@@ -471,6 +487,7 @@ button.compact:hover { color: var(--ink); }
 .cols li.nowplaying, .tiles li.nowplaying .nm { color: var(--accent); }
 
 .player {
+  box-shadow: 0 -1px 0 var(--line), 0 -8px 24px rgba(0,0,0,.12);
   position: sticky; bottom: 0; z-index: 20;
   display: flex; align-items: center; gap: 16px;
   padding: 10px 16px;
@@ -812,9 +829,12 @@ button.compact:disabled { opacity: .5; cursor: not-allowed; }
 /* Seven cells: icon | name | title | artist | album | time | actions.
    minmax(0,…) on every flexible one, so a long album name truncates instead of
    pushing the row wider than the screen. */
+/* icon | name | title | artist | album | time | actions | modified.
+   Eight cells; anything fewer and the last one wraps to its own line, which is
+   what made every row double height. */
 .rows.details li {
   grid-template-columns:
-    22px minmax(0, 2fr) minmax(0, 1.5fr) minmax(0, 1.2fr) minmax(0, 1.2fr) auto auto;
+    22px minmax(0, 2fr) minmax(0, 1.4fr) minmax(0, 1.1fr) minmax(0, 1.1fr) auto auto auto;
 }
 
 /* Above the breakpoint the columns carry the metadata, so the tag line under the
@@ -850,6 +870,7 @@ button.compact:disabled { opacity: .5; cursor: not-allowed; }
   .rows.details li {
     grid-template-columns: 22px minmax(0, 1fr) auto auto;
   }
+  .rows.details .meta.date { display: none; }
   .rows.details .col { display: none; }
   .rows li.rowhead { display: none; }
   /* …and the tags come back under the filename, so the phone still shows what

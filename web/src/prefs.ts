@@ -19,21 +19,21 @@ export const DEFAULT_PREFS: Prefs = {
 export const PALETTES: { id: Palette; name: string; blurb: string; swatch: string[] }[] = [
   {
     id: "warm",
-    name: "Listening Room",
-    blurb: "Warm graphite lit by valve-amp amber. Built for a dim room in the evening.",
-    swatch: ["#1b1917", "#ece7e0", "#e0a458"],
+    name: "Hearth",
+    blurb: "Warm charcoal lit by amber. Built for a dim room in the evening.",
+    swatch: ["#17130f", "#f2ebe2", "#f5a94d"],
   },
   {
     id: "studio",
     name: "Studio",
-    blurb: "Cool slate and VU-needle teal. Quieter, more technical.",
-    swatch: ["#14181a", "#e3eaec", "#59b6ab"],
+    blurb: "Deep slate and instrument cyan. Cooler, and the highest contrast of the three.",
+    swatch: ["#0e1318", "#e6edf3", "#4cc2e8"],
   },
   {
     id: "daylight",
-    name: "Daylight",
-    blurb: "Warm paper and indigo. Easiest on the eyes for documents and long sessions.",
-    swatch: ["#f6f4ef", "#232026", "#4a4b96"],
+    name: "Violet",
+    blurb: "Ink and orchid. Softest of the three for long reading.",
+    swatch: ["#14111c", "#ede8f5", "#b79bff"],
   },
 ];
 
