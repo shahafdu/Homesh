@@ -183,7 +183,12 @@ class TestPlayback:
         # Zone power and input selection must happen before audio is pushed, or
         # the receiver drops the stream on a sleeping zone. ZONE2 only: powering
         # the main zone from here is what used to interrupt the television.
-        assert avr.received == ["Z2ON", "Z2NET"]
+        #
+        # A subset rather than the whole conversation: the receiver is also asked
+        # what it is doing, which is a different question and may or may not be
+        # answered from cache.
+        commands = [c for c in avr.received if not c.endswith("?")]
+        assert commands == ["Z2ON", "Z2NET"]
         assert any("play_stream" in c for c in heos.received)
 
     def test_pushed_url_is_lan_reachable(self, client, db, scanned, receiver):
@@ -346,12 +351,12 @@ class TestExternalUse:
     ):
         _make_zone(client)
 
-        async def busy_elsewhere(_state, **_kw):
+        def busy_elsewhere(_state=None, **_kw):
             from app.occupancy import Occupancy
 
             return Occupancy(busy=True, ours=False, detail="Bohemian Rhapsody — via Spotify")
 
-        monkeypatch.setattr("app.occupancy.receiver_occupancy", busy_elsewhere)
+        monkeypatch.setattr("app.occupancy.cached_occupancy", busy_elsewhere)
 
         zone = client.get("/api/zones").json()[0]
         assert zone["external"]["busy"] is True
@@ -362,12 +367,12 @@ class TestExternalUse:
     ):
         _make_zone(client)
 
-        async def ours(_state, **_kw):
+        def ours(_state=None, **_kw):
             from app.occupancy import Occupancy
 
             return Occupancy(busy=True, ours=True)
 
-        monkeypatch.setattr("app.occupancy.receiver_occupancy", ours)
+        monkeypatch.setattr("app.occupancy.cached_occupancy", ours)
         assert client.get("/api/zones").json()[0]["external"] is None
 
     def test_play_refuses_to_interrupt_without_being_asked(
@@ -375,12 +380,12 @@ class TestExternalUse:
     ):
         zone_id = _make_zone(client)
 
-        async def busy_elsewhere(_state, **_kw):
+        def busy_elsewhere(_state=None, **_kw):
             from app.occupancy import Occupancy
 
             return Occupancy(busy=True, ours=False, detail="Bohemian Rhapsody — via Spotify")
 
-        monkeypatch.setattr("app.occupancy.receiver_occupancy", busy_elsewhere)
+        monkeypatch.setattr("app.occupancy.cached_occupancy", busy_elsewhere)
 
         r = client.post(f"/api/zones/{zone_id}/play", json={"item_ids": _items(db)})
         assert r.status_code == 409
@@ -391,12 +396,12 @@ class TestExternalUse:
         """Interrupting is allowed — it just has to be a decision."""
         zone_id = _make_zone(client)
 
-        async def busy_elsewhere(_state, **_kw):
+        def busy_elsewhere(_state=None, **_kw):
             from app.occupancy import Occupancy
 
             return Occupancy(busy=True, ours=False, detail="something else")
 
-        monkeypatch.setattr("app.occupancy.receiver_occupancy", busy_elsewhere)
+        monkeypatch.setattr("app.occupancy.cached_occupancy", busy_elsewhere)
 
         r = client.post(
             f"/api/zones/{zone_id}/play",
@@ -411,12 +416,12 @@ class TestExternalUse:
         """Unreachable and idle are different things, and only one is actionable."""
         _make_zone(client)
 
-        async def unreachable(_state, **_kw):
+        def unreachable(_state=None, **_kw):
             from app.occupancy import Occupancy
 
             return Occupancy(busy=False, ours=False, reachable=False, detail="cannot reach")
 
-        monkeypatch.setattr("app.occupancy.receiver_occupancy", unreachable)
+        monkeypatch.setattr("app.occupancy.cached_occupancy", unreachable)
 
         zone = client.get("/api/zones").json()[0]
         assert zone["external"]["unreachable"] is True
@@ -425,14 +430,14 @@ class TestExternalUse:
         """Only the receiver can be driven by something else behind our back."""
         called = False
 
-        async def tracker(_state, **_kw):
+        def tracker(_state=None, **_kw):
             nonlocal called
             called = True
             from app.occupancy import Occupancy
 
             return Occupancy(busy=False, ours=False)
 
-        monkeypatch.setattr("app.occupancy.receiver_occupancy", tracker)
+        monkeypatch.setattr("app.occupancy.cached_occupancy", tracker)
 
         client.post(
             "/api/zones",
@@ -451,6 +456,20 @@ class TestTelevisionOccupancy:
     SITV, which is exactly that situation.
     """
 
+    @staticmethod
+    def _prime(zone2: bool) -> None:
+        """Fill the cache the listing reads.
+
+        In the running server a background task keeps this current, precisely so
+        that a request never waits on the receiver. A test has no such task, so
+        it asks once itself.
+        """
+        import asyncio
+
+        from app import occupancy
+
+        asyncio.run(occupancy.receiver_occupancy(None, zone2=zone2, force=True))
+
     def test_the_main_zone_reports_what_it_is_switched_to(
         self, client, db, scanned, receiver
     ):
@@ -463,6 +482,7 @@ class TestTelevisionOccupancy:
         """
         # No Z2 commands: this room is the main zone.
         _make_zone(client, name="Living Room", preroll=[{"avr": "PWON"}, {"avr": "SINET"}])
+        self._prime(zone2=False)
 
         room = next(z for z in client.get("/api/zones").json() if z["name"] == "Living Room")
         assert room["external"], "the receiver being on a television input went unmentioned"
@@ -474,6 +494,7 @@ class TestTelevisionOccupancy:
     ):
         """Otherwise the television downstairs would make the balcony unusable."""
         _make_zone(client, name="Balcony")  # the default preroll is a ZONE2 one
+        self._prime(zone2=True)
 
         room = next(z for z in client.get("/api/zones").json() if z["name"] == "Balcony")
         assert room["external"] is None

@@ -226,6 +226,35 @@ def _fetch_prefix(connector, rel_path: str, want: int) -> bytes:
 _FRAME_MARGIN = 64 * 1024
 
 
+def _duration_from_bitrate(path, true_size: int | None) -> int | None:
+    """Length in milliseconds, worked out rather than measured.
+
+    A prefix cannot be timed: mutagen reports how long the fragment lasts, which
+    for a 70 KB slice of a four-minute song is a few seconds. That is why the
+    duration was being thrown away — and why every track in this library showed
+    no length at all, since everything in it comes from Drive and is read as a
+    prefix.
+
+    But the bitrate is declared in the first frame, which the prefix does
+    contain, and the true size is already in the catalog. Length is the one
+    divided by the other. Exact for constant bitrate, and close enough for
+    variable, where mutagen reports the average the file itself declares.
+    """
+    if not true_size:
+        return None
+    try:
+        import mutagen
+
+        f = mutagen.File(path)
+        bitrate = getattr(getattr(f, "info", None), "bitrate", None)
+    except Exception:  # noqa: BLE001 - an unreadable file simply has no length
+        return None
+
+    if not bitrate:
+        return None
+    return int(true_size * 8 / bitrate * 1000)
+
+
 @contextmanager
 def _local_copy(connector, rel_path: str, filename: str):
     """A real file holding enough of a remote one to read its tags.
@@ -278,7 +307,7 @@ def extract_for_source(
         rows = conn.execute(
             text(
                 """
-                SELECT i.id, i.kind::text, r.dir_path, r.filename
+                SELECT i.id, i.kind::text, r.dir_path, r.filename, i.size_bytes
                 FROM items i
                 JOIN replicas r ON r.item_id = i.id
                 WHERE r.source_id = :sid
@@ -297,7 +326,7 @@ def extract_for_source(
             {"sid": str(source_id), "lim": limit if limit else 10_000_000},
         ).all()
 
-    for item_id, kind, dir_path, filename in rows:
+    for item_id, kind, dir_path, filename, true_size in rows:
         result.processed += 1
         rel = f"{dir_path}/{filename}" if dir_path else filename
 
@@ -305,9 +334,14 @@ def extract_for_source(
             with _local_copy(connector, rel, filename) as (path, partial):
                 tags, duration_ms = READERS[kind](path)
                 if partial:
-                    # Measured from a fragment, so it would be the length of the
-                    # fragment. Left unset rather than recorded wrongly.
-                    duration_ms = None
+                    # What was measured is the length of the fragment, not of the
+                    # track. Worked out from the declared bitrate and the real
+                    # size instead of being discarded.
+                    duration_ms = (
+                        _duration_from_bitrate(path, true_size)
+                        if kind == "audio"
+                        else None
+                    )
         except Exception as exc:  # noqa: BLE001 - one bad file must not stop the pass
             result.failed += 1
             log.debug("metadata failed for %s: %s", filename, exc)
@@ -354,3 +388,55 @@ def extract_for_source(
         result.processed, result.tagged, result.failed,
     )
     return result
+
+
+def backfill_durations(source_id: UUID, connector, limit: int | None = None) -> int:
+    """Work out lengths for tracks catalogued before lengths could be worked out.
+
+    The tag pass skips anything it has already described, so a fix to how
+    duration is derived reaches nothing without a pass of its own. Only items
+    still missing a length are touched, which makes this cheap to re-run and
+    means it converges rather than repeating work.
+    """
+    engine = get_engine()
+    with engine.connect() as conn:
+        rows = conn.execute(
+            text(
+                """
+                SELECT i.id, r.dir_path, r.filename, i.size_bytes
+                FROM items i
+                JOIN replicas r ON r.item_id = i.id
+                WHERE r.source_id = :sid AND r.available
+                  AND i.kind = 'audio'
+                  AND i.duration_ms IS NULL
+                  AND i.size_bytes > 0
+                ORDER BY r.dir_path, r.filename
+                LIMIT :lim
+                """
+            ),
+            {"sid": str(source_id), "lim": limit if limit else 10_000_000},
+        ).all()
+
+    filled = 0
+    for item_id, dir_path, filename, size in rows:
+        rel = f"{dir_path}/{filename}" if dir_path else filename
+        try:
+            with _local_copy(connector, rel, filename) as (path, _partial):
+                duration_ms = _duration_from_bitrate(path, size)
+        except Exception as exc:  # noqa: BLE001 - one bad file must not stop the pass
+            log.debug("no length for %s: %s", filename, exc)
+            continue
+
+        if not duration_ms:
+            continue
+
+        with engine.begin() as conn:
+            conn.execute(
+                text("UPDATE items SET duration_ms = :d WHERE id = :id"),
+                {"d": duration_ms, "id": str(item_id)},
+            )
+        filled += 1
+
+    if filled:
+        log.info("filled in %d track lengths", filled)
+    return filled

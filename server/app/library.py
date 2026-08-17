@@ -394,6 +394,12 @@ def _scan_then_extract(source_id: UUID, connector) -> None:
     # kilobytes per file rather than the file.
     extract_for_source(source_id, connector)
 
+    # Lengths for anything catalogued before they could be derived. Converges:
+    # only rows still missing one are read.
+    from .metadata import backfill_durations
+
+    backfill_durations(source_id, connector)
+
 
 def connector_for(source_id: UUID):
     """Build the right connector for a source, whatever kind it is."""

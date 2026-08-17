@@ -8,6 +8,8 @@ export default function Player(props: {
   onSeek: (seconds: number) => void;
   onVolume: (v: number) => void;
   onStop: () => void;
+  shuffle: boolean;
+  onShuffle: () => void;
 }) {
   const { state, current } = props;
   if (!current) return null;
@@ -86,6 +88,15 @@ export default function Player(props: {
           onChange={(e) => props.onVolume(Number(e.target.value))}
           aria-label="Volume"
         />
+        <button
+          className={`p-btn${props.shuffle ? " on" : ""}`}
+          onClick={props.onShuffle}
+          aria-pressed={props.shuffle}
+          aria-label="Shuffle"
+          title={props.shuffle ? "Shuffle on" : "Shuffle off"}
+        >
+          ⤨
+        </button>
         <button className="p-btn" onClick={props.onStop} aria-label="Close player" title="Close">
           ✕
         </button>

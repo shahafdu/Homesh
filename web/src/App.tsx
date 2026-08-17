@@ -217,6 +217,8 @@ export default function App() {
           onSeek={player.seek}
           onVolume={player.setVolume}
           onStop={player.stop}
+          shuffle={player.shuffle}
+          onShuffle={() => player.setShuffle(!player.shuffle)}
         />
 
         <footer className="footer">

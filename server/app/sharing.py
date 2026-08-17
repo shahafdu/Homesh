@@ -13,6 +13,12 @@ served by Google, revocable, and telling them nothing about what else exists.
 
 **Reader, never writer.** The person receiving it is being sent something to
 watch, not an invitation to change the original.
+
+These endpoints are declared `def` rather than `async def` on purpose. Every one
+of them talks to Google — resolving a file id walks the folder tree, and creating
+a link is a round trip — and FastAPI runs a synchronous endpoint on a worker
+thread. Declared async they would each hold the event loop for the length of a
+network call, and the file menu asks about every file it opens.
 """
 
 from __future__ import annotations
@@ -108,7 +114,7 @@ def _require_item(item_id: UUID, user: CurrentUser) -> tuple[str, str]:
 
 
 @router.get("/{item_id}/drive-link")
-async def get_drive_link(item_id: UUID, user: CurrentUser = Depends(require_user)) -> dict:
+def get_drive_link(item_id: UUID, user: CurrentUser = Depends(require_user)) -> dict:
     """Whether this file can be shared by link, and whether it already is.
 
     Answers for any file rather than erroring, because the screen asks about
@@ -137,7 +143,7 @@ async def get_drive_link(item_id: UUID, user: CurrentUser = Depends(require_user
 
 
 @router.post("/{item_id}/drive-link")
-async def make_drive_link(item_id: UUID, user: CurrentUser = Depends(require_user)) -> dict:
+def make_drive_link(item_id: UUID, user: CurrentUser = Depends(require_user)) -> dict:
     """Publish a read-only link to this file.
 
     Deliberately administrators only. The link makes one file readable by anyone
@@ -167,7 +173,7 @@ async def make_drive_link(item_id: UUID, user: CurrentUser = Depends(require_use
 
 
 @router.delete("/{item_id}/drive-link")
-async def drop_drive_link(item_id: UUID, user: CurrentUser = Depends(require_user)) -> dict:
+def drop_drive_link(item_id: UUID, user: CurrentUser = Depends(require_user)) -> dict:
     if not user.is_admin:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "only an administrator can share by link")
 

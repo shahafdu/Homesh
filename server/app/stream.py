@@ -7,6 +7,7 @@ file's, untouched (ARCHITECTURE.md §3.2).
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
 from urllib.parse import quote
@@ -22,6 +23,11 @@ from .db import get_engine
 from .security import CurrentUser, optional_user, require_user
 from .signing import TokenError, mint, verify
 from .thumbs import ThumbError, cache_path, generate, is_absent_marker, mark_absent
+
+# Bounded, because the point is not to trade a frozen loop for forty
+# simultaneous downloads. Enough to fill a screen of tiles briskly, few enough
+# that Drive is not hammered and the machine stays responsive.
+_thumb_slots = asyncio.Semaphore(4)
 
 log = logging.getLogger("homesh.stream")
 router = APIRouter(prefix="/api", tags=["stream"])
@@ -164,7 +170,15 @@ async def thumbnail(
 
         try:
             connector, rel, _filename, _size, _ext = resolve_playable(item_id)
-            generate(item_id, kind, connector, rel, size)
+            # On a thread, and only a few at a time.
+            #
+            # Generating a thumbnail for a Drive file fetches bytes over the
+            # network, synchronously. Called directly from an async endpoint it
+            # holds the event loop for the whole round trip — and a folder opened
+            # in tiles view asks for forty at once, which stops the server
+            # answering anything at all. That is exactly how it hung.
+            async with _thumb_slots:
+                await asyncio.to_thread(generate, item_id, kind, connector, rel, size)
         except HTTPException:
             # Source offline — do not cache that as "no artwork"; it may come back.
             raise

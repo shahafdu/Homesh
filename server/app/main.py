@@ -24,6 +24,7 @@ from .discovery import serve as serve_discovery
 from .documents import router as documents_router
 from .library import register_sources
 from .library import router as library_router
+from .occupancy import refresh_loop as watch_receiver
 from .people import router as people_router
 from .playlists import router as playlists_router
 from .prefs import router as prefs_router
@@ -106,9 +107,13 @@ async def lifespan(app: FastAPI):
     # told an address with a remote control.
     finder = asyncio.create_task(serve_discovery())
 
+    # Keeps the receiver's state current so the control tower can answer from
+    # memory instead of waiting on the hardware.
+    watcher = asyncio.create_task(watch_receiver())
+
     yield
 
-    for task in (upkeep, finder):
+    for task in (upkeep, finder, watcher):
         task.cancel()
         with suppress(asyncio.CancelledError):
             await task

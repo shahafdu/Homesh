@@ -148,11 +148,16 @@ async def document_pdf(item_id: UUID, user: CurrentUser = Depends(require_user))
             # Suffix matters: LibreOffice picks its import filter from it.
             source = work_dir / f"input.{(ext or 'bin').lower()}"
 
-            # Through the connector, so this works for a Drive file exactly as it
-            # does for a local one.
-            with source.open("wb") as fh:
-                for chunk in connector.open_range(rel_path):
-                    fh.write(chunk)
+            # Through the connector, so this works for a Drive file exactly as
+            # it does for a local one — and on a thread, because for a Drive file
+            # that is a whole document fetched over the network, which on the
+            # event loop would stop the server answering anything else.
+            def fetch() -> None:
+                with source.open("wb") as fh:
+                    for chunk in connector.open_range(rel_path):
+                        fh.write(chunk)
+
+            await asyncio.to_thread(fetch)
 
             out_dir = work_dir / "out"
             out_dir.mkdir()

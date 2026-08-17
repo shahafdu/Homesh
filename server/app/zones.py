@@ -266,12 +266,17 @@ async def list_zones(user: CurrentUser = Depends(require_user)) -> list[dict]:
             # Which half of the receiver this room is, so the check looks at the
             # right zone's power and input rather than at the amplifier in
             # general.
-            seen = await occupancy.receiver_occupancy(
-                session_state, zone2=_is_zone2(row[11])
-            )
+            # Read, never ask. The listing is polled every few seconds by every
+            # open client; talking to the receiver here made it the slowest screen
+            # in the app.
+            seen = occupancy.cached_occupancy(zone2=_is_zone2(row[11]))
+            if seen is None:
+                external = {"busy": False, "unreachable": True,
+                            "detail": "waiting for the receiver"}
+                seen = occupancy.Occupancy(busy=False, ours=False, reachable=False)
             if seen.busy and not seen.ours:
                 external = {"busy": True, "detail": seen.detail}
-            elif not seen.reachable:
+            elif not seen.reachable and external is None:
                 external = {"busy": False, "unreachable": True, "detail": seen.detail}
             elif seen.note:
                 external = {"busy": False, "detail": seen.note}
@@ -401,7 +406,13 @@ async def play(
     item_id = body.item_ids[index]
 
     if zone.renderer_kind == "heos" and not body.take_over:
-        seen = await occupancy.receiver_occupancy(None, zone2=_is_zone2(zone.preroll))
+        # The cached answer, which the background poller keeps a few seconds
+        # fresh. Only if nothing is known yet — a cold start — is the receiver
+        # asked directly, because that costs seconds and this is a button press.
+        zone2 = _is_zone2(zone.preroll)
+        seen = occupancy.cached_occupancy(zone2=zone2)
+        if seen is None:
+            seen = await occupancy.receiver_occupancy(None, zone2=zone2)
         if seen.busy and not seen.ours:
             # 409 rather than 403: nothing is forbidden, the room is simply busy,
             # and the caller can repeat the request having decided to interrupt.

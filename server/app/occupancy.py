@@ -21,10 +21,18 @@ from .config import get_settings
 
 log = logging.getLogger("homesh.occupancy")
 
-# The tower polls every few seconds and the receiver accepts few concurrent
-# connections, so answers are cached briefly. Long enough to spare the hardware,
-# short enough that "someone just pressed play" surfaces quickly.
+# How stale an answer may be before it is refreshed. The refresh happens on a
+# timer rather than inside a request: asking the receiver takes seconds — several
+# round trips, each with a read window, because its status arrives as unsolicited
+# lines rather than replies — and the control tower asks every four seconds.
+# Done inline that made opening the rooms screen a five-to-ten second wait, and
+# occasionally a failed fetch when the browser gave up first.
 CACHE_TTL = 6.0
+
+# How long an answer may be served after it stopped being refreshed, before the
+# tower is told it does not know. Being briefly out of date is better than being
+# slow; being permanently out of date without saying so is not.
+STALE_AFTER = 60.0
 
 # Sources the receiver reports. Numbers come from the HEOS CLI specification.
 SOURCE_NAMES = {
@@ -103,8 +111,51 @@ def _avr_note(state: denon.AvrState, zone2: bool) -> str | None:
     return None
 
 
+def cached_occupancy(zone2: bool = False) -> Occupancy | None:
+    """The last thing the receiver said, without asking it again.
+
+    None when nothing is known yet or the answer has gone stale, which the caller
+    reports as "not responding" rather than as "free".
+    """
+    settings = get_settings()
+    host = settings.denon_host.strip()
+    if not host:
+        return Occupancy(busy=False, ours=False, reachable=False, detail="no receiver configured")
+
+    entry = _cache.get(f"{host}:{'z2' if zone2 else 'main'}")
+    if entry is None:
+        return None
+    at, value = entry
+    if time.monotonic() - at > STALE_AFTER:
+        return None
+    return value
+
+
+async def refresh_loop() -> None:
+    """Keep the cached answers current, off the request path.
+
+    Both zones on every tick: one conversation with the receiver answers for the
+    whole amplifier, and asking twice would double the traffic to a device that
+    accepts very few connections at once.
+    """
+    settings = get_settings()
+    if not settings.denon_host.strip():
+        log.info("no receiver configured — not polling")
+        return
+
+    while True:
+        for zone2 in (False, True):
+            try:
+                await receiver_occupancy(None, zone2=zone2, force=True)
+            except asyncio.CancelledError:
+                raise
+            except Exception:  # noqa: BLE001
+                log.debug("occupancy refresh failed", exc_info=True)
+        await asyncio.sleep(CACHE_TTL / 2)
+
+
 async def receiver_occupancy(
-    our_session_state: str | None, zone2: bool = False
+    our_session_state: str | None, zone2: bool = False, force: bool = False
 ) -> Occupancy:
     """Ask the receiver what it is doing.
 
@@ -119,7 +170,7 @@ async def receiver_occupancy(
     key = f"{host}:{'z2' if zone2 else 'main'}"
     async with _lock:
         cached = _cache.get(key)
-        if cached and time.monotonic() - cached[0] < CACHE_TTL:
+        if not force and cached and time.monotonic() - cached[0] < CACHE_TTL:
             return cached[1]
 
     try:

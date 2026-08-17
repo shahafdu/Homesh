@@ -320,7 +320,19 @@ function FileRow(props: {
     return (
       <li className={cls} ref={props.rowRef} onClick={click}>
         <span className={`ic ${f.kind}`}>{isPlaying ? "▶" : GLYPH[f.kind]}</span>
-        {f.filename}
+        <span className="nm-clip">{f.filename}</span>
+        {/* Everything a file can do should be reachable from every view. It was
+            only in the detailed one, which made the others feel like previews. */}
+        {f.available && openable && (
+          <button
+            className="sendbtn"
+            title={`What to do with ${f.filename}`}
+            aria-label="Actions"
+            onClick={(e) => { e.stopPropagation(); onActions?.(); }}
+          >
+            ⋯
+          </button>
+        )}
       </li>
     );
   }
@@ -329,6 +341,16 @@ function FileRow(props: {
     return (
       <li className={cls} ref={props.rowRef} onClick={click}>
         <Thumb item={f} size={view === "tiles-large" ? "large" : "small"} />
+        {f.available && openable && (
+          <button
+            className="sendbtn tile-actions"
+            title={`What to do with ${f.filename}`}
+            aria-label="Actions"
+            onClick={(e) => { e.stopPropagation(); onActions?.(); }}
+          >
+            ⋯
+          </button>
+        )}
         <span className="nm" title={f.filename}>
           {f.filename}
         </span>
@@ -360,7 +382,10 @@ function FileRow(props: {
       </span>
       <span className="col" title={f.meta?.album ?? ""}>{f.meta?.album ?? ""}</span>
       <span className="meta dur">{formatDuration(f.duration_ms)}</span>
-      <span className="meta">
+      <span className="meta date">{formatDate(f.mtime)}</span>
+      {/* Last, because it is a control rather than a fact about the file. Sitting
+          between the length and the date it read as belonging to one of them. */}
+      <span className="meta actions">
         {f.available ? (
           openable && (
             <button
@@ -376,7 +401,6 @@ function FileRow(props: {
           <span className="badge">offline</span>
         )}
       </span>
-      <span className="meta date">{formatDate(f.mtime)}</span>
     </li>
   );
 }
@@ -427,9 +451,29 @@ function Folder(props: {
 
   return (
     <ul className={containerClass(view)}>
+      {/* Above everything. It sat between the folders and the files, so a
+          column heading appeared halfway down the page and read as a
+          divider rather than as a header. */}
+      {view === "details" && (
+        <li className="rowhead">
+          <span />
+          <SortHead label="Name" col="name" sort={sort} onSort={onSort} />
+          <SortHead label="Title" col="title" sort={sort} onSort={onSort} />
+          <SortHead label="Artist" col="artist" sort={sort} onSort={onSort} />
+          <SortHead label="Album" col="album" sort={sort} onSort={onSort} />
+          <SortHead label="Length" col="duration" sort={sort} onSort={onSort} />
+          <SortHead label="Modified" col="date" sort={sort} onSort={onSort} />
+          <span />
+        </li>
+      )}
+
+
       {listing.parent !== null && listing.path !== "/" && (
-        <li className="dir" onClick={() => onOpen(listing.parent!)}>
-          {tiles ? (
+        <li className={`dir up${tiles ? " as-row" : ""}`} onClick={() => onOpen(listing.parent!)}>
+          {/* Never a tile. "Up one folder" is a navigation control, and given a
+              thumbnail and a caption it sat in a wall of photographs pretending
+              to be one of them. */}
+          {false ? (
             <>
               <div className="thumb">
                 <span className="ic dir">↑</span>
@@ -440,14 +484,14 @@ function Folder(props: {
             <>
               <span className="ic dir">↑</span>
               <span className="nm">..</span>
-              {view === "details" && (
+              {view === "details" && !tiles && (
                 <>
                   <span className="col" />
                   <span className="col" />
                   <span className="col" />
                   <span className="meta" />
-                  <span className="meta" />
                   <span className="meta date" />
+                  <span className="meta actions" />
                 </>
               )}
             </>
@@ -475,27 +519,14 @@ function Folder(props: {
                   <span className="col" />
                   <span className="col" />
                   <span className="meta" />
-                  <span className="meta" />
                   <span className="meta date" />
+                  <span className="meta actions" />
                 </>
               )}
             </>
           )}
         </li>
       ))}
-
-      {view === "details" && (
-        <li className="rowhead">
-          <span />
-          <SortHead label="Name" col="name" sort={sort} onSort={onSort} />
-          <SortHead label="Title" col="title" sort={sort} onSort={onSort} />
-          <SortHead label="Artist" col="artist" sort={sort} onSort={onSort} />
-          <SortHead label="Album" col="album" sort={sort} onSort={onSort} />
-          <SortHead label="Time" col="duration" sort={sort} onSort={onSort} />
-          <span />
-          <SortHead label="Modified" col="date" sort={sort} onSort={onSort} />
-        </li>
-      )}
 
       {sortFiles(listing.files, sort).map((f, i) => (
         <FileRow

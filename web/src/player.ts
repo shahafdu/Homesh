@@ -39,6 +39,13 @@ async function signedUrl(itemId: string): Promise<string> {
 
 export function usePlayer() {
   const [state, setState] = useState<PlayerState>(INITIAL);
+  // Play in a shuffled order. Kept beside the queue rather than shuffling the
+  // queue itself, so turning it off restores the album order rather than
+  // leaving a permanently jumbled list.
+  const [shuffle, setShuffle] = useState(false);
+  // Read inside callbacks that were created before the setting changed.
+  const shuffleRef = useRef(shuffle);
+  shuffleRef.current = shuffle;
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
   // Kept in a ref as well as state so the media element's event handlers, which
@@ -127,6 +134,18 @@ export function usePlayer() {
     }
   }, []);
 
+  // A failure that has been overtaken by success is noise. The message stayed
+  // on screen over a playing track, which reads as the app not knowing what it
+  // is doing — and on a phone the first attempt fails often enough for that to
+  // be the normal case rather than the exception.
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    const clear = () => setState((s) => (s.error ? { ...s, error: null } : s));
+    audio.addEventListener("playing", clear);
+    return () => audio.removeEventListener("playing", clear);
+  }, []);
+
   const play = useCallback(
     (files: FileEntry[], startIndex: number, folderPath: string) => {
       // Queue the whole folder's audio, so playing one track behaves like an album
@@ -162,6 +181,17 @@ export function usePlayer() {
   const skip = useCallback(
     (delta: number) => {
       const { index, queue } = stateRef.current;
+
+      if (shuffleRef.current && queue.length > 1) {
+        // Any track but this one. Deliberately not a shuffled copy of the queue:
+        // that has to be regenerated whenever the queue changes, and gets it
+        // wrong when a folder is added to mid-listen.
+        let next = index;
+        while (next === index) next = Math.floor(Math.random() * queue.length);
+        void loadTrack(next);
+        return;
+      }
+
       const next = index + delta;
       if (next < 0 || next >= queue.length) return;
       void loadTrack(next);
@@ -249,7 +279,8 @@ export function usePlayer() {
   }, [loadTrack]);
 
   const current = state.index >= 0 ? state.queue[state.index] : null;
-  return { state, current, play, toggle, skip, seek, setVolume, stop };
+  return { state, current, play, toggle, skip, seek, setVolume, stop,
+           shuffle, setShuffle };
 }
 
 export function formatTime(seconds: number): string {
