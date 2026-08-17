@@ -51,6 +51,11 @@ secrets. Read both when resuming; never copy their contents into a tracked file.
 
 ## Current status
 
+**[`STATUS.md`](STATUS.md) is the living task list** — what works, what is waiting
+on Shahaf, what is known broken, and what comes next. Read it first when resuming,
+and keep it current: this project is large enough that a change in one place
+routinely breaks another, and the tracker is what makes that visible.
+
 | Phase | State | Notes |
 |---|---|---|
 | 0 · Foundation | ✅ done | Compose stack, schema, passkeys, CI |

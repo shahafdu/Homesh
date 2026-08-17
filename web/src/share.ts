@@ -33,6 +33,28 @@ export type ShareOutcome =
  * undefined on every television. Callers use this to offer Download instead of
  * a Share button that cannot work.
  */
+/** A media type from the filename, for when the server could not name one.
+ *
+ * Only the kinds that actually get shared out of a media library. A share sheet
+ * refuses a file it cannot identify, so "unknown" is the one answer guaranteed
+ * to fail.
+ */
+function guessType(filename: string): string {
+  const ext = filename.split(".").pop()?.toLowerCase() ?? "";
+  const known: Record<string, string> = {
+    mp3: "audio/mpeg", m4a: "audio/mp4", aac: "audio/aac", flac: "audio/flac",
+    wav: "audio/wav", ogg: "audio/ogg", opus: "audio/opus",
+    mp4: "video/mp4", m4v: "video/mp4", mov: "video/quicktime",
+    mkv: "video/x-matroska", avi: "video/x-msvideo", wmv: "video/x-ms-wmv",
+    jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", gif: "image/gif",
+    webp: "image/webp", heic: "image/heic",
+    pdf: "application/pdf", txt: "text/plain",
+    docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  };
+  return known[ext] ?? "application/octet-stream";
+}
+
 export function canShareFiles(): boolean {
   return typeof navigator.canShare === "function" && typeof navigator.share === "function";
 }
@@ -64,7 +86,14 @@ export async function shareFile(
     const res = await fetch(url, { credentials: "same-origin" });
     if (!res.ok) throw new Error(`server returned ${res.status}`);
     const blob = await res.blob();
-    file = new File([blob], filename, { type: blob.type || "application/octet-stream" });
+    // A generic type is refused by the share sheet, which will not attach
+    // something it cannot name. The server falls back to octet-stream for any
+    // extension it does not recognise, so the extension is consulted here before
+    // giving up on the file.
+    const type = blob.type && blob.type !== "application/octet-stream"
+      ? blob.type
+      : guessType(filename);
+    file = new File([blob], filename, { type });
   } catch (e) {
     return { ok: false, reason: "failed", detail: e instanceof Error ? e.message : String(e) };
   }
