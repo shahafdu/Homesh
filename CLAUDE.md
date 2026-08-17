@@ -59,12 +59,48 @@ secrets. Read both when resuming; never copy their contents into a tracked file.
 | 3 · Control tower & zones | 🔨 | Denon control + zones/sessions done and verified against the real receiver; control tower UI next. 
 | 4 · TV apps | ✅ | Android TV shell built, verified end to end on an emulator (pair → socket → play → position reported). No Gradle: aapt2/javac/d8/apksigner, 21 KB, built by CI every commit. webOS dropped; Tizen only if a screen turns out to have no box |
 | 5 · Playlists & music intelligence | ⬜ | Winamp `.m3u`/`.pls` import with path repair, AcoustID tag repair |
-| 6 · AI | ⬜ | CPU-only CLIP/text embeddings, NL search; Whisper on-demand only |
+| 6 · AI | ⬜ | See **AI design decisions** below — agreed with Shahaf, not yet built |
 | 7 · Photo availability | ⬜ | RAID→Drive sync, Wake-on-LAN, Takeout gap-fill |
 | 8 · Optional transcode | ⬜ | May never be needed — see §3.2 of ARCHITECTURE |
 | 9 · Public release | ⬜ | Docs, screenshots, name decision |
 
-**Tests: 266 passing. Migrations: 011. Lint: clean. CI green.**
+**Tests: 312 passing. Migrations: 015. Lint: clean. CI green.**
+
+### AI design decisions — agreed, not yet built
+
+Settled in conversation and load-bearing for the smart-home work that follows.
+
+**Tiered by cost, and gated by permission.** Local model for small work,
+OpenRouter for the middle, a paid provider only for genuinely hard questions —
+and the paid tier needs approval, granted per account rather than to everyone.
+Provider is pluggable: your own key (Claude / Gemini / OpenAI), OpenRouter
+including its free tier, a local model on the PC or a Pi, or none at all with the
+feature simply absent.
+
+**Model knowledge beats audio analysis for music.** A language model given
+`Artist — Title` already knows what the song is; it does not need to hear it.
+Audio analysis only earns its keep for recordings no model has heard of. This
+corrected an earlier assumption of mine and makes "play something mellow" cheap:
+roughly 95k tokens to classify the whole library once.
+
+**Everything is cached as tags.** Judgements land in `item_metadata` with
+`origin='ai'`, beside the file's own tags and never overwriting them. Embeddings
+and previous search results are cached too — image embeddings, "same person as
+in this photo", earlier answers. Later questions filter locally first and only
+ask about what is not yet known, which also makes it work offline once warm.
+
+**The AI holds no privileges of its own.** It calls the same authenticated API
+the interface calls, as the user, so scope is enforced by the code that already
+enforces it rather than by the model behaving well. It cannot add or remove
+rooms, cannot change permissions, and cannot act beyond the asking user's own
+access — enforced by the tool list and the API, never by prompt.
+
+**Every action is auditable from inside the app.** A history of what the AI did,
+readable in the interface — not something to go hunting for in logs on the PC.
+
+**Backups, because the AI can change the database.** Daily, a week back, plus
+retained points at two weeks and a month. Restore from within the app,
+administrators only.
 
 ### Outstanding tasks
 
@@ -78,8 +114,8 @@ secrets. Read both when resuming; never copy their contents into a tracked file.
 - [ ] Install the TV app on the real boxes — `docs/TV_APP.md` has the ADB steps.
       A box installed from a different machine must be uninstalled first, because
       the signing key is per-machine and never committed
-- [ ] "Add another passkey" flow — currently a passkey can only be registered while
-      creating an account, which is a real gap for a multi-device household
+- [ ] Database backups and in-app restore — prerequisite for the AI work
+- [ ] AI activity history, readable in the app
 
 ### Waiting on Shahaf
 

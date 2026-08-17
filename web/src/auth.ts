@@ -87,3 +87,31 @@ export const claimDeviceLink = (code: string) =>
     code,
     device_label: deviceLabel(),
   });
+
+export interface Passkey {
+  id: string;
+  label: string | null;
+  created_at: string;
+  last_used_at: string | null;
+}
+
+export const listPasskeys = () => api.get<Passkey[]>("/api/auth/passkeys");
+
+export const removePasskey = (id: string) => api.delete(`/api/auth/passkeys/${id}`);
+
+/** Enrol another passkey for the account already signed in.
+ *
+ * A passkey belongs to the device that made it, so an account with one has one
+ * device. It also belongs to the address it was made against — which is why
+ * this has to exist before the server moves to a real hostname, or securing the
+ * server would lock its owner out of it.
+ */
+export async function addPasskey(): Promise<void> {
+  const begin = await api.post<BeginResponse>("/api/auth/passkeys/begin");
+  const credential = await startRegistration({ optionsJSON: begin.options as never });
+  await api.post("/api/auth/passkeys/complete", {
+    flow_id: begin.flow_id,
+    credential,
+    device_label: deviceLabel(),
+  });
+}

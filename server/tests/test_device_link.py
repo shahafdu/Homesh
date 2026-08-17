@@ -115,3 +115,80 @@ class TestClaiming:
             for c in codes
         ]
         assert 429 in statuses, "brute force was not throttled"
+
+
+class TestAddingAPasskey:
+    """Enrolling a passkey on an account that already exists.
+
+    A passkey belongs to the device that made it *and* to the address it was made
+    against. Without this, a household could have one device per account, and
+    moving the server to a real hostname would lock its owner out — every
+    credential invalidated by the act of securing it, with no way to enrol a
+    replacement.
+    """
+
+    def test_it_offers_a_challenge_to_a_signed_in_account(self, client, db, user):
+        r = client.post("/api/auth/passkeys/begin")
+        assert r.status_code == 200
+        assert r.json()["options"]["challenge"]
+
+    def test_credentials_already_held_are_excluded(self, client, db, user):
+        """So an authenticator says "you already have one" rather than making a second."""
+        with db.begin() as conn:
+            conn.execute(
+                text(
+                    """
+                    INSERT INTO credentials (user_id, credential_id, public_key, sign_count)
+                    VALUES (:u, :c, :p, 0)
+                    """
+                ),
+                {"u": str(user.id), "c": b"already-here", "p": b"key"},
+            )
+
+        options = client.post("/api/auth/passkeys/begin").json()["options"]
+        assert options.get("excludeCredentials"), "an existing passkey was not excluded"
+
+    def test_anonymous_callers_are_refused(self, anon_client, db, user):
+        """It adds a key to whoever is asking, so who is asking must be known."""
+        assert anon_client.post("/api/auth/passkeys/begin").status_code == 401
+
+    def test_the_last_passkey_cannot_be_removed(self, client, db, user):
+        """That would leave an account reachable only by a link code."""
+        with db.begin() as conn:
+            cred = conn.execute(
+                text(
+                    """
+                    INSERT INTO credentials (user_id, credential_id, public_key, sign_count)
+                    VALUES (:u, :c, :p, 0) RETURNING id
+                    """
+                ),
+                {"u": str(user.id), "c": b"only-one", "p": b"key"},
+            ).scalar_one()
+
+        r = client.delete(f"/api/auth/passkeys/{cred}")
+        assert r.status_code == 409
+
+    def test_one_of_several_can_be_removed(self, client, db, user):
+        """A lost phone should not stay enrolled."""
+        with db.begin() as conn:
+            first = conn.execute(
+                text(
+                    """
+                    INSERT INTO credentials (user_id, credential_id, public_key, sign_count)
+                    VALUES (:u, :c, :p, 0) RETURNING id
+                    """
+                ),
+                {"u": str(user.id), "c": b"phone", "p": b"key"},
+            ).scalar_one()
+            conn.execute(
+                text(
+                    """
+                    INSERT INTO credentials (user_id, credential_id, public_key, sign_count)
+                    VALUES (:u, :c, :p, 0)
+                    """
+                ),
+                {"u": str(user.id), "c": b"laptop", "p": b"key"},
+            )
+
+        assert client.delete(f"/api/auth/passkeys/{first}").status_code == 200
+        assert len(client.get("/api/auth/passkeys").json()) == 1

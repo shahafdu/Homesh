@@ -14,6 +14,7 @@ import logging
 import secrets
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from pydantic import BaseModel, Field
@@ -27,6 +28,7 @@ from webauthn import (
 )
 from webauthn.helpers.structs import (
     AuthenticatorSelectionCriteria,
+    PublicKeyCredentialDescriptor,
     ResidentKeyRequirement,
     UserVerificationRequirement,
 )
@@ -596,3 +598,149 @@ async def claim_device_link(
 
     set_session_cookie(response, token)
     return {"ok": True, "handle": who[0], "display_name": who[1]}
+
+
+# ── Adding a passkey to an account that already exists ──────────────────────
+#
+# A passkey belongs to the device that made it, so an account with one has one
+# device. That was already a gap for a household — a phone and a tablet want
+# their own — but it becomes a trap the moment the server's address changes.
+#
+# A passkey is bound to the origin it was created against. Moving from
+# http://localhost to a real hostname invalidates every registered credential,
+# and with no way to enrol a new one the owner would be locked out of their own
+# server by the act of securing it.
+
+
+class AddPasskeyBegin(BaseModel):
+    device_label: str | None = Field(default=None, max_length=80)
+
+
+@router.post("/passkeys/begin")
+async def add_passkey_begin(user: CurrentUser = Depends(require_user)) -> dict:
+    """Start enrolling another passkey for the account already signed in."""
+    settings = get_settings()
+
+    with get_engine().connect() as conn:
+        existing = [
+            r[0]
+            for r in conn.execute(
+                text("SELECT credential_id FROM credentials WHERE user_id = :u"),
+                {"u": str(user.id)},
+            ).all()
+        ]
+
+    options = generate_registration_options(
+        rp_id=settings.rp_id,
+        rp_name=settings.rp_name,
+        user_id=user.id.bytes,
+        user_name=user.handle,
+        user_display_name=user.display_name,
+        # Excluding what is already registered means an authenticator that
+        # already holds a passkey for this account says so, rather than silently
+        # making a second one.
+        exclude_credentials=[
+            PublicKeyCredentialDescriptor(id=cred) for cred in existing
+        ],
+        authenticator_selection=AuthenticatorSelectionCriteria(
+            resident_key=ResidentKeyRequirement.REQUIRED,
+            user_verification=UserVerificationRequirement.REQUIRED,
+        ),
+    )
+
+    flow_id = _new_flow(options.challenge, "add-passkey", handle=user.handle)
+    return {"flow_id": flow_id, "options": json.loads(options_to_json(options))}
+
+
+@router.post("/passkeys/complete")
+async def add_passkey_complete(
+    body: CompleteBody, request: Request, user: CurrentUser = Depends(require_user)
+) -> dict:
+    settings = get_settings()
+    flow = _take_flow(body.flow_id, "add-passkey")
+
+    try:
+        verified = verify_registration_response(
+            credential=body.credential,
+            expected_challenge=flow.challenge,
+            expected_origin=settings.public_origin,
+            expected_rp_id=settings.rp_id,
+            require_user_verification=True,
+        )
+    except Exception as exc:  # noqa: BLE001 - any failure is a rejected registration
+        log.warning("passkey enrolment failed: %s", exc)
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST, "that passkey could not be verified"
+        ) from exc
+
+    ip = request.client.host if request.client else None
+
+    with get_engine().begin() as conn:
+        conn.execute(
+            text(
+                """
+                INSERT INTO credentials (user_id, credential_id, public_key, sign_count, nickname)
+                VALUES (:uid, :cid, :pk, :sc, :nick)
+                """
+            ),
+            {
+                "uid": str(user.id),
+                "cid": verified.credential_id,
+                "pk": verified.credential_public_key,
+                "sc": verified.sign_count,
+                "nick": body.device_label,
+            },
+        )
+        audit(conn, "auth.passkey.added", user.id, {"label": body.device_label}, ip)
+
+    return {"ok": True}
+
+
+@router.get("/passkeys")
+async def list_passkeys(user: CurrentUser = Depends(require_user)) -> list[dict]:
+    with get_engine().connect() as conn:
+        rows = conn.execute(
+            text(
+                """
+                SELECT id, nickname, created_at, last_used_at
+                FROM credentials WHERE user_id = :u ORDER BY created_at
+                """
+            ),
+            {"u": str(user.id)},
+        ).all()
+    return [
+        {
+            "id": str(r[0]),
+            "label": r[1],
+            "created_at": r[2].isoformat(),
+            "last_used_at": r[3].isoformat() if r[3] else None,
+        }
+        for r in rows
+    ]
+
+
+@router.delete("/passkeys/{credential_id}")
+async def remove_passkey(
+    credential_id: UUID, request: Request, user: CurrentUser = Depends(require_user)
+) -> dict:
+    """Forget a device's passkey — a lost phone, or one enrolled by mistake."""
+    with get_engine().begin() as conn:
+        remaining = conn.execute(
+            text("SELECT count(*) FROM credentials WHERE user_id = :u"), {"u": str(user.id)}
+        ).scalar_one()
+        if remaining <= 1:
+            # Removing the last one leaves an account that can only be reached by
+            # a link code, which is not a state to walk into by accident.
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                "that is your only passkey — add another before removing this one",
+            )
+
+        conn.execute(
+            text("DELETE FROM credentials WHERE id = :c AND user_id = :u"),
+            {"c": str(credential_id), "u": str(user.id)},
+        )
+        audit(conn, "auth.passkey.removed", user.id, {"credential": str(credential_id)},
+              request.client.host if request.client else None)
+
+    return {"ok": True}
