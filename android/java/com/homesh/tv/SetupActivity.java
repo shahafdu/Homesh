@@ -15,10 +15,6 @@ import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
-import java.io.IOException;
-import java.io.InputStream;
-import java.net.HttpURLConnection;
-import java.net.URL;
 
 /**
  * Where the server is.
@@ -140,7 +136,7 @@ public class SetupActivity extends Activity {
         // A plain thread: one request, at most once per press. A pool or a
         // library would be more machinery than this ever needs.
         new Thread(() -> {
-            boolean ok = reachable(url);
+            boolean ok = Server.reachable(url);
             main.post(() -> {
                 connect.setEnabled(true);
                 if (ok) {
@@ -152,34 +148,6 @@ public class SetupActivity extends Activity {
                 }
             });
         }).start();
-    }
-
-    /** Ask the server to identify itself, so a wrong-but-live address still fails. */
-    private boolean reachable(String base) {
-        HttpURLConnection conn = null;
-        try {
-            conn = (HttpURLConnection) new URL(base + "/api/health").openConnection();
-            conn.setConnectTimeout(4000);
-            conn.setReadTimeout(4000);
-            conn.setRequestMethod("GET");
-            if (conn.getResponseCode() != 200) return false;
-
-            StringBuilder body = new StringBuilder();
-            try (InputStream in = conn.getInputStream()) {
-                byte[] buf = new byte[512];
-                int n;
-                while ((n = in.read(buf)) > 0 && body.length() < 4096) {
-                    body.append(new String(buf, 0, n, "UTF-8"));
-                }
-            }
-            // Something else answering on that port is a wrong address, not a
-            // working one, and saying so here saves a black screen later.
-            return body.indexOf("\"status\"") >= 0;
-        } catch (IOException | RuntimeException e) {
-            return false;
-        } finally {
-            if (conn != null) conn.disconnect();
-        }
     }
 
     @Override

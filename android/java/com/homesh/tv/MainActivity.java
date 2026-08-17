@@ -18,6 +18,7 @@ import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.FrameLayout;
 import android.widget.TextView;
+import android.widget.VideoView;
 
 /**
  * The screen itself.
@@ -35,6 +36,7 @@ import android.widget.TextView;
 public class MainActivity extends Activity {
 
     private WebView web;
+    private VideoView video;
     private TextView problem;
     private String server;
 
@@ -61,6 +63,10 @@ public class MainActivity extends Activity {
         configure(web.getSettings());
         web.setBackgroundColor(Color.BLACK);
         web.setWebChromeClient(new WebChromeClient());
+        // Named for what it is on the page. Only the methods marked
+        // @JavascriptInterface are reachable, and the page is served by this
+        // household's own server.
+        web.addJavascriptInterface(new NativeVideo(this, video), "HomeshVideo");
         web.setWebViewClient(new WebViewClient() {
             @Override
             public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
@@ -81,6 +87,24 @@ public class MainActivity extends Activity {
             }
         });
 
+        // Above the web app and hidden until there is something to play. The
+        // platform player decodes what the WebView cannot, which on a television
+        // is most of what a home library actually contains.
+        video = new VideoView(this);
+        video.setVisibility(View.GONE);
+        video.setOnCompletionListener(mp -> {
+            video.setVisibility(View.GONE);
+            // Told rather than discovered: the server owns the queue, so the end
+            // of a film is news it needs in order to start the next one.
+            web.evaluateJavascript("window.homeshVideoEnded && window.homeshVideoEnded()", null);
+        });
+        video.setOnErrorListener((mp, what, extra) -> {
+            video.setVisibility(View.GONE);
+            web.evaluateJavascript(
+                    "window.homeshVideoFailed && window.homeshVideoFailed(" + what + ")", null);
+            return true;
+        });
+
         problem = new TextView(this);
         problem.setTextColor(Color.WHITE);
         problem.setTextSize(18);
@@ -88,13 +112,52 @@ public class MainActivity extends Activity {
         problem.setVisibility(View.GONE);
 
         root.addView(web);
+        root.addView(video);
         root.addView(problem);
         setContentView(root);
 
         immersive();
         web.loadUrl(server + "/tv");
 
+        verifyAddress();
         checkForUpdate();
+    }
+
+    /**
+     * Check the saved address still leads somewhere, and go looking if it does not.
+     *
+     * <p>Every address in this house comes from DHCP, so the server's can change
+     * — after a router restart, a lease expiring, a power cut. A screen that had
+     * been set up once would then sit showing "cannot reach" until somebody
+     * walked over and typed the new address in with a remote control, which is
+     * exactly the chore discovery exists to remove. So it runs on every launch,
+     * not only the first.
+     *
+     * <p>In the background, after the page has already been asked for: when the
+     * address is still right — the ordinary case — nothing is delayed.
+     */
+    private void verifyAddress() {
+        new Thread(() -> {
+            if (Server.reachable(server)) return;
+
+            String found = Discovery.find();
+            if (found == null || found.equals(server)) {
+                // Either nothing answered or it named the address that is already
+                // failing. Both mean the server is not there, which the error
+                // screen says better than a silent retry would.
+                return;
+            }
+
+            Log.i("Homesh", "server moved to " + found);
+            Prefs.setServer(this, found);
+            server = found;
+
+            runOnUiThread(() -> {
+                problem.setVisibility(View.GONE);
+                web.setVisibility(View.VISIBLE);
+                web.loadUrl(found + "/tv");
+            });
+        }).start();
     }
 
     /**
@@ -177,6 +240,9 @@ public class MainActivity extends Activity {
 
     @Override
     protected void onDestroy() {
+        if (video != null) {
+            video.stopPlayback();
+        }
         if (web != null) {
             web.destroy();
         }

@@ -23,15 +23,15 @@ import shutil
 from pathlib import Path
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
-from fastapi.responses import FileResponse
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy import text
 
 from .access import may_access_item
 from .config import get_settings
 from .db import get_engine
-from .security import CurrentUser, require_user
-from .signing import mint
+from .security import CurrentUser, optional_user, require_user
+from .signing import TokenError, mint, verify
 from .stream import resolve_playable
 
 log = logging.getLogger("homesh.transcode")
@@ -238,3 +238,119 @@ async def converted_video(item_id: UUID, user: CurrentUser = Depends(require_use
         raise HTTPException(status.HTTP_409_CONFLICT, "this video has not been converted yet")
 
     return FileResponse(output, media_type="video/mp4")
+
+
+# ── Watching it now ─────────────────────────────────────────────────────────
+#
+# Converting a whole tape takes tens of minutes and leaves a second copy on the
+# disk. Neither is what somebody wanting to watch a wedding video actually asked
+# for, so the ordinary path is to encode as it plays and keep nothing.
+#
+# The cost is that a live stream cannot be scrubbed: there is no index to seek
+# in, because the file does not exist yet. Seeking is done by starting again at
+# a different point, which is what `start` is for.
+
+# Fast enough to stay ahead of playback on four efficiency cores, which matters
+# more here than the file size that a slower preset would save — nothing is being
+# stored, so a bigger stream costs only bandwidth on a home network.
+LIVE_PRESET = "ultrafast"
+
+
+async def _viewer_id(request: Request, token: str | None) -> UUID:
+    """Who is watching, by session or by signed URL.
+
+    A television has no session — it authenticates with the signed URL it was
+    handed — while a browser has a cookie and no token. Both have to work, and
+    both have to be checked: this endpoint reads media.
+    """
+    if token:
+        try:
+            claim = verify(token, "stream")
+        except TokenError as exc:
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "bad or expired link") from exc
+        return claim.user_id
+
+    user = await optional_user(request)
+    if user is None:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "authentication required")
+    return user.id
+
+
+@router.get("/{item_id}/live.mp4")
+async def live_stream(
+    item_id: UUID,
+    request: Request,
+    t: str | None = Query(
+        default=None, description="Signed URL token, for devices with no session"
+    ),
+    start: float = Query(default=0, ge=0, description="Seconds to begin at"),
+) -> StreamingResponse:
+    """Transcode as it plays, keeping nothing.
+
+    Fragmented MP4 down a pipe: a browser can begin playing before the encoder
+    has finished, which is the whole point, and no file is written on either the
+    server or the device watching.
+    """
+    viewer = await _viewer_id(request, t)
+    if not may_access_item(item_id, viewer):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "no such item")
+
+    # ffmpeg reads through our own streaming endpoint, so a Drive file works
+    # exactly as a local one does.
+    token = mint(item_id, viewer, "stream", ttl=6 * 3600)
+    source = f"http://127.0.0.1:8080/api/stream/{item_id}?t={token}"
+
+    args = [
+        "ffmpeg", "-hide_banner", "-nostdin", "-loglevel", "error",
+        # Measured: ffmpeg spent eleven seconds inspecting a tape before emitting
+        # anything, most of it reading far more of a 13 GB file over the network
+        # than it needed to identify the stream.
+        "-analyzeduration", "2M", "-probesize", "5M",
+        # Before -i, so the seek happens by jumping rather than by decoding and
+        # discarding everything up to that point.
+        *(["-ss", str(start)] if start else []),
+        "-i", source,
+        # Deinterlace, then down to 720p. HDV is 1440x1080 interlaced; leaving the
+        # interlacing produces combing on every pan, and leaving the height at
+        # 1080 left no margin over real time on four efficiency cores — a stream
+        # that cannot keep up stutters, which is worse than being 720p on a phone.
+        "-vf", "yadif,scale=-2:720",
+        "-c:v", "libx264", "-preset", LIVE_PRESET, "-tune", "zerolatency", "-crf", "26",
+        "-c:a", "aac", "-b:a", "160k",
+        # An MP4 that can be played while it is still being written. Without
+        # these flags the header lands at the end of the file, and a browser
+        # waits for a file that never finishes.
+        "-movflags", "frag_keyframe+empty_moov+default_base_moof",
+        "-f", "mp4", "pipe:1",
+    ]
+
+    proc = await asyncio.create_subprocess_exec(
+        *args, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL
+    )
+
+    async def pump():
+        try:
+            assert proc.stdout is not None
+            while True:
+                chunk = await proc.stdout.read(64 * 1024)
+                if not chunk:
+                    break
+                yield chunk
+        finally:
+            # Whoever was watching has closed the tab or moved on. Without this
+            # the encoder runs to the end of a two-hour tape for nobody, and a
+            # household that browses away from three videos has three of them.
+            if proc.returncode is None:
+                proc.kill()
+                await proc.wait()
+
+    return StreamingResponse(
+        pump(),
+        media_type="video/mp4",
+        headers={
+            # No range support: this is generated as it goes and there is nothing
+            # to seek within. Saying so stops a player asking.
+            "Accept-Ranges": "none",
+            "Cache-Control": "no-store",
+        },
+    )

@@ -2,16 +2,13 @@ import { useCallback, useEffect, useState } from "react";
 import { api } from "./api";
 import {
   canPreview,
-  type Conversion,
-  conversionStatus,
-  convertedUrl,
   documentUrl,
   downloadUrl,
   type FileEntry,
   formatSize,
   needsConversion,
+  liveVideoUrl,
   needsVideoConversion,
-  startConversion,
 } from "./library";
 
 /** Full-screen viewer for the kinds that need a viewport rather than a player bar.
@@ -216,73 +213,56 @@ export default function Viewer(props: {
  * already decode it.
  */
 function Convertible(props: { file: FileEntry }) {
-  const [status, setStatus] = useState<Conversion | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  const read = useCallback(() => {
-    conversionStatus(props.file.item_id).then(setStatus).catch(() => undefined);
-  }, [props.file.item_id]);
-
-  useEffect(() => {
-    read();
-  }, [read]);
-
-  // Only while something is happening. Polling a finished conversion for the
-  // rest of the evening would be asking a question already answered.
-  const working = status?.state === "queued" || status?.state === "running";
-  useEffect(() => {
-    if (!working) return;
-    const poll = window.setInterval(read, 3000);
-    return () => window.clearInterval(poll);
-  }, [working, read]);
-
-  if (status?.state === "done") {
-    return <video className="v-video" src={convertedUrl(props.file.item_id)} controls autoPlay playsInline />;
-  }
+  // Where in the file to begin. A live stream has no index to seek within, so
+  // moving through it restarts the encoder further in — crude, but it means a
+  // two-hour tape can be watched from the middle without first converting all of
+  // it and keeping the result.
+  const [start, setStart] = useState(0);
+  const [jump, setJump] = useState("");
 
   return (
-    <div className="v-nopreview">
-      <p className="muted">
-        This is <b>MPEG-2</b> video — a DVD or a camcorder tape. No browser can
-        decode it.
-      </p>
+    <div className="v-live">
+      <video
+        className="v-video"
+        src={liveVideoUrl(props.file.item_id, start)}
+        controls
+        autoPlay
+        playsInline
+      />
 
-      {working ? (
-        <>
-          <p className="muted small">
-            Converting… {status?.progress ?? 0}%. It keeps going if you close this.
-          </p>
-          <div className="bar wide">
-            <i style={{ width: `${status?.progress ?? 0}%` }} />
-          </div>
-        </>
-      ) : (
-        <>
-          <p className="muted small">
-            Send it to a television and it will play as it is — a set-top box
-            decodes this in hardware. To watch it here, it has to be converted
-            once, which takes a while for a long tape.
-          </p>
-          <button
-            className="v-btn"
-            onClick={async () => {
-              setError(null);
-              try {
-                setStatus(await startConversion(props.file.item_id));
-              } catch (e) {
-                setError(e instanceof Error ? e.message : String(e));
-              }
+      <div className="v-live-bar">
+        <span className="muted small">
+          MPEG-2, converted as it plays. Nothing is downloaded or stored.
+        </span>
+
+        <span className="v-jump">
+          <label className="muted small" htmlFor="jump-to">Start at</label>
+          <input
+            id="jump-to"
+            className="jump"
+            value={jump}
+            placeholder="12:30"
+            onChange={(e) => setJump(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key !== "Enter") return;
+              // mm:ss or plain minutes, because a scrub bar cannot be offered
+              // and a seconds count is not how anybody thinks about a tape.
+              const parts = jump.split(":").map((n) => parseInt(n, 10));
+              const seconds = parts.some(isNaN)
+                ? NaN
+                : parts.length === 2
+                  ? parts[0] * 60 + parts[1]
+                  : parts[0] * 60;
+              if (!isNaN(seconds)) setStart(seconds);
             }}
-          >
-            Convert for playback here
-          </button>
-        </>
-      )}
-
-      {status?.state === "failed" && (
-        <div className="error">Conversion failed: {status.error}</div>
-      )}
-      {error && <div className="error">{error}</div>}
+          />
+          {start > 0 && (
+            <button className="compact" onClick={() => setStart(0)}>
+              Back to the start
+            </button>
+          )}
+        </span>
+      </div>
     </div>
   );
 }

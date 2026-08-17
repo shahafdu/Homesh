@@ -297,3 +297,12 @@ export const startConversion = (itemId: string) =>
   api.post<Conversion>(`/api/videos/${itemId}/conversion`);
 
 export const convertedUrl = (itemId: string) => `/api/videos/${itemId}/converted`;
+
+/** Transcoded as it plays, so watching starts now and nothing is stored.
+ *
+ * The trade is that there is no index to seek in — the file does not exist yet —
+ * so moving through it means starting again at a different point, which is what
+ * `start` is for.
+ */
+export const liveVideoUrl = (itemId: string, start = 0) =>
+  `/api/videos/${itemId}/live.mp4${start ? `?start=${Math.floor(start)}` : ""}`;

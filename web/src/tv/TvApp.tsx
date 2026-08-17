@@ -24,6 +24,36 @@ interface Command {
 
 const STORAGE_KEY = "homesh.tv.credential";
 
+/** The native player, when this screen is the Android shell rather than a browser.
+ *
+ * A WebView carries roughly H.264 and VP8/9; the box underneath it decodes
+ * MPEG-2, MKV and AVI in hardware. Handing video over is the difference between
+ * a wedding tape playing and a player sitting at 0:00.
+ */
+interface NativeVideo {
+  available(): boolean;
+  play(url: string, positionMs: number): void;
+  pause(): void;
+  resume(): void;
+  stop(): void;
+  positionMs(): number;
+  durationMs(): number;
+  isPlaying(): boolean;
+}
+
+declare global {
+  interface Window {
+    HomeshVideo?: NativeVideo;
+    homeshVideoEnded?: () => void;
+    homeshVideoFailed?: (code: number) => void;
+  }
+}
+
+const native = (): NativeVideo | null =>
+  typeof window.HomeshVideo?.available === "function" && window.HomeshVideo.available()
+    ? window.HomeshVideo
+    : null;
+
 /** Stable per-installation identity, so re-pairing updates this screen rather
  *  than creating a second one. Survives reloads; regenerated only on reinstall. */
 function deviceKey(): string {
@@ -168,6 +198,13 @@ export default function TvApp() {
         // A photo has nothing to start: it is an <img>, and there is no media
         // element to hand a source to.
         if (cmd.kind === "photo") break;
+
+        // Video goes to the box's own decoder where there is one. The web app
+        // keeps the queue and the reporting either way — only the pixels move.
+        if (cmd.kind === "video" && native()) {
+          native()!.play(cmd.url ?? "", cmd.position_ms ?? 0);
+          break;
+        }
         // The element mounts with this render, so defer until it exists.
         window.setTimeout(() => {
           const el = mediaRef.current;
@@ -178,12 +215,15 @@ export default function TvApp() {
         }, 0);
         break;
       case "pause":
+        if (native()?.isPlaying()) native()!.pause();
         media?.pause();
         break;
       case "resume":
-        void media?.play().catch(() => undefined);
+        if (native() && now?.kind === "video") native()!.resume();
+        else void media?.play().catch(() => undefined);
         break;
       case "stop":
+        native()?.stop();
         media?.pause();
         setNow(null);
         setPhase("idle");
@@ -229,6 +269,33 @@ export default function TvApp() {
     // socket every time a callback identity changed.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    // The native player is outside React and outside the media element, so it
+    // reports through these two hooks. Without the first, the server never
+    // learns a film ended and the queue stops after one.
+    window.homeshVideoEnded = () => report("ended");
+    window.homeshVideoFailed = (code: number) =>
+      setFault(`The screen could not play this file (error ${code}).`);
+    return () => {
+      window.homeshVideoEnded = undefined;
+      window.homeshVideoFailed = undefined;
+    };
+  }, [report]);
+
+  useEffect(() => {
+    // Position while the box is playing: the media element knows nothing about
+    // it, so it is polled and reported like any other progress.
+    if (phase !== "playing" || now?.kind !== "video" || !native()) return;
+    const timer = window.setInterval(() => {
+      const player = native();
+      if (!player) return;
+      setPosition(player.positionMs());
+      setDuration(player.durationMs());
+      report(player.isPlaying() ? "playing" : "paused");
+    }, 2000);
+    return () => window.clearInterval(timer);
+  }, [phase, now?.kind, report]);
 
   useEffect(() => {
     // A screen may sit untouched for weeks, so tell the server we are still here
