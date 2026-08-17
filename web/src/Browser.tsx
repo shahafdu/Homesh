@@ -34,6 +34,7 @@ export default function Browser(props: {
   onViewChange: (v: View) => void;
   onOpenSettings: () => void;
   onOpenZones: () => void;
+  onOpenPlaylists: () => void;
   onOpenPeople?: () => void;
   onPlay: (files: FileEntry[], index: number, folderPath: string) => void;
   onView: (files: FileEntry[], index: number) => void;
@@ -44,7 +45,7 @@ export default function Browser(props: {
   onRevealed: () => void;
 }) {
   const {
-    view, onViewChange, onOpenSettings, onOpenZones, onOpenPeople,
+    view, onViewChange, onOpenSettings, onOpenZones, onOpenPlaylists, onOpenPeople,
     onPlay, onView, onActions, playingId,
   } = props;
 
@@ -153,6 +154,10 @@ export default function Browser(props: {
         />
         <button className="iconbtn" onClick={onOpenZones} aria-label="Zones" title="Zones">
           ⧉
+        </button>
+        <button className="iconbtn" onClick={onOpenPlaylists} aria-label="Playlists"
+                title="Playlists">
+          ≡
         </button>
         {onOpenPeople && (
           <button className="iconbtn" onClick={onOpenPeople} aria-label="People" title="People">

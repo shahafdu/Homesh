@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useLockScroll } from "./useLockScroll";
 import { copyText } from "./copy";
+import { AddToPlaylist } from "./Playlists";
 import type { FileEntry } from "./library";
 import {
   canShareFiles,
@@ -31,6 +32,7 @@ export default function FileActions(props: {
   const [note, setNote] = useState<string | null>(null);
   const [drive, setDrive] = useState<DriveLink | null>(null);
   const [copied, setCopied] = useState(false);
+  const [addingToList, setAddingToList] = useState(false);
 
   const sharable = canShareFiles();
 
@@ -71,6 +73,18 @@ export default function FileActions(props: {
               <span className="muted small">Play it on a screen or the receiver</span>
             </span>
           </button>
+
+          {/* Only for the kinds a list is for. A playlist of spreadsheets is
+              not a thing anybody wants, and offering it would be noise. */}
+          {(file.kind === "audio" || file.kind === "video") && (
+            <button className="action" onClick={() => setAddingToList(true)}>
+              <span className="action-ic">≡</span>
+              <span>
+                Add to a playlist
+                <span className="muted small">Put it in a list you can play later</span>
+              </span>
+            </button>
+          )}
 
           {props.onReveal && (
             <button className="action" onClick={props.onReveal}>
@@ -117,6 +131,17 @@ export default function FileActions(props: {
             </span>
           </button>
         </div>
+
+        {addingToList && (
+          <AddToPlaylist
+            file={file}
+            onDone={() => {
+              setAddingToList(false);
+              setNote("Added.");
+            }}
+            onCancel={() => setAddingToList(false)}
+          />
+        )}
 
         {drive?.supported && (
           <div className="drive-share">

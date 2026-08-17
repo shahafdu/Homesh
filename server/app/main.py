@@ -25,6 +25,7 @@ from .documents import router as documents_router
 from .library import register_sources
 from .library import router as library_router
 from .people import router as people_router
+from .playlists import router as playlists_router
 from .prefs import router as prefs_router
 from .renderers import router as renderers_router
 from .sharing import router as sharing_router
@@ -137,6 +138,7 @@ app.include_router(auth_router)
 app.include_router(documents_router)
 app.include_router(library_router)
 app.include_router(people_router)
+app.include_router(playlists_router)
 app.include_router(prefs_router)
 app.include_router(sharing_router)
 app.include_router(renderers_router)

@@ -7,6 +7,7 @@ import Settings from "./Settings";
 import FileActions from "./FileActions";
 import LinkDevice from "./LinkDevice";
 import People from "./People";
+import Playlists from "./Playlists";
 import PlayTo from "./PlayTo";
 import Viewer from "./Viewer";
 import Zones from "./Zones";
@@ -26,6 +27,7 @@ export default function App() {
   const closeViewer = useCallback(() => setViewing(null), []);
   const [showZones, setShowZones] = useState(false);
   const [showPeople, setShowPeople] = useState(false);
+  const [showPlaylists, setShowPlaylists] = useState(false);
   const [linking, setLinking] = useState(false);
   const [actionsFor, setActionsFor] = useState<{
     file: FileEntry;
@@ -115,6 +117,7 @@ export default function App() {
           onViewChange={(view) => void changePrefs({ view })}
           onOpenSettings={() => setShowSettings(true)}
           onOpenZones={() => setShowZones(true)}
+          onOpenPlaylists={() => setShowPlaylists(true)}
           onOpenPeople={state.user.is_admin ? () => setShowPeople(true) : undefined}
           onActions={(file, siblings, foundAt) => setActionsFor({ file, siblings, foundAt })}
           onPlay={player.play}
@@ -145,6 +148,13 @@ export default function App() {
 
         {showZones && <Zones onClose={() => setShowZones(false)} />}
         {showPeople && <People onClose={() => setShowPeople(false)} />}
+
+        {showPlaylists && (
+          <Playlists
+            onPlay={(files, index) => player.play(files, index, "")}
+            onClose={() => setShowPlaylists(false)}
+          />
+        )}
 
         {actionsFor && (
           <FileActions

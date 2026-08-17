@@ -939,3 +939,38 @@ button.compact:disabled { opacity: .5; cursor: not-allowed; }
 }
 .v-jump { display: inline-flex; align-items: center; gap: 8px; }
 .jump { width: 90px; text-align: center; font-family: var(--mono); margin: 0; padding: 5px 8px; }
+
+/* ── Playlists ──────────────────────────────────────────────────────────────── */
+
+.playlist-row {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 2px;
+  width: 100%; text-align: left; cursor: pointer;
+  padding: 11px 13px; margin-bottom: 7px;
+  background: var(--bg); color: var(--ink);
+  border: 1px solid var(--line); border-radius: 10px;
+}
+.playlist-row:hover { border-color: var(--accent); }
+.pl-name { font-size: 15px; font-weight: 600; }
+.pl-title { margin: 0; }
+
+.pl-entries { list-style: none; margin: 10px 0 0; padding: 0; }
+.pl-entries li {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) auto auto;
+  align-items: center; gap: 10px;
+  padding: 7px 4px; border-bottom: 1px solid color-mix(in srgb, var(--line) 55%, transparent);
+}
+.pl-pos { color: var(--muted); font-size: 12px; text-align: right; }
+.pl-track { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.pl-play {
+  background: none; border: 0; padding: 0; cursor: pointer; text-align: left;
+  color: var(--ink); font-size: 14px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.pl-play:hover { color: var(--accent); }
+.pl-actions { display: flex; gap: 3px; }
+
+/* A line whose file could not be found. Dimmed rather than hidden: the whole
+   point of keeping it is that somebody can see what is gone. */
+.pl-entries li.missing .pl-track { opacity: 0.55; }
+.pl-entries li.missing { background: color-mix(in srgb, var(--danger) 5%, transparent); }
