@@ -244,12 +244,13 @@ class TestAccess:
         assert all(e["item_id"] is None for e in body["entries"]), "a track leaked past a scope"
 
 
-class TestImportedListsAreEdited:
-    """What happens to the .m3u when its playlist is changed here.
+class TestStorageListsAreReadOnly:
+    """A playlist from a .m3u cannot be edited by anybody.
 
-    Nothing. The server reads the library and never writes to it. The edit is
-    kept by taking the playlist over, so the next import makes a fresh copy from
-    the unchanged file rather than overwriting somebody's work.
+    Not even by whoever imported it. The file is the truth and this server never
+    writes to your library, so an edited copy here would immediately disagree
+    with the file — and the next import would undo the edit without saying so.
+    Copying is the way through, which is why copying is always offered.
     """
 
     def _imported(self, db, source_id) -> str:
@@ -258,45 +259,102 @@ class TestImportedListsAreEdited:
                 conn.execute(
                     text(
                         """
-                        INSERT INTO playlists (name, source_id, source_path)
-                        VALUES ('From a file', :s, 'Music/list.m3u') RETURNING id
+                        INSERT INTO playlists (name, source_id, source_path, shared)
+                        VALUES ('From a file', :s, 'Music/list.m3u', TRUE) RETURNING id
                         """
                     ),
                     {"s": str(source_id)},
                 ).scalar_one()
             )
 
-    def test_an_edit_takes_the_list_over(self, client, db, scanned):
+    def test_every_edit_is_refused(self, client, db, scanned):
+        sid, _prefix, _root = scanned
+        playlist_id = self._imported(db, sid)
+        items = _items(db, 1)
+
+        assert client.put(
+            f"/api/playlists/{playlist_id}", json={"name": "no"}
+        ).status_code == 409
+        assert client.post(
+            f"/api/playlists/{playlist_id}/items", json={"item_ids": items}
+        ).status_code == 409
+        assert client.delete(f"/api/playlists/{playlist_id}").status_code == 409
+
+    def test_the_refusal_says_what_to_do(self, client, db, scanned):
         sid, _prefix, _root = scanned
         playlist_id = self._imported(db, sid)
 
-        client.post(f"/api/playlists/{playlist_id}/items", json={"item_ids": _items(db, 1)})
+        detail = client.put(f"/api/playlists/{playlist_id}", json={"name": "no"}).json()["detail"]
+        assert "copy" in detail.lower(), "the refusal did not point anywhere"
 
-        with db.connect() as conn:
-            source = conn.execute(
-                text("SELECT source_id FROM playlists WHERE id = :p"), {"p": playlist_id}
-            ).scalar()
-        assert source is None, "an edited list still followed the file it came from"
-
-    def test_renaming_counts_as_an_edit(self, client, db, scanned):
+    def test_it_can_still_be_read_and_played(self, client, db, scanned):
+        """Read-only is not hidden — the whole point is that it plays."""
         sid, _prefix, _root = scanned
         playlist_id = self._imported(db, sid)
 
-        client.put(f"/api/playlists/{playlist_id}", json={"name": "Mine now"})
+        body = client.get(f"/api/playlists/{playlist_id}").json()
+        assert body["read_only"] is True
+        assert body["kind"] == "storage"
 
-        with db.connect() as conn:
-            assert conn.execute(
-                text("SELECT source_id FROM playlists WHERE id = :p"), {"p": playlist_id}
-            ).scalar() is None
-
-    def test_an_untouched_list_keeps_following_its_file(self, client, db, scanned):
-        """Detaching everything on sight would make re-import useless."""
+    def test_a_copy_is_editable_and_yours(self, client, db, scanned, user):
         sid, _prefix, _root = scanned
         playlist_id = self._imported(db, sid)
+        client.post(f"/api/playlists/{playlist_id}/copy", json={})
 
-        client.get(f"/api/playlists/{playlist_id}")
+        copy = next(
+            p for p in client.get("/api/playlists").json() if p["kind"] == "mine"
+        )
+        assert copy["read_only"] is False
+        assert client.put(
+            f"/api/playlists/{copy['id']}", json={"name": "Mine now"}
+        ).status_code == 200
 
-        with db.connect() as conn:
-            assert conn.execute(
-                text("SELECT source_id FROM playlists WHERE id = :p"), {"p": playlist_id}
-            ).scalar() is not None
+
+class TestSharing:
+    """Sharing grants playing, never editing."""
+
+    def _kid(self, db) -> CurrentUser:
+        with db.begin() as conn:
+            uid = conn.execute(
+                text(
+                    """
+                    INSERT INTO users (handle, display_name, is_admin, all_library)
+                    VALUES ('kid', 'Kid', FALSE, TRUE) RETURNING id
+                    """
+                )
+            ).scalar_one()
+        return CurrentUser(id=uid, handle="kid", display_name="Kid", is_admin=False)
+
+    def _become(self, person):
+        app.dependency_overrides[require_user] = lambda: person
+        app.dependency_overrides[optional_user] = lambda: person
+
+    def test_an_unshared_list_is_invisible_to_others(self, client, db, scanned, user):
+        client.post("/api/playlists", json={"name": "Private", "item_ids": _items(db)})
+        self._become(self._kid(db))
+
+        assert client.get("/api/playlists").json() == []
+
+    def test_a_shared_list_can_be_played_but_not_changed(self, client, db, scanned, user):
+        made = client.post("/api/playlists", json={"name": "Ours", "item_ids": _items(db)}).json()
+        client.put(f"/api/playlists/{made['id']}/share", json={"shared": True})
+
+        self._become(self._kid(db))
+        listed = client.get("/api/playlists").json()
+        assert [p["kind"] for p in listed] == ["shared"]
+        assert listed[0]["read_only"] is True
+
+        assert client.put(
+            f"/api/playlists/{made['id']}", json={"name": "mine now"}
+        ).status_code == 403
+        # …but it can be taken and changed, which is the point of copying.
+        assert client.post(f"/api/playlists/{made['id']}/copy", json={}).status_code == 201
+
+    def test_an_admin_sees_what_was_not_shared_and_it_is_marked(self, client, db, scanned, user):
+        kid = self._kid(db)
+        self._become(kid)
+        client.post("/api/playlists", json={"name": "Kid's own", "item_ids": _items(db)})
+
+        self._become(user)
+        listed = {p["name"]: p for p in client.get("/api/playlists").json()}
+        assert listed["Kid's own"]["kind"] == "others"

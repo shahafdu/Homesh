@@ -25,12 +25,18 @@ export interface PlaylistSummary {
   owner: string | null;
   mine: boolean;
   imported_from: string | null;
-  /** Still following its .m3u, or taken over by an edit here.
+  /** Which of the four kinds this is, which decides how it may be treated.
    *
-   *  The file is never written to — this server reads your library. So the
-   *  first edit detaches the list, and a later import of the same file makes a
-   *  fresh playlist beside it instead of overwriting your version. */
-  linked?: boolean;
+   *  storage — from a .m3u in the library. Read-only for everyone, because the
+   *            file is: this server never writes to your library, and the next
+   *            import would undo an edit without saying so.
+   *  mine    — yours to change.
+   *  shared  — somebody else's, offered to the house. Play only.
+   *  others  — somebody else's and not shared. Administrators only. */
+  kind: "mine" | "shared" | "others" | "storage";
+  shared: boolean;
+  /** Decided by the server, so the button shown and the answer given agree. */
+  read_only: boolean;
   updated_at: string;
   entries: number;
   missing: number;
@@ -39,6 +45,7 @@ export interface PlaylistSummary {
 
 export interface Playlist extends Omit<PlaylistSummary, "entries" | "playable"> {
   entries: PlaylistEntry[];
+  missing: number;
 }
 
 export const listPlaylists = () => api.get<PlaylistSummary[]>("/api/playlists");
@@ -66,6 +73,14 @@ export const removeFromPlaylist = (id: string, entryId: string) =>
  */
 export const reorderPlaylist = (id: string, entryIds: string[]) =>
   api.put(`/api/playlists/${id}/order`, { entry_ids: entryIds });
+
+/** A copy you own and can edit — the way to change a list that is not yours. */
+export const copyPlaylist = (id: string, name?: string) =>
+  api.post<{ id: string; name: string }>(`/api/playlists/${id}/copy`, { name });
+
+/** Sharing grants playing, never editing. */
+export const setPlaylistShared = (id: string, shared: boolean) =>
+  api.put(`/api/playlists/${id}/share`, { shared });
 
 export const importPlaylists = (sourceId: string) =>
   api.post<{ playlists: number; matched: number; missing: number }>(

@@ -44,6 +44,14 @@ class PlaylistRename(BaseModel):
     name: str = Field(min_length=1, max_length=120)
 
 
+class ShareUpdate(BaseModel):
+    shared: bool
+
+
+class CopyRequest(BaseModel):
+    name: str | None = Field(default=None, max_length=120)
+
+
 class AddItems(BaseModel):
     item_ids: list[UUID] = Field(min_length=1, max_length=2000)
 
@@ -62,20 +70,43 @@ class Reorder(BaseModel):
 # ── Reading ─────────────────────────────────────────────────────────────────
 
 
-def _owned_or_admin(playlist_id: UUID, user: CurrentUser) -> None:
+def _may_edit(playlist_id: UUID, user: CurrentUser) -> None:
+    """Refuse an edit that must not happen, and say which kind it is.
+
+    Two different refusals, and telling them apart matters: one is about who you
+    are, the other about what the playlist is. A list imported from a .m3u cannot
+    be edited by anybody, including the person who imported it — the file is the
+    truth and this server never writes to your library, so an edited copy here
+    would immediately disagree with it and the next import would undo the edit
+    without saying so. Copying it is the way to change one.
+    """
     with get_engine().connect() as conn:
-        owner = conn.execute(
-            text("SELECT owner_id FROM playlists WHERE id = :p"), {"p": str(playlist_id)}
+        row = conn.execute(
+            text("SELECT owner_id, source_id FROM playlists WHERE id = :p"),
+            {"p": str(playlist_id)},
         ).first()
-    if owner is None:
+    if row is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "no such playlist")
-    if not user.is_admin and owner[0] != user.id:
+
+    owner_id, source_id = row
+    if source_id is not None:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "This playlist comes from a file in your library and is read-only. "
+            "Make a copy to change it.",
+        )
+    if not user.is_admin and owner_id != user.id:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "that playlist belongs to somebody else")
 
 
 @router.get("")
 async def list_playlists(user: CurrentUser = Depends(require_user)) -> list[dict]:
-    """Every playlist, with how much of it this person can actually play."""
+    """Every playlist this person may see, and which kind each one is.
+
+    Four kinds, because they are governed differently and a single flat list
+    hides that: your own, ones somebody shared with the house, ones that came out
+    of the library's own files, and — for an administrator — everybody else's.
+    """
     scope = library_scope(user.id)
 
     with get_engine().connect() as conn:
@@ -86,7 +117,7 @@ async def list_playlists(user: CurrentUser = Depends(require_user)) -> list[dict
                        p.updated_at,
                        count(e.id) AS entries,
                        count(e.item_id) FILTER (WHERE e.item_id IS NOT NULL) AS found,
-                       p.source_id
+                       p.source_id, p.shared
                 FROM playlists p
                 LEFT JOIN playlist_items e ON e.playlist_id = p.id
                 LEFT JOIN users u ON u.id = p.owner_id
@@ -96,23 +127,42 @@ async def list_playlists(user: CurrentUser = Depends(require_user)) -> list[dict
             )
         ).all()
 
-    return [
-        {
-            "id": str(r[0]),
-            "name": r[1],
-            "owner": r[3],
-            "mine": r[2] == user.id,
-            "imported_from": r[4],
-            # Still following the file, or taken over by an edit. The difference
-            # decides what a re-import does, so it is not left to be guessed.
-            "linked": r[8] is not None,
-            "updated_at": r[5].isoformat(),
-            "entries": r[6],
-            "missing": r[6] - r[7],
-            "playable": _playable_count(r[0], scope),
-        }
-        for r in rows
-    ]
+    out = []
+    for r in rows:
+        mine = r[2] == user.id
+        from_storage = r[8] is not None
+        shared = bool(r[9])
+
+        if from_storage:
+            kind = "storage"
+        elif mine:
+            kind = "mine"
+        elif shared:
+            kind = "shared"
+        elif user.is_admin:
+            # Visible, but marked for what it is. An administrator can see the
+            # house's playlists; that is not the same as them being shared.
+            kind = "others"
+        else:
+            continue
+
+        out.append(
+            {
+                "id": str(r[0]),
+                "name": r[1],
+                "owner": r[3],
+                "mine": mine,
+                "kind": kind,
+                "shared": shared,
+                "imported_from": r[4],
+                "read_only": from_storage or not (mine or user.is_admin),
+                "updated_at": r[5].isoformat(),
+                "entries": r[6],
+                "missing": r[6] - r[7],
+                "playable": _playable_count(r[0], scope),
+            }
+        )
+    return out
 
 
 def _playable_count(playlist_id: UUID, scope: Scope) -> int:
@@ -190,7 +240,8 @@ async def get_playlist(playlist_id: UUID, user: CurrentUser = Depends(require_us
         row = conn.execute(
             text(
                 """
-                SELECT p.id, p.name, p.owner_id, u.display_name, p.source_path
+                SELECT p.id, p.name, p.owner_id, u.display_name, p.source_path,
+                       p.source_id, p.shared
                 FROM playlists p LEFT JOIN users u ON u.id = p.owner_id
                 WHERE p.id = :p
                 """
@@ -200,12 +251,20 @@ async def get_playlist(playlist_id: UUID, user: CurrentUser = Depends(require_us
     if row is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "no such playlist")
 
+    mine = row[2] == user.id
+    from_storage = row[5] is not None
+
     entries = _entries(playlist_id, library_scope(user.id))
     return {
         "id": str(row[0]),
         "name": row[1],
         "owner": row[3],
-        "mine": row[2] == user.id,
+        "mine": mine,
+        "shared": bool(row[6]),
+        "kind": "storage" if from_storage else ("mine" if mine else "shared"),
+        # Said by the server rather than worked out by each screen, so the button
+        # a person sees and the answer they get cannot disagree.
+        "read_only": from_storage or not (mine or user.is_admin),
         "imported_from": row[4],
         "entries": entries,
         "missing": sum(1 for e in entries if e["missing"]),
@@ -243,19 +302,18 @@ async def create_playlist(
 async def rename_playlist(
     playlist_id: UUID, body: PlaylistRename, user: CurrentUser = Depends(require_user)
 ) -> dict:
-    _owned_or_admin(playlist_id, user)
+    _may_edit(playlist_id, user)
     with get_engine().begin() as conn:
         conn.execute(
             text("UPDATE playlists SET name = :n, updated_at = now() WHERE id = :p"),
             {"n": body.name.strip(), "p": str(playlist_id)},
         )
-        _detach_from_file(conn, playlist_id)
     return {"id": str(playlist_id), "name": body.name.strip()}
 
 
 @router.delete("/{playlist_id}")
 async def delete_playlist(playlist_id: UUID, user: CurrentUser = Depends(require_user)) -> dict:
-    _owned_or_admin(playlist_id, user)
+    _may_edit(playlist_id, user)
     with get_engine().begin() as conn:
         conn.execute(text("DELETE FROM playlists WHERE id = :p"), {"p": str(playlist_id)})
     return {"ok": True}
@@ -266,7 +324,7 @@ async def add_items(
     playlist_id: UUID, body: AddItems, user: CurrentUser = Depends(require_user)
 ) -> dict:
     """Append tracks. Duplicates are allowed — a list may want a song twice."""
-    _owned_or_admin(playlist_id, user)
+    _may_edit(playlist_id, user)
 
     with get_engine().begin() as conn:
         next_position = conn.execute(
@@ -287,7 +345,6 @@ async def add_items(
                 ),
                 {"p": str(playlist_id), "pos": next_position + offset, "i": str(item_id)},
             )
-        _detach_from_file(conn, playlist_id)
 
     return {"added": len(body.item_ids)}
 
@@ -296,7 +353,7 @@ async def add_items(
 async def remove_item(
     playlist_id: UUID, entry_id: UUID, user: CurrentUser = Depends(require_user)
 ) -> dict:
-    _owned_or_admin(playlist_id, user)
+    _may_edit(playlist_id, user)
     with get_engine().begin() as conn:
         conn.execute(
             text("DELETE FROM playlist_items WHERE id = :e AND playlist_id = :p"),
@@ -305,7 +362,6 @@ async def remove_item(
         # Positions are closed up rather than left with a hole: a list that has
         # been edited for years would otherwise carry gaps that only ever grow.
         _renumber(conn, playlist_id)
-        _detach_from_file(conn, playlist_id)
     return {"ok": True}
 
 
@@ -313,7 +369,7 @@ async def remove_item(
 async def reorder(
     playlist_id: UUID, body: Reorder, user: CurrentUser = Depends(require_user)
 ) -> dict:
-    _owned_or_admin(playlist_id, user)
+    _may_edit(playlist_id, user)
 
     with get_engine().begin() as conn:
         known = {
@@ -337,34 +393,8 @@ async def reorder(
                 text("UPDATE playlist_items SET position = :pos WHERE id = :e"),
                 {"pos": position, "e": str(entry_id)},
             )
-        _detach_from_file(conn, playlist_id)
 
     return {"ok": True}
-
-
-def _detach_from_file(conn, playlist_id: UUID) -> None:
-    """Cut an edited playlist loose from the file it was imported from.
-
-    Two things must not happen. The .m3u must not be rewritten — this server
-    reads your library and never writes to it, which is the rule the rest of the
-    design rests on. And the edit must not be lost, which is exactly what would
-    happen at the next import, since importing replaces a list's contents
-    wholesale.
-
-    So the first edit takes ownership. The file stays as it was, the edited list
-    becomes yours, and a later import of that file makes a fresh playlist beside
-    it rather than overwriting your work.
-    """
-    conn.execute(
-        text(
-            """
-            UPDATE playlists
-            SET source_id = NULL, updated_at = now()
-            WHERE id = :p AND source_id IS NOT NULL
-            """
-        ),
-        {"p": str(playlist_id)},
-    )
 
 
 def _renumber(conn, playlist_id: UUID) -> None:
@@ -396,6 +426,73 @@ async def import_source(source_id: UUID, user: CurrentUser = Depends(require_use
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "that source has no connector")
 
     return import_from_source(source_id, connector, owner_id=user.id)
+
+
+@router.post("/{playlist_id}/copy", status_code=status.HTTP_201_CREATED)
+async def copy_playlist(
+    playlist_id: UUID, body: CopyRequest, user: CurrentUser = Depends(require_user)
+) -> dict:
+    """Take a copy you own and can edit.
+
+    The way to change a list that is not yours to change — one imported from a
+    file, or one somebody else shared. The copy keeps the order and the tracks
+    and nothing else: not the link to a file, not the sharing, not the original
+    owner. It is yours.
+    """
+    with get_engine().connect() as conn:
+        original = conn.execute(
+            text("SELECT name, source_id, shared, owner_id FROM playlists WHERE id = :p"),
+            {"p": str(playlist_id)},
+        ).first()
+    if original is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "no such playlist")
+
+    name, source_id, shared, owner_id = original
+    # Copying is reading, so it needs the same visibility the listing grants.
+    if not (user.is_admin or owner_id == user.id or shared or source_id is not None):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "that playlist belongs to somebody else")
+
+    new_name = (body.name or f"{name} (my copy)").strip()
+
+    with get_engine().begin() as conn:
+        copy_id = conn.execute(
+            text("INSERT INTO playlists (name, owner_id) VALUES (:n, :o) RETURNING id"),
+            {"n": new_name, "o": str(user.id)},
+        ).scalar_one()
+
+        # Unresolved lines come too. They are part of the list somebody made, and
+        # dropping them here would quietly shorten it.
+        conn.execute(
+            text(
+                """
+                INSERT INTO playlist_items
+                    (playlist_id, position, item_id, original_ref, raw_title)
+                SELECT :new, position, item_id, original_ref, raw_title
+                FROM playlist_items WHERE playlist_id = :old
+                """
+            ),
+            {"new": str(copy_id), "old": str(playlist_id)},
+        )
+
+    return {"id": str(copy_id), "name": new_name}
+
+
+@router.put("/{playlist_id}/share")
+async def set_shared(
+    playlist_id: UUID, body: ShareUpdate, user: CurrentUser = Depends(require_user)
+) -> dict:
+    """Let the rest of the house see this list, or stop.
+
+    Sharing grants playing and nothing else: editing stays with whoever made it.
+    A shared list somebody else wants to change is a list they should copy.
+    """
+    _may_edit(playlist_id, user)
+    with get_engine().begin() as conn:
+        conn.execute(
+            text("UPDATE playlists SET shared = :s, updated_at = now() WHERE id = :p"),
+            {"s": body.shared, "p": str(playlist_id)},
+        )
+    return {"shared": body.shared}
 
 
 # ── Importing what is already there ─────────────────────────────────────────

@@ -67,6 +67,11 @@ def db():
     # the next test's "create zone" fail on the unique name rather than on
     # anything it was actually testing.
     with engine.begin() as conn:
+        # Playlists outlive both their source and their owner on purpose — the
+        # foreign keys are ON DELETE SET NULL, so that losing a drive does not
+        # lose the ordering somebody made. That is right in the house and wrong
+        # in a test, where it means every later test sees the last one's lists.
+        conn.execute(text("DELETE FROM playlists"))
         conn.execute(text("DELETE FROM zones"))
         conn.execute(text("DELETE FROM renderers"))
         conn.execute(text("DELETE FROM sources"))

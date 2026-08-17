@@ -3,6 +3,7 @@ import { ApiError } from "./api";
 import { formatDuration, type FileEntry } from "./library";
 import {
   addToPlaylist,
+  copyPlaylist,
   createPlaylist,
   deletePlaylist,
   getPlaylist,
@@ -10,10 +11,24 @@ import {
   removeFromPlaylist,
   renamePlaylist,
   reorderPlaylist,
+  setPlaylistShared,
   type Playlist,
   type PlaylistSummary,
 } from "./playlists";
 import { useLockScroll } from "./useLockScroll";
+
+const SECTIONS: { kind: string; title: string; blurb?: string }[] = [
+  { kind: "mine", title: "Mine" },
+  { kind: "shared", title: "Shared with the house", blurb: "Made by somebody else. Copy one to change it." },
+  {
+    kind: "storage",
+    title: "From your library",
+    blurb:
+      "Imported from .m3u files. Read-only, because the files are — Homesh never " +
+      "writes to your library. Copy one to make a version you can edit.",
+  },
+  { kind: "others", title: "Other people's", blurb: "Not shared. Visible to you as an administrator." },
+];
 
 /** Playlists: the ones made here and the ones imported from the library.
  *
@@ -29,6 +44,9 @@ export default function Playlists(props: {
   const [lists, setLists] = useState<PlaylistSummary[] | null>(null);
   const [open, setOpen] = useState<Playlist | null>(null);
   const [creating, setCreating] = useState(false);
+  // Only your own are open to begin with: forty-one imported lists above two of
+  // yours is a wall to scroll past every time.
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({ mine: true });
   const [draft, setDraft] = useState("");
   const [error, setError] = useState<string | null>(null);
 
@@ -121,22 +139,56 @@ export default function Playlists(props: {
           </p>
         )}
 
-        {lists?.map((list) => (
-          <button
-            key={list.id}
-            className="playlist-row"
-            onClick={async () => setOpen(await getPlaylist(list.id))}
-          >
-            <span className="pl-name">{list.name}</span>
-            <span className="muted small">
-              {list.playable} track{list.playable === 1 ? "" : "s"}
-              {/* Said plainly rather than hidden: these lists are decades old and
-                  some of what they point at is genuinely gone. */}
-              {list.missing > 0 && ` · ${list.missing} missing`}
-              {list.imported_from && (list.linked ? " · imported" : " · imported, edited here")}
-            </span>
-          </button>
-        ))}
+        {/* Four kinds, governed differently. A single flat list hid that, and
+            with forty-one imported lists it also made your own two impossible to
+            find. */}
+        {SECTIONS.map(({ kind, title, blurb }) => {
+          const group = (lists ?? []).filter((l) => l.kind === kind);
+          if (group.length === 0) return null;
+          const isOpen = expanded[kind] ?? kind === "mine";
+
+          return (
+            <section key={kind} className="pl-section">
+              <button
+                className="pl-section-head"
+                aria-expanded={isOpen}
+                onClick={() => setExpanded({ ...expanded, [kind]: !isOpen })}
+              >
+                <span className="pl-caret">{isOpen ? "▾" : "▸"}</span>
+                {title}
+                <span className="muted small">{group.length}</span>
+              </button>
+
+              {isOpen && (
+                <>
+                  {blurb && <p className="muted small pl-blurb">{blurb}</p>}
+                  {group.map((list) => (
+                    <button
+                      key={list.id}
+                      className="playlist-row"
+                      onClick={async () => setOpen(await getPlaylist(list.id))}
+                    >
+                      <span className="pl-name">
+                        {list.name}
+                        {list.kind === "mine" && list.shared && (
+                          <span className="badge">shared</span>
+                        )}
+                        {list.read_only && <span className="badge">read-only</span>}
+                      </span>
+                      <span className="muted small">
+                        {list.playable} track{list.playable === 1 ? "" : "s"}
+                        {/* Said plainly: these lists are decades old and some of
+                            what they point at is genuinely gone. */}
+                        {list.missing > 0 && ` · ${list.missing} missing`}
+                        {list.kind !== "mine" && list.owner && ` · ${list.owner}`}
+                      </span>
+                    </button>
+                  ))}
+                </>
+              )}
+            </section>
+          );
+        })}
 
         <button className="compact" style={{ marginTop: 16 }} onClick={props.onClose}>
           Done
@@ -223,25 +275,59 @@ function PlaylistDetail(props: {
           >
             ▶ Play
           </button>
-          <button className="compact" onClick={() => { setDraft(playlist.name); setRenaming(true); }}>
-            Rename
-          </button>
+          {/* Copying is always available, and is the answer whenever the rest
+              is not: a list you cannot change is one you can take a copy of. */}
           <button
             className="compact"
             onClick={async () => {
-              await props.onAct(() => deletePlaylist(playlist.id));
+              await props.onAct(() => copyPlaylist(playlist.id));
               props.onBack();
             }}
           >
-            Delete
+            Make a copy
           </button>
+
+          {!playlist.read_only && (
+            <>
+              <button
+                className="compact"
+                onClick={() => { setDraft(playlist.name); setRenaming(true); }}
+              >
+                Rename
+              </button>
+              <button
+                className="compact"
+                aria-pressed={playlist.shared}
+                onClick={() =>
+                  void props.onAct(() => setPlaylistShared(playlist.id, !playlist.shared))
+                }
+              >
+                {playlist.shared ? "Stop sharing" : "Share with the house"}
+              </button>
+              <button
+                className="compact"
+                onClick={async () => {
+                  await props.onAct(() => deletePlaylist(playlist.id));
+                  props.onBack();
+                }}
+              >
+                Delete
+              </button>
+            </>
+          )}
         </div>
 
-        {playlist.imported_from && (
+        {playlist.read_only && (
           <p className="muted small">
-            Imported from <code className="nm-clip">{playlist.imported_from}</code>.
-            Editing it here never changes that file — Homesh only ever reads your
-            library. Your version becomes separate from it.
+            {playlist.imported_from ? (
+              <>
+                Imported from <code className="nm-clip">{playlist.imported_from}</code> and
+                read-only, because Homesh never writes to your library. Make a copy to
+                change it.
+              </>
+            ) : (
+              <>Shared by {playlist.owner}. Make a copy to change it.</>
+            )}
           </p>
         )}
 
@@ -284,6 +370,8 @@ function PlaylistDetail(props: {
               <span className="muted small">{formatDuration(entry.duration_ms)}</span>
 
               <span className="pl-actions">
+                {playlist.read_only ? null : (
+                  <>
                 <button className="iconbtn tiny" title="Move up" aria-label="Move up"
                         disabled={index === 0} onClick={() => move(index, -1)}>↑</button>
                 <button className="iconbtn tiny" title="Move down" aria-label="Move down"
@@ -293,6 +381,8 @@ function PlaylistDetail(props: {
                         onClick={() =>
                           void props.onAct(() => removeFromPlaylist(playlist.id, entry.entry_id))
                         }>×</button>
+                  </>
+                )}
               </span>
             </li>
           ))}
