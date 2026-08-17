@@ -78,9 +78,27 @@ The second line puts Homesh behind HTTPS on port 443 of that hostname. Check it:
 tailscale serve status
 ```
 
-If you want it reachable from outside your tailnet as well — the office case —
-add `tailscale funnel --bg 443`. Leave that off if you would rather it stay
-private to your own devices.
+Note the target is a **local port**, not the port to listen on. `tailscale serve
+443` means "proxy to 443 on this machine", which is not what anybody means by it
+and produces a page that will not load.
+
+**Funnel is almost certainly not what you want.** Reaching the server from
+somewhere else — the office, a hotel — only needs Tailscale on the device doing
+the reaching. Your phone is already on the tailnet, so it can reach the server
+from anywhere in the world without the server being on the public internet at
+all.
+
+Funnel is for the other case: handing a link to somebody who is *not* on your
+tailnet. It puts your login page on the public internet, and the hostname is
+published in certificate transparency logs, so it will be found by scanners
+within days. If you never need to send a stranger a link, leave it off.
+
+If you turned it on and want it off:
+
+```powershell
+tailscale serve reset
+tailscale serve --bg http://127.0.0.1:8080
+```
 
 ## 5. Take a link code, *before* switching
 
