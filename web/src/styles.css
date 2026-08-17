@@ -1112,3 +1112,19 @@ button.compact:disabled { opacity: .5; cursor: not-allowed; }
   background: #fff; border-radius: 4px;
   box-shadow: 0 1px 3px rgba(0,0,0,.25);
 }
+
+/* ── The top of the page stays at the top ────────────────────────────────────
+   The header and toolbar were each sticky against the viewport, but the page
+   they sit in has horizontal padding and its own scroll context, so they slid a
+   few pixels before catching. Making the pair one sticky block fixes the seam
+   between them as well as the drift. */
+.browser { position: relative; }
+.chrome {
+  position: sticky; top: 0; z-index: 20;
+  background: var(--bg);
+  /* Covers the page padding, so nothing scrolls through the gap at the sides. */
+  margin: 0 -16px; padding: 0 16px;
+  box-shadow: 0 1px 0 var(--line);
+}
+.chrome .bar, .chrome .toolbar { position: static; box-shadow: none; }
+.rows li.rowhead { top: 0; }

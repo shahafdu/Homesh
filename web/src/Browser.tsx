@@ -143,6 +143,10 @@ export default function Browser(props: {
 
   return (
     <div className="browser">
+      {/* One sticky block. Separately they each stuck to the viewport while the
+          page around them scrolled, so both drifted and a gap opened between
+          them on the way. */}
+      <div className="chrome">
       <header className="bar">
         <span className="brand">Homesh</span>
         <input
@@ -202,6 +206,8 @@ export default function Browser(props: {
       </div>
 
       {error && <div className="error">{error}</div>}
+
+      </div>
 
       {hits !== null ? (
         <Results

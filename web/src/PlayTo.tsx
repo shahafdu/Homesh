@@ -38,8 +38,15 @@ export default function PlayTo(props: {
       // result opened on its own, filtered down to nothing and the server
       // rejected the request as malformed — which reached the screen as
       // "unprocessable entity", a sentence about JSON in answer to "play this".
-      const queue = siblingQueue.length > 0 ? siblingQueue : [file];
-      const index = Math.max(0, queue.findIndex((f) => f.item_id === file.item_id));
+      const whole = siblingQueue.length > 0 ? siblingQueue : [file];
+      const chosen = Math.max(0, whole.findIndex((f) => f.item_id === file.item_id));
+
+      // Bounded, and bounded from the track you picked rather than from the top
+      // of the folder — so an enormous folder still starts with what you chose
+      // instead of being refused outright.
+      const LIMIT = 5000;
+      const queue = whole.length <= LIMIT ? whole : whole.slice(chosen, chosen + LIMIT);
+      const index = queue.findIndex((f) => f.item_id === file.item_id);
       await playInZone(zone.id, queue.map((f) => f.item_id), index, takeOver);
       props.onClose();
     } catch (e) {

@@ -7,6 +7,12 @@ export interface Track {
   filename: string;
   /** Where it lives. Shown under the title, because the folder is often the album. */
   path: string;
+  /** From the catalog, so the bar has a length before a byte has arrived.
+   *
+   *  Waiting for the media element to report one means the seek bar is dead for
+   *  the second or two a track takes to reach us from Drive — exactly when
+   *  somebody wanting the middle of a song reaches for it. */
+  duration_ms?: number | null;
 }
 
 export interface PlayerState {
@@ -100,6 +106,26 @@ export function usePlayer() {
   // loop forever between the error handler and a fresh URL.
   const renewedFor = useRef<string | null>(null);
 
+  /** Start playing, giving the browser a second chance before complaining.
+   *
+   * A phone rejects the first play() often enough that one attempt is not
+   * evidence of anything. The retry costs a few hundred milliseconds and
+   * removes the error message that used to appear on every first tap.
+   */
+  const start = async (audio: HTMLAudioElement): Promise<void> => {
+    try {
+      await audio.play();
+    } catch (first) {
+      if (first instanceof Error && first.name !== "NotAllowedError" &&
+          first.name !== "AbortError") {
+        throw first;
+      }
+      await new Promise((resolve) => window.setTimeout(resolve, 250));
+      await audio.play();
+    }
+    setState((s) => ({ ...s, playing: true, error: null }));
+  };
+
   const loadTrack = useCallback(async (index: number, resumeAt = 0) => {
     const audio = audioRef.current;
     const track = stateRef.current.queue[index];
@@ -118,15 +144,23 @@ export function usePlayer() {
     stateRef.current = { ...stateRef.current, index };
     renewedFor.current = null;
 
+    // The catalog's length, until the element reports its own. The bar is then
+    // usable immediately rather than after the first bytes arrive.
+    if (track.duration_ms) {
+      setState((s) => ({ ...s, duration: track.duration_ms! / 1000 }));
+    }
+
     try {
       audio.src = await signedUrl(track.item_id);
       if (resumeAt > 0) audio.currentTime = resumeAt;
-      await audio.play();
-      setState((s) => ({ ...s, playing: true, error: null }));
+      await start(audio);
     } catch (e) {
-      // A play() rejection is usually the browser's autoplay policy, which is not
-      // worth alarming the user about — they clicked, so it will succeed on retry.
-      if (e instanceof Error && e.name === "NotAllowedError") {
+      // Only after a real failure. A first tap on a phone routinely rejects for
+      // reasons that disappear on the retry — the element was not yet unlocked,
+      // or the source changed while play() was in flight — and reporting those
+      // meant every first tap said "could not play" over a song that then
+      // played perfectly on the second.
+      if (e instanceof Error && (e.name === "NotAllowedError" || e.name === "AbortError")) {
         setState((s) => ({ ...s, playing: false }));
       } else {
         setState((s) => ({ ...s, error: `Could not play ${track.filename}` }));
@@ -156,6 +190,7 @@ export function usePlayer() {
         item_id: f.item_id,
         filename: f.filename,
         path: folderPath,
+        duration_ms: f.duration_ms,
       }));
       const index = Math.max(0, queue.findIndex((t) => t.item_id === clicked.item_id));
 
