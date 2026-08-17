@@ -25,6 +25,12 @@ export interface PlaylistSummary {
   owner: string | null;
   mine: boolean;
   imported_from: string | null;
+  /** Still following its .m3u, or taken over by an edit here.
+   *
+   *  The file is never written to — this server reads your library. So the
+   *  first edit detaches the list, and a later import of the same file makes a
+   *  fresh playlist beside it instead of overwriting your version. */
+  linked?: boolean;
   updated_at: string;
   entries: number;
   missing: number;

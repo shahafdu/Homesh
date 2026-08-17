@@ -219,15 +219,31 @@ function Convertible(props: { file: FileEntry }) {
   // it and keeping the result.
   const [start, setStart] = useState(0);
   const [jump, setJump] = useState("");
+  const [ready, setReady] = useState(false);
 
   return (
     <div className="v-live">
+      {/* Twelve seconds can pass before the first frame: the file is on Drive
+          and the encoder has to reach it before it can encode anything. A black
+          rectangle for that long reads as broken, so it says what it is doing. */}
+      {!ready && (
+        <div className="v-starting">
+          <span className="spinner" aria-hidden="true" />
+          <p className="muted">Starting the film…</p>
+          <p className="muted small">
+            A large tape takes a few seconds to reach. Nothing is being downloaded.
+          </p>
+        </div>
+      )}
+
       <video
         className="v-video"
+        style={ready ? undefined : { display: "none" }}
         src={liveVideoUrl(props.file.item_id, start)}
         controls
         autoPlay
         playsInline
+        onLoadedData={() => setReady(true)}
       />
 
       <div className="v-live-bar">
@@ -253,11 +269,14 @@ function Convertible(props: { file: FileEntry }) {
                 : parts.length === 2
                   ? parts[0] * 60 + parts[1]
                   : parts[0] * 60;
-              if (!isNaN(seconds)) setStart(seconds);
+              if (!isNaN(seconds)) {
+                setReady(false);
+                setStart(seconds);
+              }
             }}
           />
           {start > 0 && (
-            <button className="compact" onClick={() => setStart(0)}>
+            <button className="compact" onClick={() => { setReady(false); setStart(0); }}>
               Back to the start
             </button>
           )}

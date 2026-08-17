@@ -242,3 +242,61 @@ class TestAccess:
         body = client.get(f"/api/playlists/{playlist_id}").json()
         assert len(body["entries"]) == 3, "the length of the list changed per viewer"
         assert all(e["item_id"] is None for e in body["entries"]), "a track leaked past a scope"
+
+
+class TestImportedListsAreEdited:
+    """What happens to the .m3u when its playlist is changed here.
+
+    Nothing. The server reads the library and never writes to it. The edit is
+    kept by taking the playlist over, so the next import makes a fresh copy from
+    the unchanged file rather than overwriting somebody's work.
+    """
+
+    def _imported(self, db, source_id) -> str:
+        with db.begin() as conn:
+            return str(
+                conn.execute(
+                    text(
+                        """
+                        INSERT INTO playlists (name, source_id, source_path)
+                        VALUES ('From a file', :s, 'Music/list.m3u') RETURNING id
+                        """
+                    ),
+                    {"s": str(source_id)},
+                ).scalar_one()
+            )
+
+    def test_an_edit_takes_the_list_over(self, client, db, scanned):
+        sid, _prefix, _root = scanned
+        playlist_id = self._imported(db, sid)
+
+        client.post(f"/api/playlists/{playlist_id}/items", json={"item_ids": _items(db, 1)})
+
+        with db.connect() as conn:
+            source = conn.execute(
+                text("SELECT source_id FROM playlists WHERE id = :p"), {"p": playlist_id}
+            ).scalar()
+        assert source is None, "an edited list still followed the file it came from"
+
+    def test_renaming_counts_as_an_edit(self, client, db, scanned):
+        sid, _prefix, _root = scanned
+        playlist_id = self._imported(db, sid)
+
+        client.put(f"/api/playlists/{playlist_id}", json={"name": "Mine now"})
+
+        with db.connect() as conn:
+            assert conn.execute(
+                text("SELECT source_id FROM playlists WHERE id = :p"), {"p": playlist_id}
+            ).scalar() is None
+
+    def test_an_untouched_list_keeps_following_its_file(self, client, db, scanned):
+        """Detaching everything on sight would make re-import useless."""
+        sid, _prefix, _root = scanned
+        playlist_id = self._imported(db, sid)
+
+        client.get(f"/api/playlists/{playlist_id}")
+
+        with db.connect() as conn:
+            assert conn.execute(
+                text("SELECT source_id FROM playlists WHERE id = :p"), {"p": playlist_id}
+            ).scalar() is not None

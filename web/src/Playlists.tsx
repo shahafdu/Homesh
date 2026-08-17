@@ -133,7 +133,7 @@ export default function Playlists(props: {
               {/* Said plainly rather than hidden: these lists are decades old and
                   some of what they point at is genuinely gone. */}
               {list.missing > 0 && ` · ${list.missing} missing`}
-              {list.imported_from && " · imported"}
+              {list.imported_from && (list.linked ? " · imported" : " · imported, edited here")}
             </span>
           </button>
         ))}
@@ -236,6 +236,14 @@ function PlaylistDetail(props: {
             Delete
           </button>
         </div>
+
+        {playlist.imported_from && (
+          <p className="muted small">
+            Imported from <code className="nm-clip">{playlist.imported_from}</code>.
+            Editing it here never changes that file — Homesh only ever reads your
+            library. Your version becomes separate from it.
+          </p>
+        )}
 
         {playlist.missing > 0 && (
           <p className="muted small">

@@ -85,7 +85,8 @@ async def list_playlists(user: CurrentUser = Depends(require_user)) -> list[dict
                 SELECT p.id, p.name, p.owner_id, u.display_name, p.source_path,
                        p.updated_at,
                        count(e.id) AS entries,
-                       count(e.item_id) FILTER (WHERE e.item_id IS NOT NULL) AS found
+                       count(e.item_id) FILTER (WHERE e.item_id IS NOT NULL) AS found,
+                       p.source_id
                 FROM playlists p
                 LEFT JOIN playlist_items e ON e.playlist_id = p.id
                 LEFT JOIN users u ON u.id = p.owner_id
@@ -102,6 +103,9 @@ async def list_playlists(user: CurrentUser = Depends(require_user)) -> list[dict
             "owner": r[3],
             "mine": r[2] == user.id,
             "imported_from": r[4],
+            # Still following the file, or taken over by an edit. The difference
+            # decides what a re-import does, so it is not left to be guessed.
+            "linked": r[8] is not None,
             "updated_at": r[5].isoformat(),
             "entries": r[6],
             "missing": r[6] - r[7],
@@ -245,6 +249,7 @@ async def rename_playlist(
             text("UPDATE playlists SET name = :n, updated_at = now() WHERE id = :p"),
             {"n": body.name.strip(), "p": str(playlist_id)},
         )
+        _detach_from_file(conn, playlist_id)
     return {"id": str(playlist_id), "name": body.name.strip()}
 
 
@@ -282,10 +287,7 @@ async def add_items(
                 ),
                 {"p": str(playlist_id), "pos": next_position + offset, "i": str(item_id)},
             )
-        conn.execute(
-            text("UPDATE playlists SET updated_at = now() WHERE id = :p"),
-            {"p": str(playlist_id)},
-        )
+        _detach_from_file(conn, playlist_id)
 
     return {"added": len(body.item_ids)}
 
@@ -303,10 +305,7 @@ async def remove_item(
         # Positions are closed up rather than left with a hole: a list that has
         # been edited for years would otherwise carry gaps that only ever grow.
         _renumber(conn, playlist_id)
-        conn.execute(
-            text("UPDATE playlists SET updated_at = now() WHERE id = :p"),
-            {"p": str(playlist_id)},
-        )
+        _detach_from_file(conn, playlist_id)
     return {"ok": True}
 
 
@@ -338,12 +337,34 @@ async def reorder(
                 text("UPDATE playlist_items SET position = :pos WHERE id = :e"),
                 {"pos": position, "e": str(entry_id)},
             )
-        conn.execute(
-            text("UPDATE playlists SET updated_at = now() WHERE id = :p"),
-            {"p": str(playlist_id)},
-        )
+        _detach_from_file(conn, playlist_id)
 
     return {"ok": True}
+
+
+def _detach_from_file(conn, playlist_id: UUID) -> None:
+    """Cut an edited playlist loose from the file it was imported from.
+
+    Two things must not happen. The .m3u must not be rewritten — this server
+    reads your library and never writes to it, which is the rule the rest of the
+    design rests on. And the edit must not be lost, which is exactly what would
+    happen at the next import, since importing replaces a list's contents
+    wholesale.
+
+    So the first edit takes ownership. The file stays as it was, the edited list
+    becomes yours, and a later import of that file makes a fresh playlist beside
+    it rather than overwriting your work.
+    """
+    conn.execute(
+        text(
+            """
+            UPDATE playlists
+            SET source_id = NULL, updated_at = now()
+            WHERE id = :p AND source_id IS NOT NULL
+            """
+        ),
+        {"p": str(playlist_id)},
+    )
 
 
 def _renumber(conn, playlist_id: UUID) -> None:

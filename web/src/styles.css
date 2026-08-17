@@ -974,3 +974,14 @@ button.compact:disabled { opacity: .5; cursor: not-allowed; }
    point of keeping it is that somebody can see what is gone. */
 .pl-entries li.missing .pl-track { opacity: 0.55; }
 .pl-entries li.missing { background: color-mix(in srgb, var(--danger) 5%, transparent); }
+
+.v-starting {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 8px; min-height: 240px; text-align: center;
+}
+.spinner {
+  width: 26px; height: 26px; border-radius: 50%;
+  border: 2px solid var(--line); border-top-color: var(--accent);
+  animation: spin 0.9s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
