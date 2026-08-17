@@ -142,6 +142,18 @@ class GoogleDriveConnector:
     Drive changes the path but not the file.
     """
 
+    def _http(self) -> httpx.Client:
+        """A pooled client for this connector, built once.
+
+        Not closed explicitly: a connector lives as long as the source it
+        represents, and httpx releases the pool when it is collected.
+        """
+        existing = getattr(self, "_client", None)
+        if existing is None:
+            existing = httpx.Client(timeout=TIMEOUT, follow_redirects=True)
+            self._client = existing
+        return existing
+
     def __init__(self, root_id: str, key_path: Path) -> None:
         self.root_id = root_id
         self.creds = _Credentials(key_path)
@@ -262,6 +274,14 @@ class GoogleDriveConnector:
 
     # ── Bytes ───────────────────────────────────────────────────────────────
 
+    def remember(self, rel_path: str, file_id: str) -> None:
+        """Record where a file is, so it need not be looked for.
+
+        The scanner learns every file's id as it walks; telling the connector
+        saves it walking the tree again later to answer the same question.
+        """
+        self._ids[rel_path.strip("/")] = file_id
+
     def open_range(self, path: str, start: int = 0, end: int | None = None) -> Iterator[bytes]:
         """Stream a file, honouring the requested range.
 
@@ -271,23 +291,30 @@ class GoogleDriveConnector:
         rel = path.strip("/")
         file_id = self._ids.get(rel)
         if file_id is None:
-            parent, _, name = rel.rpartition("/")
+            # Only when nothing is known: this lists every folder from the root
+            # down, which for a deep path costs seconds, and a browser asks for
+            # several ranges to play one song.
+            parent, _, _name = rel.rpartition("/")
             self.list_dir(parent)          # populates the id cache
             file_id = self._ids.get(rel)
         if file_id is None:
             raise FileNotFoundError(path)
 
         headers = {"Range": f"bytes={start}-{'' if end is None else end}"}
-        with httpx.Client(timeout=TIMEOUT, follow_redirects=True) as client:
-            with client.stream(
-                "GET",
-                f"{API}/files/{file_id}",
-                params={"alt": "media", "supportsAllDrives": "true"},
-                headers={"Authorization": f"Bearer {self.creds.token()}", **headers},
-            ) as response:
-                if response.status_code not in (200, 206):
-                    raise DriveError(f"download failed: {response.status_code}")
-                yield from response.iter_bytes(chunk_size=256 * 1024)
+        # One client per connector, kept open. A new one per range request meant
+        # a fresh TCP connection and TLS handshake to Google every time, and a
+        # browser asks for several ranges to play one song — so the handshake was
+        # a large share of the wait before any audio arrived.
+        client = self._http()
+        with client.stream(
+            "GET",
+            f"{API}/files/{file_id}",
+            params={"alt": "media", "supportsAllDrives": "true"},
+            headers={"Authorization": f"Bearer {self.creds.token()}", **headers},
+        ) as response:
+            if response.status_code not in (200, 206):
+                raise DriveError(f"download failed: {response.status_code}")
+            yield from response.iter_bytes(chunk_size=256 * 1024)
 
     @staticmethod
     def is_exportable_only(mime: str | None) -> bool:

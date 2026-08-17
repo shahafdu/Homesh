@@ -80,7 +80,7 @@ def resolve_playable(item_id: UUID) -> tuple[object, str, str, int, str]:
             text(
                 """
                 SELECT r.dir_path, r.filename, r.ext, i.size_bytes,
-                       s.id, r.available
+                       s.id, r.available, r.remote_id
                 FROM replicas r
                 JOIN items i   ON i.id = r.item_id
                 JOIN sources s ON s.id = r.source_id
@@ -95,11 +95,20 @@ def resolve_playable(item_id: UUID) -> tuple[object, str, str, int, str]:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "no such item")
 
     # Ordered available-first by the query, so the first reachable source wins.
-    for dir_path, filename, ext, size, source_id, _available in rows:
+    for dir_path, filename, ext, size, source_id, _available, remote_id in rows:
         connector = connector_for(source_id)
         if connector is None or not connector.available:
             continue
         rel = f"{dir_path}/{filename}" if dir_path else filename
+
+        # Tell the connector where the file is, if the catalog knows. Without it
+        # a Drive read begins by listing every folder from the root down to find
+        # out — nearly seven seconds for a nested track, on every range request,
+        # which is what made playing anything on a phone feel broken.
+        remember = getattr(connector, "remember", None)
+        if remember and remote_id:
+            remember(rel, remote_id)
+
         return connector, rel, filename, size or 0, (ext or "")
 
     # The catalog knows the file; the machine holding it is not reachable.

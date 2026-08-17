@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "./api";
+import PdfView from "./PdfView";
 import {
   canPreview,
   documentUrl,
@@ -164,11 +165,11 @@ export default function Viewer(props: {
 
           {url && file.kind === "doc" && text === null && previewable && (
             // An office document is rendered by the server and arrives as a PDF;
-            // a PDF is already one. Either way the browser shows a PDF, so there
-            // is a single viewer rather than one per format.
-            <iframe
-              className="v-frame"
-              src={needsConversion(file.ext) ? documentUrl(file.item_id) : url}
+            // a PDF is already one. Either way this draws it, rather than handing
+            // it to the browser — a phone has no PDF viewer to hand it to, and
+            // would download the file instead of showing it.
+            <PdfView
+              url={needsConversion(file.ext) ? documentUrl(file.item_id) : url}
               title={file.filename}
             />
           )}

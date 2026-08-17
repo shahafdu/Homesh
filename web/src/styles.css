@@ -1081,3 +1081,34 @@ button.compact:disabled { opacity: .5; cursor: not-allowed; }
 
 /* A toggle that reads as on. Everything else in the bar is momentary. */
 .p-btn.on { color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); }
+
+/* ── The player, laid out in two rows ────────────────────────────────────────
+   Controls, title and counter compete for one line, and every button added —
+   shuffle was the last — takes width from the seek bar, which is the one control
+   that needs it. The bar now spans the full width underneath them, where its
+   length is a property of the window rather than of how many buttons there are. */
+.player { flex-wrap: wrap; row-gap: 8px; }
+.player .p-scrub {
+  order: 10;                 /* last, whatever the source order */
+  flex: 1 0 100%;            /* its own row, full width */
+  display: flex; align-items: center; gap: 10px;
+}
+.player .p-range { flex: 1; min-width: 0; }
+.p-body { flex: 1 1 200px; }
+
+@media (max-width: 720px) {
+  /* On a phone the counter is the least useful thing competing for the row. */
+  .player .p-count { display: none; }
+  .player { padding: 8px 10px; gap: 10px; }
+}
+
+/* A document drawn into the page. Scrolls as one continuous run of pages, which
+   is how a phone expects to read; each page keeps a visible edge so the break is
+   obvious. */
+.pdf { width: 100%; height: 100%; overflow: auto; }
+.pdf-pages { display: flex; flex-direction: column; gap: 12px; padding: 4px; }
+.pdf-page {
+  display: block; width: 100%; height: auto;
+  background: #fff; border-radius: 4px;
+  box-shadow: 0 1px 3px rgba(0,0,0,.25);
+}

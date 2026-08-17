@@ -126,8 +126,9 @@ def scan_source(source_id: UUID, connector: LocalConnector) -> ScanResult:
                         text(
                             """
                             INSERT INTO replicas
-                                (item_id, source_id, dir_path, filename, ext, mtime, available)
-                            VALUES (:iid, :sid, :dir, :name, :ext, :mtime, TRUE)
+                                (item_id, source_id, dir_path, filename, ext, mtime,
+                                 available, remote_id)
+                            VALUES (:iid, :sid, :dir, :name, :ext, :mtime, TRUE, :remote)
                             """
                         ),
                         {
@@ -137,6 +138,7 @@ def scan_source(source_id: UUID, connector: LocalConnector) -> ScanResult:
                             "name": row["name"],
                             "ext": row["ext"],
                             "mtime": row["mtime"],
+                            "remote": row["remote_id"],
                         },
                     )
                     result.added += 1
@@ -144,11 +146,14 @@ def scan_source(source_id: UUID, connector: LocalConnector) -> ScanResult:
                     conn.execute(
                         text(
                             """
-                            UPDATE replicas SET mtime = :mtime, available = TRUE
+                            UPDATE replicas
+                            SET mtime = :mtime, available = TRUE,
+                                remote_id = coalesce(:remote, remote_id)
                             WHERE id = :rid
                             """
                         ),
-                        {"mtime": row["mtime"], "rid": str(existing[0])},
+                        {"mtime": row["mtime"], "remote": row["remote_id"],
+                         "rid": str(existing[0])},
                     )
                     # Kind as well as size: the classifier improves over time, and
                     # a file catalogued as "other" under an older version should
@@ -182,6 +187,10 @@ def scan_source(source_id: UUID, connector: LocalConnector) -> ScanResult:
                 "kind": kind,
                 "size": entry.size,
                 "mtime": entry.mtime,
+                # The provider's own handle for this file. Free here — the walk
+                # already has it — and it saves translating a path into an id
+                # later, which for Drive means listing every folder on the way.
+                "remote_id": entry.remote_id,
             }
         )
         if len(batch) >= BATCH:

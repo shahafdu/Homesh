@@ -57,7 +57,11 @@ export default function Player(props: {
           <span className="p-where">{current.path}</span>
         </div>
 
-        <div className="p-scrub">
+      </div>
+
+      {/* Its own row. Sharing a line with the controls left it a few centimetres
+          wide, and it is the control that most needs the width. */}
+      <div className="p-scrub">
           <span className="p-time">{formatTime(position)}</span>
           <input
             className="p-range"
@@ -71,7 +75,6 @@ export default function Player(props: {
             style={{ ["--pct" as string]: `${progress}%` }}
           />
           <span className="p-time">{formatTime(duration)}</span>
-        </div>
       </div>
 
       <div className="p-right">

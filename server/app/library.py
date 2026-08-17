@@ -386,6 +386,9 @@ def _scan_then_extract(source_id: UUID, connector) -> None:
     after means a large library is browsable long before it is fully described.
     """
     scan_source(source_id, connector)
+    # Folders may have moved during a scan, so anything remembered about where
+    # things are is now a guess.
+    forget_connectors()
 
     # Tag extraction reads bytes, which over a network is slow — hence the two
     # passes. It is no longer skipped for remote sources, though: doing so left
@@ -401,7 +404,32 @@ def _scan_then_extract(source_id: UUID, connector) -> None:
     backfill_durations(source_id, connector)
 
 
+# Connectors are kept rather than rebuilt. A Drive connector remembers which
+# folder ids it has already resolved, and that memory is the difference between
+# a one-second read and a seven-second one: built fresh, it has to walk from the
+# root of the drive, listing every folder on the way, before it can ask for a
+# single byte. A browser makes several range requests to play one song.
+_connectors: dict[UUID, object] = {}
+
+
+def forget_connectors() -> None:
+    """Drop the cache — after a scan, when the tree may have changed."""
+    _connectors.clear()
+
+
 def connector_for(source_id: UUID):
+    """The connector for a source, reused if one has already been built."""
+    existing = _connectors.get(source_id)
+    if existing is not None:
+        return existing
+
+    built = _build_connector(source_id)
+    if built is not None:
+        _connectors[source_id] = built
+    return built
+
+
+def _build_connector(source_id: UUID):
     """Build the right connector for a source, whatever kind it is."""
     from pathlib import Path
 
