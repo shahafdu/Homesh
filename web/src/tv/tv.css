@@ -175,3 +175,7 @@ body {
   object-fit: contain;
 }
 .player.photo .stage { background: #000; }
+
+/* A file that would not play. Amber rather than red: nothing is broken, this one
+   file simply cannot be decoded here, and the screen is ready for another. */
+.lede.warn { color: #e0a458; }

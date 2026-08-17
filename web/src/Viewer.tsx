@@ -29,6 +29,8 @@ export default function Viewer(props: {
 
   const [url, setUrl] = useState<string | null>(null);
   const [text, setText] = useState<string | null>(null);
+  // Set when direct play turned out not to work for this file.
+  const [fellBack, setFellBack] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const step = useCallback(
@@ -98,6 +100,12 @@ export default function Viewer(props: {
     };
   }, [file]);
 
+  // A new file gets a fresh chance at direct play; the last one's failure says
+  // nothing about it.
+  useEffect(() => {
+    setFellBack(false);
+  }, [file?.item_id]);
+
   const save = async () => {
     // A transient anchor rather than window.open: popup blockers treat a
     // programmatic open as suspicious, and this keeps the filename the server sent.
@@ -152,12 +160,30 @@ export default function Viewer(props: {
             <img className="v-img" src={url} alt={file.filename} />
           )}
 
-          {url && file.kind === "video" && !needsVideoConversion(file.ext) && (
-            // Direct play: these are the original bytes, decoded by the browser.
-            <video className="v-video" src={url} controls autoPlay playsInline />
+          {url && file.kind === "video" && !needsVideoConversion(file.ext) && !fellBack && (
+            // Direct play first: these are the original bytes, decoded by the
+            // browser, which is free where converting is not.
+            //
+            // The container is a poor guide to whether that will work — an .mp4
+            // can hold a codec from before H.264 was universal, and the browser
+            // then plays the sound and shows nothing at all, which looks far
+            // more broken than an honest failure. So the outcome is watched:
+            // an error, or a decoded track with no picture, falls back to
+            // converting as it plays.
+            <video
+              className="v-video"
+              src={url}
+              controls
+              autoPlay
+              playsInline
+              onError={() => setFellBack(true)}
+              onLoadedData={(e) => {
+                if (e.currentTarget.videoWidth === 0) setFellBack(true);
+              }}
+            />
           )}
 
-          {file.kind === "video" && needsVideoConversion(file.ext) && (
+          {file.kind === "video" && (needsVideoConversion(file.ext) || fellBack) && (
             <Convertible file={file} />
           )}
 

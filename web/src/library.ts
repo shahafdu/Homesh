@@ -275,8 +275,9 @@ export function hitAsFile(hit: SearchHit): FileEntry {
  * room works when watching it here does not.
  */
 const UNDECODABLE = new Set([
-  "m2t", "mts", "vob", "mpg", "mpeg", "m1v", "m2v", "mod", "tod",
-  "dv", "mxf", "rm", "rmvb", "asf", "divx",
+  "m2t", "mts", "vob", "mpg", "mpeg", "m1v", "m2v", "mod", "tod", "dv", "mxf",
+  "wmv", "avi", "asf", "divx", "xvid", "rm", "rmvb", "flv",
+  "3gp", "3g2",
 ]);
 
 export function needsVideoConversion(ext: string | null): boolean {

@@ -77,7 +77,12 @@ function formatTime(ms: number): string {
 export default function TvApp() {
   const [phase, setPhase] = useState<Phase>("starting");
   const [code, setCode] = useState<string | null>(null);
+  // The server is unreachable. Fatal to everything, so it takes over the screen.
   const [fault, setFault] = useState<string | null>(null);
+  // This one file would not play. Not fatal at all — and conflating the two is
+  // why a bad file put "Cannot reach the server" on the television and left it
+  // there, unable to accept anything else until the app was force-closed.
+  const [playFault, setPlayFault] = useState<string | null>(null);
   const [zoneName, setZoneName] = useState("This screen");
   const [connected, setConnected] = useState(false);
   const [now, setNow] = useState<Command | null>(null);
@@ -193,6 +198,7 @@ export default function TvApp() {
     const media = mediaRef.current;
     switch (cmd.type) {
       case "play":
+        setPlayFault(null);
         setNow(cmd);
         setPhase("playing");
         // A photo has nothing to start: it is an <img>, and there is no media
@@ -211,7 +217,17 @@ export default function TvApp() {
           if (!el || !cmd.url) return;
           el.src = cmd.url;
           if (cmd.position_ms) el.currentTime = cmd.position_ms / 1000;
-          void el.play().catch((e) => setFault(`Cannot play ${cmd.filename ?? "this"}: ${e}`));
+          void el.play().catch((e) => {
+            const why =
+              e instanceof Error && e.name === "NotSupportedError"
+                ? "this screen cannot decode that format"
+                : String(e);
+            setPlayFault(`${cmd.filename ?? "That file"} — ${why}`);
+            // Back to a state that can be given something else. A screen stuck
+            // on an error is a screen somebody has to walk over to.
+            setPhase("idle");
+            setNow(null);
+          });
         }, 0);
         break;
       case "pause":
@@ -223,6 +239,7 @@ export default function TvApp() {
         else void media?.play().catch(() => undefined);
         break;
       case "stop":
+        setPlayFault(null);
         native()?.stop();
         media?.pause();
         setNow(null);
@@ -236,6 +253,7 @@ export default function TvApp() {
         break;
     }
   }, []);
+
 
   const report = useCallback((state: string) => {
     const socket = socketRef.current;
@@ -270,13 +288,67 @@ export default function TvApp() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // The remote, on the screen itself.
+  //
+  // Everything was driven from a phone, which is right until the phone is in
+  // another room, or the person watching is not the person who started it. These
+  // are the keys a television remote actually sends.
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      const media = mediaRef.current;
+      const player = native();
+
+      const seekBy = (seconds: number) => {
+        if (player && now?.kind === "video") {
+          player.play(now.url ?? "", Math.max(0, player.positionMs() + seconds * 1000));
+        } else if (media) {
+          media.currentTime = Math.max(0, media.currentTime + seconds);
+        }
+      };
+
+      switch (event.key) {
+        case "ArrowRight":
+          seekBy(30);
+          break;
+        case "ArrowLeft":
+          seekBy(-15);
+          break;
+        case "MediaPlayPause":
+        case "Enter":
+        case " ": {
+          const playing = player?.isPlaying() ?? !media?.paused;
+          report(playing ? "paused" : "playing");
+          if (player && now?.kind === "video") {
+            playing ? player.pause() : player.resume();
+          } else if (media) {
+            playing ? media.pause() : void media.play().catch(() => undefined);
+          }
+          break;
+        }
+        case "MediaStop":
+          handle({ type: "stop" });
+          break;
+        default:
+          return;
+      }
+      event.preventDefault();
+    };
+
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [now, handle, report]);
+
+
   useEffect(() => {
     // The native player is outside React and outside the media element, so it
     // reports through these two hooks. Without the first, the server never
     // learns a film ended and the queue stops after one.
     window.homeshVideoEnded = () => report("ended");
-    window.homeshVideoFailed = (code: number) =>
-      setFault(`The screen could not play this file (error ${code}).`);
+    window.homeshVideoFailed = (code: number) => {
+      setPlayFault(`The screen could not play that file (error ${code}).`);
+      setPhase("idle");
+      setNow(null);
+    };
     return () => {
       window.homeshVideoEnded = undefined;
       window.homeshVideoFailed = undefined;
@@ -424,7 +496,11 @@ export default function TvApp() {
       <div className="idle">
         <div className="brand">Homesh</div>
         <div className="zone-name">{zoneName}</div>
-        <p className="lede">Ready. Choose something on your phone and send it here.</p>
+        {playFault ? (
+          <p className="lede warn">{playFault}</p>
+        ) : (
+          <p className="lede">Ready. Choose something on your phone and send it here.</p>
+        )}
         <div className="badge">
           <span className={`dot${connected ? " live" : ""}`} />
           {connected ? "Connected" : "Connecting…"}

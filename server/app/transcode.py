@@ -41,8 +41,15 @@ router = APIRouter(prefix="/api/videos", tags=["video"])
 # Containers whose video is, in practice, MPEG-2 or another codec no browser
 # carries. Everything else is offered as direct play first and only lands here
 # if the browser actually refuses it.
-NEEDS_CONVERSION = {"m2t", "mts", "vob", "mpg", "mpeg", "m1v", "m2v", "mod", "tod",
-                    "dv", "mxf", "rm", "rmvb", "asf", "divx"}
+NEEDS_CONVERSION = {
+    # MPEG-2 and camcorder containers
+    "m2t", "mts", "vob", "mpg", "mpeg", "m1v", "m2v", "mod", "tod", "dv", "mxf",
+    # Windows Media and friends: 329 .wmv and 298 .avi in this library alone, and
+    # no browser has ever played either.
+    "wmv", "avi", "asf", "divx", "xvid", "rm", "rmvb", "flv",
+    # Phone video from before H.264 was universal
+    "3gp", "3g2",
+}
 
 # One at a time. Encoding will use every core it is given, and a household that
 # cannot browse its library while a tape converts has been given a worse problem
