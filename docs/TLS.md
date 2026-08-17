@@ -46,7 +46,24 @@ Note the machine's name in the output — something like
 The app is in both stores. Sign in with the same account. That is all — the phone
 can now reach the server from anywhere, including from your office.
 
-## 3. Turn on HTTPS  (about 2 minutes)
+## 3. Enable certificates for the tailnet  (once, in the browser)
+
+HTTPS certificates are **off by default** on a new tailnet, and nothing on the
+machine can turn them on. Without this step the next command fails with:
+
+> 500 Internal Server Error: your Tailscale account does not support getting TLS certs
+
+Which reads like an account limitation and is not one — it is a switch nobody has
+flipped yet. In the admin console at <https://login.tailscale.com/admin/dns>:
+
+1. **MagicDNS** — enable it if it is not already. The certificate is issued for
+   the MagicDNS name, so there is no name to put on one until this is on.
+2. **HTTPS Certificates** — enable.
+
+That page also shows your tailnet name, which is the part after the machine name
+in `homesh.tailnet-name.ts.net`.
+
+## 4. Turn on HTTPS  (about 2 minutes)
 
 Tailscale issues and renews a real certificate for that hostname:
 
@@ -65,7 +82,7 @@ If you want it reachable from outside your tailnet as well — the office case �
 add `tailscale funnel --bg 443`. Leave that off if you would rather it stay
 private to your own devices.
 
-## 4. Take a link code, *before* switching
+## 5. Take a link code, *before* switching
 
 On the PC, still at `http://localhost:8080` and still signed in:
 
@@ -74,7 +91,7 @@ On the PC, still at `http://localhost:8080` and still signed in:
 This is your way back in after the address changes, and it can only be issued
 while signed in — which you will not be, a minute from now.
 
-## 5. Switch the address
+## 6. Switch the address
 
 ```powershell
 .\tools\set-origin.ps1 -Origin https://homesh.tailnet-name.ts.net
@@ -83,11 +100,11 @@ docker compose up -d
 
 The script prints what it is about to invalidate before it does it.
 
-## 6. Sign in at the new address, and enrol a passkey
+## 7. Sign in at the new address, and enrol a passkey
 
 Open `https://homesh.tailnet-name.ts.net` on the PC.
 
-1. Choose **Use a code** and enter the code from step 4
+1. Choose **Use a code** and enter the code from step 5
 2. Go to **Settings → Add a passkey to this device**
 
 Now do the same on your phone: open the same address, **Use on another device**
