@@ -16,7 +16,6 @@ The list to work from. Everything else can proceed without you.
 
 | | What | Why it matters |
 |---|---|---|
-
 | ⏳ | **Check the bedroom box updates itself** to TV app 0.4.0 | It may still be on 0.2.0, which predates the native video player |
 | ⏳ | **Add a passkey on your phone** at the ts.net address | Settings → Add a passkey. Then it is a fingerprint, and Share can work |
 | ⏳ | **Point MEDIA_ROOTS at real local media**, or leave it empty | The synthetic test library was removed; nothing local is indexed now |
@@ -56,8 +55,9 @@ Deployed and believed correct; not yet confirmed in use.
 
 | | Item | Note |
 |---|---|---|
-| 🟡 | Sharing documents | Now sent as the PDF the server already renders — every phone opens one, and `.doc` had no media type at all, which is the one thing a share sheet always refuses |
-| 🟡 | Sharing large videos | A 1.58 GB .avi cannot go through a share sheet; it now says so and points at a Drive link |
+| 🟡 | **Sharing anything slow to fetch** | The real cause of "must be handling a user gesture": a browser allows a share only for a few seconds after the tap, and fetching a large file outlives it. Now it shows progress and turns into **Send now** — one extra tap, nothing re-downloaded |
+| 🟡 | Sharing documents | Sent as the PDF the server already renders — every phone opens one, and `.doc` had no media type at all, which a share sheet always refuses |
+| 🟡 | Sharing very large videos | Past 256 MB a phone cannot hold the file in memory at all; it says so and points at a Drive link |
 | 🟡 | **Look for new folders** in Settings | Sharing a folder with the Homesh account is how one is added; discovery used to run only at startup |
 | 🟡 | TV app recovers from an unplayable file | Was showing "cannot reach server" and sticking |
 | 🟡 | TV remote controls — seek, pause, stop | New in 0.4.0 |

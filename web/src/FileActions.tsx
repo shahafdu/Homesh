@@ -8,8 +8,9 @@ import {
   createDriveLink,
   downloadFile,
   driveLink,
+  handOver,
+  prepareShare,
   revokeDriveLink,
-  shareFile,
   type DriveLink,
 } from "./share";
 
@@ -44,17 +45,55 @@ export default function FileActions(props: {
       .catch(() => setDrive({ supported: false, url: null, reason: null }));
   }, [file.item_id]);
 
-  const share = async () => {
-    setBusy("Preparing…");
-    setNote(null);
-    const result = await shareFile(file.item_id, file.filename, file.size);
-    setBusy(null);
+  // A file already fetched and waiting for one more tap.
+  //
+  // The browser only allows a share while the tap that asked for it is still
+  // live — a few seconds. Anything slow to fetch outlives that, and the share is
+  // then refused with "Must be handling a user gesture". So the bytes are
+  // collected first, offered immediately in case that was quick enough, and
+  // otherwise held here for a tap that is unambiguously fresh.
+  const [ready, setReady] = useState<File | null>(null);
 
+  const offer = async (f: File) => {
+    const result = await handOver(f);
     if (result.ok || result.reason === "cancelled") {
       props.onClose();
+      return true;
+    }
+    if (result.reason === "needs-tap") return false;
+    setNote(result.detail);
+    return true;
+  };
+
+  const share = async () => {
+    // A second tap on the same button: the file is in hand, so this goes
+    // straight to the share sheet with nothing awaited in between.
+    if (ready) {
+      if (!(await offer(ready))) setNote("Tap Send again.");
       return;
     }
-    setNote(result.detail);
+
+    setBusy("Preparing…");
+    setNote(null);
+    const prepared = await prepareShare(
+      file.item_id,
+      file.filename,
+      file.size,
+      (fraction) =>
+        setBusy(fraction === null ? "Preparing…" : `Preparing… ${Math.round(fraction * 100)}%`),
+    );
+    setBusy(null);
+
+    if (!prepared.ok) {
+      setNote(prepared.detail);
+      return;
+    }
+    if (await offer(prepared.file)) return;
+
+    // Too slow for one tap. Nothing is lost — the file is downloaded and the
+    // button now says so.
+    setReady(prepared.file);
+    setNote(null);
   };
 
   return (
@@ -119,14 +158,20 @@ export default function FileActions(props: {
             </span>
           </button>
 
-          <button className="action" disabled={busy !== null || !sharable} onClick={share}>
+          <button
+            className={ready ? "action primary" : "action"}
+            disabled={busy !== null || !sharable}
+            onClick={share}
+          >
             <span className="action-ic">↗</span>
             <span>
-              Share…
+              {ready ? "Send now" : "Share…"}
               <span className="muted small">
-                {sharable
-                  ? "Sends the file itself — WhatsApp, mail, anywhere"
-                  : "Needs a secure connection; download and share from your files"}
+                {ready
+                  ? "Ready — tap to choose WhatsApp, mail, anywhere"
+                  : sharable
+                    ? "Sends the file itself — WhatsApp, mail, anywhere"
+                    : "Needs a secure connection; download and share from your files"}
               </span>
             </span>
           </button>

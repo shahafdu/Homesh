@@ -24,10 +24,17 @@ const ext = (filename: string) => filename.split(".").pop()?.toLowerCase() ?? ""
  */
 const MAX_SHARE_BYTES = 256 * 1024 * 1024;
 
+/** The result of fetching the bytes, before anything is handed to the phone. */
+export type Prepared =
+  | { ok: true; file: File }
+  | { ok: false; reason: "too-large" | "unsupported" | "failed"; detail: string };
+
+/** The result of offering the file to the system share sheet. */
 export type ShareOutcome =
   | { ok: true }
   | { ok: false; reason: "cancelled" }
-  | { ok: false; reason: "too-large" | "unsupported" | "failed"; detail: string };
+  | { ok: false; reason: "needs-tap" }
+  | { ok: false; reason: "unsupported" | "failed"; detail: string };
 
 /** Whether the system share sheet can take files at all.
  *
@@ -75,11 +82,24 @@ export function canShareFiles(): boolean {
   return typeof navigator.canShare === "function" && typeof navigator.share === "function";
 }
 
-export async function shareFile(
+/** Fetch the bytes and wrap them as a file the share sheet will accept.
+ *
+ * Deliberately separate from handing it over, because of a browser rule that is
+ * easy to miss: `navigator.share` may only be called while the tap that asked
+ * for it is still "live", a window of a few seconds. Fetching first spends that
+ * window, and the share then fails with *"Must be handling a user gesture"* —
+ * which is why a 30 MB video failed where a 4 MB song succeeded, and why a
+ * document failed whenever the server was still rendering its PDF. It was never
+ * about the file type; it was about how long the file took to arrive.
+ *
+ * @param onProgress fraction complete, or null when the length is unknown.
+ */
+export async function prepareShare(
   itemId: string,
   filename: string,
   size: number | null,
-): Promise<ShareOutcome> {
+  onProgress?: (fraction: number | null) => void,
+): Promise<Prepared> {
   if (!canShareFiles()) {
     return {
       ok: false,
@@ -88,7 +108,15 @@ export async function shareFile(
     };
   }
 
-  if (size !== null && size > MAX_SHARE_BYTES) {
+  // An office document goes as the PDF the server already renders for reading
+  // it. Every phone can open a PDF and every share sheet accepts one, where
+  // .doc and .docx are refused by some and unopenable on others — and a PDF is
+  // what somebody sending a document to a relative wanted anyway.
+  const asPdf = needsConversion(ext(filename));
+
+  // The ceiling is about the original bytes; a rendered PDF is small whatever
+  // the source document weighs.
+  if (!asPdf && size !== null && size > MAX_SHARE_BYTES) {
     return {
       ok: false,
       reason: "too-large",
@@ -102,15 +130,10 @@ export async function shareFile(
 
   let file: File;
   try {
-    // An office document goes as the PDF the server already renders for
-    // reading it. Every phone can open a PDF and every share sheet accepts one,
-    // where .doc and .docx are refused by some and unopenable on others — and a
-    // PDF is what somebody sending a document to a relative wanted anyway.
-    const asPdf = needsConversion(ext(filename));
     const url = asPdf ? documentUrl(itemId) : await downloadUrl(itemId);
     const res = await fetch(url, { credentials: "same-origin" });
     if (!res.ok) throw new Error(`server returned ${res.status}`);
-    const blob = await res.blob();
+    const blob = await readWithProgress(res, size, onProgress);
     // A generic type is refused by the share sheet, which will not attach
     // something it cannot name. The server falls back to octet-stream for any
     // extension it does not recognise, so the extension is consulted here before
@@ -126,8 +149,8 @@ export async function shareFile(
     return { ok: false, reason: "failed", detail: e instanceof Error ? e.message : String(e) };
   }
 
-  // Ask before sharing: some platforms accept navigator.share but refuse files,
-  // and finding that out by throwing loses the download the user just waited for.
+  // Ask before offering: some platforms accept navigator.share but refuse
+  // files, and finding that out by throwing loses the download just waited for.
   if (!navigator.canShare({ files: [file] })) {
     return {
       ok: false,
@@ -138,6 +161,16 @@ export async function shareFile(
     };
   }
 
+  return { ok: true, file };
+}
+
+/** Offer a prepared file to the system share sheet.
+ *
+ * Must be reached directly from a tap with nothing awaited in between, or the
+ * browser refuses. Callers try it straight after preparing — which works
+ * whenever that was quick — and fall back to a second tap when it was not.
+ */
+export async function handOver(file: File): Promise<ShareOutcome> {
   try {
     // Only the file. No title, no text, and above all no url — a share sheet
     // will happily send a link alongside the attachment, which is the one thing
@@ -149,8 +182,39 @@ export async function shareFile(
     if (e instanceof DOMException && e.name === "AbortError") {
       return { ok: false, reason: "cancelled" };
     }
+    // The tap went stale while the file was being fetched. Recoverable, and the
+    // file is in hand — the caller only needs one more tap.
+    if (e instanceof DOMException && e.name === "NotAllowedError") {
+      return { ok: false, reason: "needs-tap" };
+    }
     return { ok: false, reason: "failed", detail: e instanceof Error ? e.message : String(e) };
   }
+}
+
+/** Read a response to a blob, reporting how far along it is.
+ *
+ * A share large enough to need a progress bar is exactly the one that will need
+ * a second tap, so the wait has to be visible rather than look like a hang.
+ */
+async function readWithProgress(
+  res: Response,
+  size: number | null,
+  onProgress?: (fraction: number | null) => void,
+): Promise<Blob> {
+  const declared = Number(res.headers.get("content-length")) || size || 0;
+  if (!onProgress || !res.body) return res.blob();
+
+  const reader = res.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let received = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    chunks.push(value);
+    received += value.length;
+    onProgress(declared > 0 ? Math.min(1, received / declared) : null);
+  }
+  return new Blob(chunks as BlobPart[], { type: res.headers.get("content-type") ?? "" });
 }
 
 /** Save a copy to this device.
