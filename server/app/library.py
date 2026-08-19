@@ -7,6 +7,7 @@ argument (ARCHITECTURE.md §3.3).
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from uuid import UUID
 
@@ -111,6 +112,32 @@ def _register_drive() -> None:
                 {"name": name, "prefix": prefix, "rid": folder_id},
             )
             log.info("source %s -> Drive folder %r", prefix, name)
+
+
+@router.post("/sources/discover", status_code=status.HTTP_202_ACCEPTED)
+async def discover_sources(user: CurrentUser = Depends(require_user)) -> dict:
+    """Look for folders that have been shared with this server since it started.
+
+    Sharing a folder with the Homesh account is how a folder is added — there is
+    no upload, and nothing to point at a path. But discovery only ran at startup,
+    so a folder shared this afternoon stayed invisible until the next restart,
+    with nothing in the interface to say so or to hurry it along.
+    """
+    if not user.is_admin:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "admin only")
+
+    before = _source_names()
+    await asyncio.to_thread(register_sources)
+    after = _source_names()
+
+    added = sorted(after - before)
+    log.info("discovery found %d new source(s)", len(added))
+    return {"added": added, "total": len(after)}
+
+
+def _source_names() -> set[str]:
+    with get_engine().connect() as conn:
+        return {r[0] for r in conn.execute(text("SELECT mount_prefix FROM sources")).all()}
 
 
 @router.get("/sources")

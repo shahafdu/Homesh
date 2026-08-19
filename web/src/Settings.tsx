@@ -1,7 +1,7 @@
 import { useLockScroll } from "./useLockScroll";
 import { useCallback, useEffect, useState } from "react";
 import { addPasskey, listPasskeys, passkeysSupported, removePasskey, type Passkey } from "./auth";
-import { formatDate, listSources, scanSource, type Source } from "./library";
+import { discoverSources, formatDate, listSources, scanSource, type Source } from "./library";
 import { PALETTES, type Appearance, type Palette, type Prefs } from "./prefs";
 
 const APPEARANCES: { id: Appearance; label: string }[] = [
@@ -105,6 +105,8 @@ export default function Settings(props: {
  */
 function Sources() {
   const [sources, setSources] = useState<Source[]>([]);
+  const [looking, setLooking] = useState(false);
+  const [found, setFound] = useState<string | null>(null);
 
   const refresh = useCallback(() => {
     listSources().then(setSources).catch(() => undefined);
@@ -123,8 +125,6 @@ function Sources() {
     return () => window.clearInterval(poll);
   }, [scanning, refresh]);
 
-  if (sources.length === 0) return null;
-
   return (
     <div className="group">
       <label>Library sources</label>
@@ -136,6 +136,33 @@ function Sources() {
           refresh();
         }}
       />
+
+      {/* How a folder is added: share it with the Homesh account in Drive, then
+          ask here. There is nothing to upload and no path to type. */}
+      <button
+        className="compact"
+        disabled={looking}
+        onClick={async () => {
+          setLooking(true);
+          setFound(null);
+          try {
+            const result = await discoverSources();
+            setFound(
+              result.added.length
+                ? `Added ${result.added.join(", ")}`
+                : "Nothing new — share a folder with the Homesh account in Drive first.",
+            );
+          } catch (e) {
+            setFound(e instanceof Error ? e.message : String(e));
+          } finally {
+            setLooking(false);
+            refresh();
+          }
+        }}
+      >
+        {looking ? "Looking…" : "Look for new folders"}
+      </button>
+      {found && <p className="muted small">{found}</p>}
     </div>
   );
 }

@@ -86,6 +86,15 @@ async def _scan_one(source_id: UUID, name: str) -> None:
 
 async def sweep(interval: timedelta) -> int:
     """Scan everything that is due. Returns how many were scanned."""
+    # A folder shared with this server since the last sweep is a new source, and
+    # nobody should have to restart anything for it to appear.
+    from .library import register_sources
+
+    try:
+        await asyncio.to_thread(register_sources)
+    except Exception:  # noqa: BLE001 - discovery failing must not stop scanning
+        log.exception("could not look for new sources")
+
     due = _due(interval)
     if not due:
         return 0

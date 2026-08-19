@@ -139,6 +139,15 @@ export const documentUrl = (itemId: string) => `/api/documents/${itemId}`;
 
 export const scanSource = (id: string) => api.post(`/api/sources/${id}/scan`);
 
+/** Look for folders shared with this server since it started.
+ *
+ * Sharing a folder with the Homesh account is how a folder is added — there is
+ * nothing to upload and no path to type. Discovery ran only at startup, so a
+ * folder shared this afternoon stayed invisible with nothing to say why.
+ */
+export const discoverSources = () =>
+  api.post<{ added: string[]; total: number }>("/api/sources/discover");
+
 export function formatSize(bytes: number | null): string {
   if (bytes === null) return "";
   if (bytes < 1024) return `${bytes} B`;

@@ -11,7 +11,10 @@
  */
 
 import { api } from "./api";
-import { downloadUrl } from "./library";
+import { documentUrl, downloadUrl, needsConversion } from "./library";
+
+/** The extension, lowercased, for the handful of decisions that turn on it. */
+const ext = (filename: string) => filename.split(".").pop()?.toLowerCase() ?? "";
 
 /** Above this, sharing is refused in favour of a download.
  *
@@ -40,19 +43,32 @@ export type ShareOutcome =
  * to fail.
  */
 function guessType(filename: string): string {
-  const ext = filename.split(".").pop()?.toLowerCase() ?? "";
+  const suffix = ext(filename);
   const known: Record<string, string> = {
+    // Audio
     mp3: "audio/mpeg", m4a: "audio/mp4", aac: "audio/aac", flac: "audio/flac",
-    wav: "audio/wav", ogg: "audio/ogg", opus: "audio/opus",
+    wav: "audio/wav", ogg: "audio/ogg", opus: "audio/opus", wma: "audio/x-ms-wma",
+    // Video
     mp4: "video/mp4", m4v: "video/mp4", mov: "video/quicktime",
     mkv: "video/x-matroska", avi: "video/x-msvideo", wmv: "video/x-ms-wmv",
+    mpg: "video/mpeg", mpeg: "video/mpeg", "3gp": "video/3gpp", webm: "video/webm",
+    // Images
     jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", gif: "image/gif",
-    webp: "image/webp", heic: "image/heic",
-    pdf: "application/pdf", txt: "text/plain",
+    webp: "image/webp", heic: "image/heic", bmp: "image/bmp", tif: "image/tiff",
+    // Documents. .doc was missing, which is why sharing one did nothing: an
+    // unnamed type becomes application/octet-stream, and that is the one answer
+    // a share sheet always refuses.
+    pdf: "application/pdf", txt: "text/plain", csv: "text/csv", rtf: "application/rtf",
+    doc: "application/msword",
     docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    xls: "application/vnd.ms-excel",
     xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    ppt: "application/vnd.ms-powerpoint",
+    pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    odt: "application/vnd.oasis.opendocument.text",
+    ods: "application/vnd.oasis.opendocument.spreadsheet",
   };
-  return known[ext] ?? "application/octet-stream";
+  return known[suffix] ?? "application/octet-stream";
 }
 
 export function canShareFiles(): boolean {
@@ -76,13 +92,22 @@ export async function shareFile(
     return {
       ok: false,
       reason: "too-large",
-      detail: "Too large to share directly. Download it, then attach it from your files.",
+      // Films in this library run past a gigabyte, and a phone cannot hold one
+      // in memory to hand to a share sheet. A Drive link carries any size.
+      detail:
+        "Too big to attach — a phone cannot hold it in memory. Send a Drive link " +
+        "instead, or download it and attach it from your files.",
     };
   }
 
   let file: File;
   try {
-    const url = await downloadUrl(itemId);
+    // An office document goes as the PDF the server already renders for
+    // reading it. Every phone can open a PDF and every share sheet accepts one,
+    // where .doc and .docx are refused by some and unopenable on others — and a
+    // PDF is what somebody sending a document to a relative wanted anyway.
+    const asPdf = needsConversion(ext(filename));
+    const url = asPdf ? documentUrl(itemId) : await downloadUrl(itemId);
     const res = await fetch(url, { credentials: "same-origin" });
     if (!res.ok) throw new Error(`server returned ${res.status}`);
     const blob = await res.blob();
@@ -90,10 +115,13 @@ export async function shareFile(
     // something it cannot name. The server falls back to octet-stream for any
     // extension it does not recognise, so the extension is consulted here before
     // giving up on the file.
-    const type = blob.type && blob.type !== "application/octet-stream"
-      ? blob.type
-      : guessType(filename);
-    file = new File([blob], filename, { type });
+    const name = asPdf ? `${filename}.pdf` : filename;
+    const type = asPdf
+      ? "application/pdf"
+      : blob.type && blob.type !== "application/octet-stream"
+        ? blob.type
+        : guessType(filename);
+    file = new File([blob], name, { type });
   } catch (e) {
     return { ok: false, reason: "failed", detail: e instanceof Error ? e.message : String(e) };
   }
@@ -104,7 +132,9 @@ export async function shareFile(
     return {
       ok: false,
       reason: "unsupported",
-      detail: "This device will not attach that file type. Download it instead.",
+      detail:
+        `This phone will not attach a ${ext(filename) || "file"} file. Send a Drive ` +
+        "link instead, or download it and attach it from your files.",
     };
   }
 

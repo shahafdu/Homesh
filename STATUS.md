@@ -16,7 +16,7 @@ The list to work from. Everything else can proceed without you.
 
 | | What | Why it matters |
 |---|---|---|
-| ⏳ | **Share three Drive folders as Editor**, not Viewer | "Create a Drive link" fails until then — a viewer cannot grant access it does not have |
+
 | ⏳ | **Check the bedroom box updates itself** to TV app 0.4.0 | It may still be on 0.2.0, which predates the native video player |
 | ⏳ | **Add a passkey on your phone** at the ts.net address | Settings → Add a passkey. Then it is a fingerprint, and Share can work |
 | ⏳ | **Point MEDIA_ROOTS at real local media**, or leave it empty | The synthetic test library was removed; nothing local is indexed now |
@@ -44,6 +44,7 @@ Verified means measured or driven end to end, not merely compiled.
 - ✅ **Playlists** — 41 Winamp lists imported, 98.6% of tracks matched;
   create, rename, reorder, copy, share
 - ✅ **TV app** — discovery, self-update, pairing, native video player, remote control
+- ✅ **Sharing** — songs share as files; Drive links work for every type
 - ✅ **HTTPS** — Tailscale, real certificate, reachable from your phone anywhere,
   nothing on the public internet
 
@@ -55,7 +56,9 @@ Deployed and believed correct; not yet confirmed in use.
 
 | | Item | Note |
 |---|---|---|
-| 🟡 | Share a file from the phone | Was blocked by http; now on https. Just given the file a proper media type, which is the next most likely cause |
+| 🟡 | Sharing documents | Now sent as the PDF the server already renders — every phone opens one, and `.doc` had no media type at all, which is the one thing a share sheet always refuses |
+| 🟡 | Sharing large videos | A 1.58 GB .avi cannot go through a share sheet; it now says so and points at a Drive link |
+| 🟡 | **Look for new folders** in Settings | Sharing a folder with the Homesh account is how one is added; discovery used to run only at startup |
 | 🟡 | TV app recovers from an unplayable file | Was showing "cannot reach server" and sticking |
 | 🟡 | TV remote controls — seek, pause, stop | New in 0.4.0 |
 | 🟡 | wmv / avi / 3gp playing in the browser | 627 of your 802 videos |
