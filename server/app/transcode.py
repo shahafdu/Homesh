@@ -112,10 +112,23 @@ async def _run(item_id: UUID, user_id: UUID, ext: str) -> None:
         args = [
             "ffmpeg", "-hide_banner", "-nostdin", "-y",
             "-i", source,
-            # HDV and DVD are interlaced; leaving it produces combing on every
-            # pan, which is the first thing anyone notices.
-            "-vf", "yadif",
+            # First video and first audio track, and neither is required: an avi
+            # with two language tracks would otherwise carry both, and one with
+            # no sound at all would fail for lack of a stream to map.
+            "-map", "0:v:0?", "-map", "0:a:0?",
+            # yadif: HDV and DVD are interlaced; leaving it produces combing on
+            # every pan, which is the first thing anyone notices.
+            #
+            # scale: H.264 cannot encode an odd width or height in 4:2:0, where
+            # the chroma planes are half size — x264 refuses to open at all,
+            # with "Invalid argument" and nothing written. Old camcorder AVIs are
+            # full of sizes like 640x415, so a dimension is rounded down to even
+            # rather than left to fail. One line of pixels, invisible.
+            "-vf", "yadif,scale=trunc(iw/2)*2:trunc(ih/2)*2",
             "-c:v", "libx264", "-preset", "veryfast", "-crf", "22",
+            # Old formats carry pixel layouts — 4:1:1 from DV, 4:1:0 from early
+            # codecs — that x264 will happily encode and no phone will decode.
+            "-pix_fmt", "yuv420p",
             "-c:a", "aac", "-b:a", "192k",
             # Lets a browser start playing before the whole file has arrived.
             "-movflags", "+faststart",
@@ -321,8 +334,15 @@ async def live_stream(
         # interlacing produces combing on every pan, and leaving the height at
         # 1080 left no margin over real time on four efficiency cores — a stream
         # that cannot keep up stutters, which is worse than being 720p on a phone.
-        "-vf", "yadif,scale=-2:720",
+        #
+        # min() rather than a flat 720: half of these files are camcorder video
+        # smaller than that already, and enlarging one costs encoder time to
+        # produce a bigger stream of the same detail. trunc() keeps the result
+        # even, which H.264 requires in 4:2:0 — a 640x415 AVI is not hypothetical
+        # here, and an odd dimension stops x264 from opening at all.
+        "-vf", "yadif,scale=-2:'min(720,trunc(ih/2)*2)'",
         "-c:v", "libx264", "-preset", LIVE_PRESET, "-tune", "zerolatency", "-crf", "26",
+        "-pix_fmt", "yuv420p",
         "-c:a", "aac", "-b:a", "160k",
         # An MP4 that can be played while it is still being written. Without
         # these flags the header lands at the end of the file, and a browser

@@ -295,7 +295,15 @@ async function convertToMp4(
       const now = await conversionStatus(itemId);
       onProgress?.("Converting", now.progress / 100);
       if (now.state === "done") break;
-      if (now.state === "failed") return refuse(now.error ?? "Converting it failed.");
+      // Not the encoder's own words. What came back was four lines of libx264
+      // stack trace, which says nothing to the person holding the phone; the
+      // detail is in the server log, where it is of use to somebody.
+      if (now.state === "failed") {
+        return refuse(
+          "This video could not be converted. Send a Drive link instead, or " +
+            "download it and attach it from your files.",
+        );
+      }
     }
   }
 
