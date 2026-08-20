@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useLockScroll } from "./useLockScroll";
 import { copyText } from "./copy";
 import { AddToPlaylist } from "./Playlists";
@@ -11,6 +11,7 @@ import {
   handOver,
   prepareShare,
   revokeDriveLink,
+  shareRoute,
   type DriveLink,
 } from "./share";
 
@@ -36,6 +37,7 @@ export default function FileActions(props: {
   const [addingToList, setAddingToList] = useState(false);
 
   const sharable = canShareFiles();
+  const plan = shareRoute(file);
 
   // Asked for every file rather than guessed from the path: whether a copy sits
   // in Drive is the server's knowledge, not something to infer from a prefix.
@@ -53,6 +55,14 @@ export default function FileActions(props: {
   // collected first, offered immediately in case that was quick enough, and
   // otherwise held here for a tap that is unambiguously fresh.
   const [ready, setReady] = useState<File | null>(null);
+
+  // Closing the sheet stops waiting on it. A conversion already under way is the
+  // server's business and carries on; reopening rejoins it where it got to.
+  const stop = useRef(new AbortController());
+  useEffect(() => {
+    const controller = stop.current;
+    return () => controller.abort();
+  }, []);
 
   const offer = async (f: File) => {
     const result = await handOver(f);
@@ -76,11 +86,10 @@ export default function FileActions(props: {
     setBusy("Preparing…");
     setNote(null);
     const prepared = await prepareShare(
-      file.item_id,
-      file.filename,
-      file.size,
-      (fraction) =>
-        setBusy(fraction === null ? "Preparing…" : `Preparing… ${Math.round(fraction * 100)}%`),
+      file,
+      (step, fraction) =>
+        setBusy(fraction === null ? `${step}…` : `${step}… ${Math.round(fraction * 100)}%`),
+      stop.current.signal,
     );
     setBusy(null);
 
@@ -169,9 +178,15 @@ export default function FileActions(props: {
               <span className="muted small">
                 {ready
                   ? "Ready — tap to choose WhatsApp, mail, anywhere"
-                  : sharable
-                    ? "Sends the file itself — WhatsApp, mail, anywhere"
-                    : "Needs a secure connection; download and share from your files"}
+                  : !sharable
+                    ? "Needs a secure connection; download and share from your files"
+                    : plan === "mp4"
+                      ? "Converts it to MP4 first — phones will not accept the original"
+                      : plan === "pdf"
+                        ? "Sends it as a PDF, which any phone can open"
+                        : plan === "none"
+                          ? "Phones will not accept this kind of file — use a Drive link"
+                          : "Sends the file itself — WhatsApp, mail, anywhere"}
               </span>
             </span>
           </button>

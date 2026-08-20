@@ -11,7 +11,15 @@
  */
 
 import { api } from "./api";
-import { documentUrl, downloadUrl, needsConversion } from "./library";
+import {
+  conversionStatus,
+  convertedUrl,
+  documentUrl,
+  downloadUrl,
+  needsConversion,
+  startConversion,
+  type FileEntry,
+} from "./library";
 
 /** The extension, lowercased, for the handful of decisions that turn on it. */
 const ext = (filename: string) => filename.split(".").pop()?.toLowerCase() ?? "";
@@ -23,6 +31,62 @@ const ext = (filename: string) => filename.split(".").pop()?.toLowerCase() ?? ""
  * to storage instead and has no such ceiling.
  */
 const MAX_SHARE_BYTES = 256 * 1024 * 1024;
+
+/** The extensions a browser will actually let a page attach.
+ *
+ * Not a guess and not a preference — this is Chromium's own allowlist, from
+ * `chrome/browser/webshare/share_service_impl.cc`. Anything outside it is
+ * refused with `NotAllowedError`, which is the same exception a stale tap
+ * raises, which is why the two were indistinguishable from the message alone.
+ *
+ * It has to be checked here because **`navigator.canShare` does not check it**:
+ * Blink validates the media type loosely (`video/*` passes), while the browser
+ * process validates the *extension* strictly. So canShare says yes to an .avi
+ * and the share then fails — after the whole file has been fetched.
+ *
+ * Notably absent, and all present in this library: avi, wmv, mkv, mov, doc,
+ * docx, xls, wma, aac, heic. Those need converting to something on this list,
+ * or a Drive link.
+ */
+const SHAREABLE = new Set([
+  "avif", "bmp", "css", "csv", "ehtml", "flac", "gif", "htm", "html", "ico",
+  "jfif", "jpeg", "jpg", "m4a", "m4v", "mp3", "mp4", "mpeg", "mpg", "oga",
+  "ogg", "ogm", "ogv", "opus", "pdf", "pjp", "pjpeg", "png", "shtml", "svg",
+  "svgz", "text", "tif", "tiff", "txt", "wav", "weba", "webm", "webp", "xbm",
+]);
+
+/** How a given file can be got onto somebody else's phone.
+ *
+ * `pdf` and `mp4` mean the server already has a conversion for it, built for
+ * viewing and reused here — a document is rendered to PDF to be read on a
+ * phone, and a video no browser plays is converted to MP4 to be watched. Both
+ * happen to be formats a share sheet accepts, so the file that cannot be shared
+ * becomes one that can.
+ */
+type Route =
+  | { via: "file" }
+  | { via: "pdf" }
+  | { via: "mp4" }
+  | { via: "none"; detail: string };
+
+/** What sharing this file will involve, for saying so before it is asked for. */
+export const shareRoute = (file: FileEntry): Route["via"] => route(file).via;
+
+function route(file: FileEntry): Route {
+  const suffix = file.ext?.toLowerCase() ?? ext(file.filename);
+
+  if (needsConversion(suffix)) return { via: "pdf" };
+  if (SHAREABLE.has(suffix)) return { via: "file" };
+  if (file.kind === "video") return { via: "mp4" };
+
+  return {
+    via: "none",
+    detail:
+      `Phones refuse to attach ${suffix ? `.${suffix}` : "this"} files, and there is ` +
+      "nothing to convert it to. Send a Drive link instead, or download it and " +
+      "attach it from your files.",
+  };
+}
 
 /** The result of fetching the bytes, before anything is handed to the phone. */
 export type Prepared =
@@ -95,10 +159,9 @@ export function canShareFiles(): boolean {
  * @param onProgress fraction complete, or null when the length is unknown.
  */
 export async function prepareShare(
-  itemId: string,
-  filename: string,
-  size: number | null,
-  onProgress?: (fraction: number | null) => void,
+  entry: FileEntry,
+  onProgress?: (step: string, fraction: number | null) => void,
+  signal?: AbortSignal,
 ): Promise<Prepared> {
   if (!canShareFiles()) {
     return {
@@ -108,60 +171,135 @@ export async function prepareShare(
     };
   }
 
-  // An office document goes as the PDF the server already renders for reading
-  // it. Every phone can open a PDF and every share sheet accepts one, where
-  // .doc and .docx are refused by some and unopenable on others — and a PDF is
-  // what somebody sending a document to a relative wanted anyway.
-  const asPdf = needsConversion(ext(filename));
-
-  // The ceiling is about the original bytes; a rendered PDF is small whatever
-  // the source document weighs.
-  if (!asPdf && size !== null && size > MAX_SHARE_BYTES) {
-    return {
-      ok: false,
-      reason: "too-large",
-      // Films in this library run past a gigabyte, and a phone cannot hold one
-      // in memory to hand to a share sheet. A Drive link carries any size.
-      detail:
-        "Too big to attach — a phone cannot hold it in memory. Send a Drive link " +
-        "instead, or download it and attach it from your files.",
-    };
+  const { item_id: itemId, filename, size } = entry;
+  let plan = route(entry);
+  if (plan.via === "none") {
+    return { ok: false, reason: "unsupported", detail: plan.detail };
   }
 
-  let file: File;
+  // .mpg is on the allowlist, so it would be attached as it is — and the phone
+  // receiving it would find MPEG-2 as unplayable as this browser does. If the
+  // server would convert it to watch it, convert it to send it. Same reasoning
+  // as documents going as PDF: what arrives should open.
+  if (plan.via === "file" && entry.kind === "video") {
+    try {
+      if ((await conversionStatus(itemId)).needed) plan = { via: "mp4" };
+    } catch {
+      // Not worth failing a share that would have worked.
+    }
+  }
+
+  let url: string;
+  let name = filename;
+  let type: string | null = null;
+
   try {
-    const url = asPdf ? documentUrl(itemId) : await downloadUrl(itemId);
-    const res = await fetch(url, { credentials: "same-origin" });
+    if (plan.via === "pdf") {
+      url = documentUrl(itemId);
+      name = `${filename}.pdf`;
+      type = "application/pdf";
+    } else if (plan.via === "mp4") {
+      const made = await convertToMp4(itemId, onProgress, signal);
+      if (!made.ok) return made;
+      url = convertedUrl(itemId);
+      name = `${filename.replace(/\.[^.]+$/, "")}.mp4`;
+      type = "video/mp4";
+    } else {
+      // The ceiling applies to the bytes actually fetched. A conversion is
+      // smaller than what it came from, so this is only asked of the direct
+      // route — where a two-hour film really would have to fit in memory.
+      if (size !== null && size > MAX_SHARE_BYTES) return tooLarge();
+      url = await downloadUrl(itemId);
+    }
+
+    onProgress?.("Preparing", 0);
+    const res = await fetch(url, { credentials: "same-origin", signal });
     if (!res.ok) throw new Error(`server returned ${res.status}`);
-    const blob = await readWithProgress(res, size, onProgress);
+
+    const declared = Number(res.headers.get("content-length")) || 0;
+    if (declared > MAX_SHARE_BYTES) return tooLarge();
+
+    const blob = await readWithProgress(res, size, (f) => onProgress?.("Preparing", f));
+    if (blob.size > MAX_SHARE_BYTES) return tooLarge();
+
     // A generic type is refused by the share sheet, which will not attach
     // something it cannot name. The server falls back to octet-stream for any
     // extension it does not recognise, so the extension is consulted here before
     // giving up on the file.
-    const name = asPdf ? `${filename}.pdf` : filename;
-    const type = asPdf
-      ? "application/pdf"
-      : blob.type && blob.type !== "application/octet-stream"
+    const media =
+      type ??
+      (blob.type && blob.type !== "application/octet-stream"
         ? blob.type
-        : guessType(filename);
-    file = new File([blob], name, { type });
+        : guessType(filename));
+
+    return { ok: true, file: new File([blob], name, { type: media }) };
   } catch (e) {
+    if (e instanceof DOMException && e.name === "AbortError") {
+      return { ok: false, reason: "failed", detail: "Stopped." };
+    }
     return { ok: false, reason: "failed", detail: e instanceof Error ? e.message : String(e) };
   }
+}
 
-  // Ask before offering: some platforms accept navigator.share but refuse
-  // files, and finding that out by throwing loses the download just waited for.
-  if (!navigator.canShare({ files: [file] })) {
-    return {
-      ok: false,
-      reason: "unsupported",
-      detail:
-        `This phone will not attach a ${ext(filename) || "file"} file. Send a Drive ` +
-        "link instead, or download it and attach it from your files.",
-    };
+const tooLarge = (): Prepared => ({
+  ok: false,
+  reason: "too-large",
+  // Films in this library run past a gigabyte, and a phone cannot hold one in
+  // memory to hand to a share sheet. A Drive link carries any size.
+  detail:
+    "Too big to attach — a phone cannot hold it in memory. Send a Drive link " +
+    "instead, or download it and attach it from your files.",
+});
+
+/** Convert a video no share sheet will take into the MP4 every one of them does.
+ *
+ * The same conversion the viewer uses to play these files, and the same cached
+ * result: a video converted once for watching is shared without converting
+ * again, and a conversion started here is still running if the sheet is closed
+ * and reopened.
+ */
+async function convertToMp4(
+  itemId: string,
+  onProgress?: (step: string, fraction: number | null) => void,
+  signal?: AbortSignal,
+): Promise<{ ok: true } | Extract<Prepared, { ok: false }>> {
+  const refuse = (detail: string) => ({ ok: false as const, reason: "unsupported" as const, detail });
+
+  let status;
+  try {
+    status = await conversionStatus(itemId);
+  } catch (e) {
+    return refuse(e instanceof Error ? e.message : String(e));
   }
 
-  return { ok: true, file };
+  if (!status.needed) {
+    // The browser plays it, so the server has nothing to convert — but the
+    // share sheet still refuses the container. Nothing left but Drive.
+    return refuse(
+      "Phones refuse to attach this kind of video. Send a Drive link instead, " +
+        "or download it and attach it from your files.",
+    );
+  }
+
+  if (status.state !== "done") {
+    onProgress?.("Converting", status.progress / 100);
+    if (status.state !== "queued" && status.state !== "running") {
+      await startConversion(itemId);
+    }
+
+    // Tens of minutes for an hour of tape, and worth saying so: this polls
+    // rather than blocks, and the work survives the sheet being closed.
+    for (;;) {
+      if (signal?.aborted) throw new DOMException("cancelled", "AbortError");
+      await new Promise((r) => window.setTimeout(r, 1500));
+      const now = await conversionStatus(itemId);
+      onProgress?.("Converting", now.progress / 100);
+      if (now.state === "done") break;
+      if (now.state === "failed") return refuse(now.error ?? "Converting it failed.");
+    }
+  }
+
+  return { ok: true };
 }
 
 /** Offer a prepared file to the system share sheet.
@@ -182,10 +320,20 @@ export async function handOver(file: File): Promise<ShareOutcome> {
     if (e instanceof DOMException && e.name === "AbortError") {
       return { ok: false, reason: "cancelled" };
     }
-    // The tap went stale while the file was being fetched. Recoverable, and the
-    // file is in hand — the caller only needs one more tap.
+    // NotAllowedError covers two unrelated refusals, and only the message
+    // separates them: a tap that went stale while the file was fetched, and a
+    // file type the browser will not attach at all. Treating both as the first
+    // produced a "Send now" button that could never work, because tapping it
+    // again was never the problem.
     if (e instanceof DOMException && e.name === "NotAllowedError") {
-      return { ok: false, reason: "needs-tap" };
+      if (/gesture|activation/i.test(e.message)) return { ok: false, reason: "needs-tap" };
+      return {
+        ok: false,
+        reason: "unsupported",
+        detail:
+          "This phone refuses to attach that file. Send a Drive link instead, or " +
+          "download it and attach it from your files.",
+      };
     }
     return { ok: false, reason: "failed", detail: e instanceof Error ? e.message : String(e) };
   }

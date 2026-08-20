@@ -55,8 +55,9 @@ Deployed and believed correct; not yet confirmed in use.
 
 | | Item | Note |
 |---|---|---|
-| 🟡 | **Sharing anything slow to fetch** | The real cause of "must be handling a user gesture": a browser allows a share only for a few seconds after the tap, and fetching a large file outlives it. Now it shows progress and turns into **Send now** — one extra tap, nothing re-downloaded |
-| 🟡 | Sharing documents | Sent as the PDF the server already renders — every phone opens one, and `.doc` had no media type at all, which a share sheet always refuses |
+| 🟡 | **Sharing avi, wmv, mkv, mov** | Browsers keep a fixed list of file types a page may attach, and none of those are on it — `canShare()` does not check that list, which is why it said yes and the share then failed. They are converted to MP4 first, reusing the conversion the viewer already makes |
+| 🟡 | Sharing documents | Sent as the PDF the server already renders — `.doc` is not on the browser's list either, and a PDF is what a phone can open |
+| 🟡 | Sharing anything slow to fetch | A share is only permitted for a few seconds after the tap. Slow ones now show progress and turn into **Send now** — one extra tap, nothing re-downloaded |
 | 🟡 | Sharing very large videos | Past 256 MB a phone cannot hold the file in memory at all; it says so and points at a Drive link |
 | 🟡 | **Look for new folders** in Settings | Sharing a folder with the Homesh account is how one is added; discovery used to run only at startup |
 | 🟡 | TV app recovers from an unplayable file | Was showing "cannot reach server" and sticking |
