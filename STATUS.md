@@ -95,21 +95,34 @@ Deployed and believed correct; not yet confirmed in use.
 
 | | Item | What is known |
 |---|---|---|
-| 🟡 | **Streaming stops after a few songs** | **Cause found and fixed.** Not the songs — a reader left for the garbage collector to close, which deadlocked httpx's connection pool against itself. Once it happened, nothing that lives on Drive would load until a restart. Found in a stack dump: twelve threads waiting on a lock held by a thread waiting for itself |
-| 🔴 | **Details columns on a phone** | Hidden below 720px with the metadata folded under the filename. If that is not what you see, I need to know what does |
+| 🔴 | **Details columns on a phone** | The one report I have never reproduced. Hidden below 720px with the metadata folded under the filename — if that is not what you see, I need a screenshot |
+
+---
+
+## Owed, from work already done
+
+Started or promised and not finished. Listed separately because these are mine,
+not decisions waiting on anybody.
+
+1. ⬜ **Finish the encoder sweep** — every video opened through the encoder to
+   prove the odd-dimension class is closed. Started twice: killed once by my own
+   rebuild, then it timed out on one file at 900s and never completed. A sample
+   of 20 across five formats passed
+2. ⬜ **Finish the duration backfill** — ~9,950 tracks still have no length, so
+   listings show none for them
+3. ⬜ **Shuffle scope on the phone** — within the folder or list, versus the
+   whole library. Still undecided; rooms got shuffle as an action instead
 
 ---
 
 ## Next, in order
 
-1. ⬜ **Shuffle scope** — within the folder or list, versus the whole library
-2. ⬜ **Seek in rooms** — a position bar in the control tower
-3. ⬜ **Rate limiting on sign-in** — listed in the architecture, never built, and
+1. ⬜ **Rate limiting on sign-in** — listed in the architecture, never built, and
    worth having now the server has a real hostname
-4. ⬜ **Database backups** — daily, a week back, plus two-week and one-month
+2. ⬜ **Database backups** — daily, a week back, plus two-week and one-month
    points; restore from inside the app, administrators only.
    **Prerequisite for anything with AI in it**
-5. ⬜ **Audio caching** — first play fetches, later plays are instant.
+3. ⬜ **Audio caching** — first play fetches, later plays are instant.
    Drive's own latency is ~1.4s per request and nothing else will remove it
 
 ---
