@@ -226,11 +226,18 @@ export async function prepareShare(
     // something it cannot name. The server falls back to octet-stream for any
     // extension it does not recognise, so the extension is consulted here before
     // giving up on the file.
+    // Without its parameters.
+    //
+    // The server sends .txt as "text/plain; charset=utf-8", which is correct
+    // HTTP and refused by the share sheet: the browser matches the media type
+    // against its list of permitted ones *exactly*, and "text/plain" is on that
+    // list while "text/plain; charset=utf-8" is not. It got past canShare(),
+    // which only looks at the prefix, and failed at the share itself — reported
+    // as "this phone refuses to attach that file", which was not the reason.
+    const plain = blob.type.split(";")[0].trim();
     const media =
       type ??
-      (blob.type && blob.type !== "application/octet-stream"
-        ? blob.type
-        : guessType(filename));
+      (plain && plain !== "application/octet-stream" ? plain : guessType(filename));
 
     return { ok: true, file: new File([blob], name, { type: media }) };
   } catch (e) {

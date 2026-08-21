@@ -22,7 +22,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlalchemy import text
 
-from . import denon, occupancy
+from . import denon, lanaddr, occupancy
 from .access import can_use_zone, may_access_item, zone_scope
 from .config import get_settings
 from .db import get_engine
@@ -121,8 +121,7 @@ def _media_base() -> str:
     receiver on the other side of the room. The receiver fetches the stream
     itself, so this has to be an address it can actually route to.
     """
-    settings = get_settings()
-    base = settings.lan_base_url.strip().rstrip("/")
+    base = (lanaddr.lan_base() or "").rstrip("/")
     if not base:
         raise ZoneError(
             "LAN_BASE_URL is not set. A receiver fetches media over the network, "
@@ -540,7 +539,7 @@ async def _push_to_screen(zone: Zone, item_id: UUID, user: CurrentUser) -> dict:
 
     # A screen fetches media itself, exactly as the receiver does, so the URL has
     # to be reachable from the device rather than from the browser.
-    base = _media_base() if settings.lan_base_url.strip() else settings.public_origin.rstrip("/")
+    base = _media_base() if lanaddr.lan_base() else settings.public_origin.rstrip("/")
 
     with get_engine().connect() as conn:
         row = conn.execute(

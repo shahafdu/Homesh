@@ -18,6 +18,7 @@ from fastapi import FastAPI, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 
+from . import lanaddr
 from .auth import ensure_bootstrap_code
 from .auth import router as auth_router
 from .config import get_settings
@@ -154,6 +155,17 @@ app.include_router(transcode_router)
 app.include_router(zones_router)
 
 
+@app.middleware("http")
+async def learn_our_address(request, call_next):
+    """Notice how devices in the house reach us.
+
+    A DHCP lease moves and LAN_BASE_URL is silently wrong; anything arriving at
+    a private address is evidence of one that works. Cheap: a header read.
+    """
+    lanaddr.note_host(request.headers.get("host"))
+    return await call_next(request)
+
+
 @app.get("/api/health")
 async def health() -> JSONResponse:
     db_ok = check_connection()
@@ -224,15 +236,22 @@ def tv_address() -> Response:
     A television is on the house network, so it needs the house address. That is
     configuration, never written down here.
     """
-    settings = get_settings()
-    lan = (settings.lan_base_url or "").strip().rstrip("/")
+    lan = lanaddr.lan_base() or ""
+    configured = (get_settings().lan_base_url or "").strip().rstrip("/")
     return JSONResponse(
         {
             "lan": lan or None,
+            # Said out loud when the two differ, because the difference is the
+            # bug being reported: an address that was right when it was written
+            # down and is not any more.
+            "stale_config": bool(configured and lan and configured != lan),
             "short": _short_address(lan),
             # Worth distinguishing: no LAN address configured is a different
             # problem from a television that cannot reach one.
-            "detail": None if lan else "LAN_BASE_URL is not set on the server.",
+            "detail": None
+            if lan
+            else "No house-network address known yet. Set LAN_BASE_URL, or open "
+            "Homesh once from a device on your home network.",
         }
     )
 

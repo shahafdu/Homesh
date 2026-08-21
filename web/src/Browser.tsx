@@ -157,13 +157,7 @@ export default function Browser(props: {
       <div className="chrome">
       <header className="bar">
         <span className="brand">Homesh</span>
-        <input
-          className="searchbox"
-          type="search"
-          placeholder="Search filenames and folders…"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-        />
+        <span className="bar-spacer" />
         <button className="iconbtn" onClick={onOpenZones} aria-label="Zones" title="Zones">
           ⧉
         </button>
@@ -181,6 +175,36 @@ export default function Browser(props: {
         </button>
       </header>
 
+      {/* The search box sits with the things that describe a search — where it
+          looks and what it found — rather than up in the brand row away from
+          both. */}
+      <div className="searchrow">
+        <input
+          className="searchbox"
+          type="search"
+          placeholder="Search filenames and folders…"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+        />
+        {/* One button that changes, not two. Where it looks is a single choice
+            with two states, and a segmented pair spent a whole row saying so. */}
+        {path !== "/" && (
+          <button
+            className={`scope${hereOnly ? " here" : ""}`}
+            aria-pressed={hereOnly}
+            title={
+              hereOnly
+                ? `Searching inside ${here(path)} — tap to search everywhere`
+                : `Searching everywhere — tap to search inside ${here(path)}`
+            }
+            onClick={() => setHereOnly(!hereOnly)}
+          >
+            <span className="scope-ic" aria-hidden="true">{hereOnly ? "▣" : "◍"}</span>
+            {hereOnly ? here(path) : "Everywhere"}
+          </button>
+        )}
+      </div>
+
       <div className="toolbar">
         {hits === null && listing ? (
           <nav className="crumbs">
@@ -194,35 +218,10 @@ export default function Browser(props: {
             ))}
           </nav>
         ) : (
-          <div className="search-scope">
-            {/* Two named choices rather than one word that changes.
-                A single toggle reading "everywhere" is indistinguishable from a
-                label — it says where you are searching but not that it is a
-                control, and it was missed entirely. This is the same segmented
-                shape as the view switcher beside it, which nobody misses.
-
-                Offered only where it changes anything: at the top of the library
-                "in this folder" and "everywhere" are the same search. */}
-            {path !== "/" ? (
-              <div className="seg" role="group" aria-label="Where to search">
-                <button aria-pressed={!hereOnly} onClick={() => setHereOnly(false)}>
-                  Everywhere
-                </button>
-                <button
-                  aria-pressed={hereOnly}
-                  title={`Search only inside ${here(path)}`}
-                  onClick={() => setHereOnly(true)}
-                >
-                  In {here(path)}
-                </button>
-              </div>
-            ) : (
-              <span className="muted small">Searching everything</span>
-            )}
-            <span className="muted small">
-              {hits?.length ?? 0} result{hits?.length === 1 ? "" : "s"}
-            </span>
-          </div>
+          <span className="muted small">
+            {hits?.length ?? 0} result{hits?.length === 1 ? "" : "s"}
+            {hereOnly && ` in ${here(path)}`}
+          </span>
         )}
 
         <div className="seg" role="group" aria-label="View mode">

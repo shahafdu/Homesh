@@ -33,6 +33,7 @@ from webauthn.helpers.structs import (
     UserVerificationRequirement,
 )
 
+from . import lanaddr
 from .config import get_settings
 from .db import get_engine
 from .security import (
@@ -552,7 +553,7 @@ async def create_device_link(user: CurrentUser = Depends(require_user)) -> dict:
         "expires_in": int(LINK_TTL.total_seconds()),
         # The address to type on the other device. Configuration, read from the
         # environment — it is never written down in this repository.
-        "address": settings.lan_base_url or settings.public_origin,
+        "address": lanaddr.lan_base() or settings.public_origin,
     }
 
 

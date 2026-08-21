@@ -6,7 +6,7 @@ to reconstruct the state of a large, half-finished system from memory.
 **Legend** — ✅ built and verified · 🟡 built, needs Shahaf to confirm ·
 🔴 known broken · ⬜ not started · ⏳ waiting on Shahaf
 
-Last updated: 22 August 2026 · 343 tests · 17 migrations · CI green (privacy
+Last updated: 22 August 2026 · 349 tests · 17 migrations · CI green (privacy
 check was red for three commits — a private address in a test; see below)
 
 ---
@@ -61,8 +61,11 @@ Deployed and believed correct; not yet confirmed in use.
 
 | | Item | Note |
 |---|---|---|
+| 🟡 | **The server finds its own address** | DHCP moved this machine from .206 to .205 and `LAN_BASE_URL` was silently wrong — so the TV install address pointed nowhere. It is a seed now: the server learns a working address from anything reaching it over the house network, and prefers that when the configured one stops answering |
+| 🟡 | **The whole file menu in the viewer** | Share, print, send to a room and add to a playlist, from where you are looking at the file. Opening something used to be a dead end |
+| 🟡 | **.txt sharing** | The server sends `text/plain; charset=utf-8`, and the browser matches its permitted list *exactly* — so the charset made it unrecognised. Parameters are stripped now |
 | 🟡 | **Print** | On a phone it opens the share sheet, where Print already lives and already works — trying to print a PDF from a hidden frame downloads it instead. On a desktop it prints directly |
-| 🟡 | **Search in this folder** | Two named buttons — **Everywhere** / **In ‹folder›** — on their own row while searching. Driven in a real phone-sized browser: 13 of 50 results outside the folder, 0 after switching. Verified against the real library: 71 hits under one Hebrew folder, 8 under a sub-folder, nothing outside either |
+| 🟡 | **Search in this folder** | The search box moved down beside one button that switches **Everywhere** ↔ the folder name. Driven in a phone-sized browser: 13 of 50 results outside the folder, 0 after switching. Verified against the real library: 71 hits under one Hebrew folder, 8 under a sub-folder, nothing outside either |
 | 🟡 | **"Start at" said 12:30** | It was placeholder text, which reads as a value. It shows the real position now and accepts h:mm:ss |
 | 🟡 | **Next no longer stops the music** | Replacing the source rejects the pending play() with AbortError — which is what next *does*. Both the phone and the TV treated it as a failure; the TV put it on screen and killed the queue |
 | 🟡 | **What a room will play next** | The tower lists the queue, marks what is playing, and any track can be tapped to jump to it |

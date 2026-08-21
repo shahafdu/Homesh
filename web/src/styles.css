@@ -1258,21 +1258,38 @@ button.compact:disabled { opacity: .5; cursor: not-allowed; }
  * whose label changed read as a caption rather than a control, and went unseen.
  * The folder name is clipped rather than allowed to push the row wide — a
  * Hebrew folder path is long and the phone is narrow. */
-/* Its own row when the view switcher leaves no space for it.
+/* ── The search row ───────────────────────────────────────────────────────────
  *
- * flex: 1 alone gave it whatever was left over, which on a phone was 33 pixels
- * — present, laid out, and invisible in practice. A flex-basis wide enough to
- * be worth showing makes the toolbar wrap instead of squeezing. */
-.search-scope {
-  display: flex; align-items: center; gap: 10px;
-  flex: 1 1 260px; min-width: 0;
+ * The box, where it looks, and what it found — one row, because they are one
+ * thought. The box used to live in the brand row, a long way from both of the
+ * things that describe it. */
+.searchrow {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 0 0; min-width: 0;
 }
-.search-scope .seg { min-width: 0; flex-shrink: 1; }
-.search-scope .seg button {
-  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+.searchrow .searchbox { flex: 1 1 auto; min-width: 0; }
+.nowrap { white-space: nowrap; }
+.bar-spacer { flex: 1; }
+
+/* Where the search looks. One control with two states, so its label is the
+   answer and pressing it is the other one. */
+.scope {
+  display: inline-flex; align-items: center; gap: 6px;
+  /* Room for a folder name. The count moved down to the row below precisely so
+     this one does not have to be truncated to "Spani". */
+  flex: 0 1 auto; min-width: 0; max-width: 52%;
+  padding: 9px 12px; font-size: 13px; cursor: pointer;
+  background: transparent; color: var(--muted);
+  border: 1px solid var(--line); border-radius: 8px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-/* The folder name yields before the word that explains the alternative. */
-.search-scope .seg button:last-child { flex-shrink: 1; }
+.scope:hover { color: var(--ink); }
+.scope.here {
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--line));
+  color: var(--ink);
+}
+.scope-ic { font-size: 12px; opacity: .8; }
 
 /* A print failure belongs where the thing being printed is, not in a corner. */
 .v-print-note { margin: 0 16px 8px; }

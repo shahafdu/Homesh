@@ -224,3 +224,88 @@ class TestTheTvPageStaysAtSlashTv:
         # Whatever /tv answers — the page when built, a 404 when not — it is
         # never the archive.
         assert not anon_client.get("/tv", follow_redirects=True).content.startswith(b"PK")
+
+
+class TestLearningItsOwnAddress:
+    """LAN_BASE_URL goes stale, and nothing says so.
+
+    A power cut moved this machine from .206 to .205. The configured value was
+    still there and still well-formed, so the pairing panel kept offering an
+    address nothing answered at, and every URL handed to a screen pointed at a
+    machine that had moved.
+    """
+
+    def setup_method(self):
+        from app import lanaddr
+
+        lanaddr.forget()
+
+    teardown_method = setup_method
+
+    def test_it_learns_from_a_house_network_request(self, monkeypatch):
+        from app import lanaddr
+
+        monkeypatch.setenv("LAN_BASE_URL", "")
+        from app.config import get_settings
+
+        get_settings.cache_clear()
+        try:
+            lanaddr.note_host("192.168.7.9:8080")
+            assert lanaddr.lan_base() == "http://192.168.7.9:8080"
+        finally:
+            get_settings.cache_clear()
+
+    def test_loopback_is_not_a_house_address(self):
+        """127.0.0.1 is private by every definition and reaches no other room.
+
+        It is also what the container's own health check reports, so without
+        this the server confidently learns an address no television can use.
+        """
+        from app import lanaddr
+
+        lanaddr.note_host("127.0.0.1:8080")
+        assert lanaddr._seen is None
+
+    def test_a_hostname_is_not_an_address(self):
+        """A ts.net name works, but only from the tailnet, which a box is not on."""
+        from app import lanaddr
+
+        lanaddr.note_host("homesh.example.ts.net")
+        lanaddr.note_host("localhost:8080")
+        assert lanaddr._seen is None
+
+    def test_link_local_is_refused(self):
+        """169.254.x is what a machine gives itself when DHCP failed."""
+        from app import lanaddr
+
+        lanaddr.note_host("169.254.3.4:8080")
+        assert lanaddr._seen is None
+
+    def test_the_configured_address_wins_while_it_answers(self, monkeypatch):
+        from app import lanaddr
+
+        monkeypatch.setattr(lanaddr, "_answers", lambda base: True)
+        monkeypatch.setenv("LAN_BASE_URL", "http://192.0.2.1:8080")
+        from app.config import get_settings
+
+        get_settings.cache_clear()
+        try:
+            lanaddr.note_host("192.168.7.9:8080")
+            assert lanaddr.lan_base() == "http://192.0.2.1:8080"
+        finally:
+            get_settings.cache_clear()
+
+    def test_what_devices_report_wins_when_it_does_not(self, monkeypatch):
+        """The whole point: unreachable is the failure being fixed."""
+        from app import lanaddr
+
+        monkeypatch.setattr(lanaddr, "_answers", lambda base: False)
+        monkeypatch.setenv("LAN_BASE_URL", "http://192.0.2.1:8080")
+        from app.config import get_settings
+
+        get_settings.cache_clear()
+        try:
+            lanaddr.note_host("192.168.7.9:8080")
+            assert lanaddr.lan_base() == "http://192.168.7.9:8080"
+        finally:
+            get_settings.cache_clear()

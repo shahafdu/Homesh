@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "./api";
 import PdfView from "./PdfView";
+import FileActions from "./FileActions";
+import PlayTo from "./PlayTo";
 import { printDocument, printImage, printViaShareSheet } from "./print";
 import { canShareFiles } from "./share";
 import {
@@ -34,6 +36,8 @@ export default function Viewer(props: {
   // reach: a document is rendered to PDF on the server the first time.
   const [printing, setPrinting] = useState(false);
   const [printNote, setPrintNote] = useState<string | null>(null);
+  const [showActions, setShowActions] = useState(false);
+  const [sendingTo, setSendingTo] = useState(false);
   const [text, setText] = useState<string | null>(null);
   // Set when direct play turned out not to work for this file.
   const [fellBack, setFellBack] = useState(false);
@@ -137,8 +141,21 @@ export default function Viewer(props: {
           </span>
         </div>
         <div className="v-actions">
-          {/* Here as well as in the file menu, because this is where somebody
-              is standing when they decide to print: looking at the thing. */}
+          {/* Everything the row menu offers, from where you are actually
+              looking at the file. Opening something used to be a dead end:
+              share, print, send to a room and the rest all lived back in the
+              list, so using any of them meant closing what you had opened and
+              finding it again. */}
+          <button
+            className="v-btn"
+            onClick={() => setShowActions(true)}
+            aria-label="More actions"
+            title="Share, send to a room, print, add to a playlist"
+          >
+            ⋯
+          </button>
+          {/* Print stays out here too — it is the one people look for by name
+              rather than behind a menu. */}
           {(file.kind === "photo" || file.kind === "doc") && (
             <button
               className="v-btn"
@@ -175,6 +192,26 @@ export default function Viewer(props: {
           </button>
         </div>
       </header>
+
+      {showActions && (
+        <FileActions
+          file={file}
+          onSendTo={() => {
+            setShowActions(false);
+            setSendingTo(true);
+          }}
+          onClose={() => setShowActions(false)}
+        />
+      )}
+
+      {sendingTo && (
+        <PlayTo
+          file={file}
+          siblings={files}
+          onHere={() => setSendingTo(false)}
+          onClose={() => setSendingTo(false)}
+        />
+      )}
 
       {printNote && <div className="error v-print-note">{printNote}</div>}
 

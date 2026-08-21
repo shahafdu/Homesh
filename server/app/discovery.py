@@ -19,6 +19,7 @@ import json
 import logging
 import socket
 
+from . import lanaddr
 from .config import get_settings
 
 log = logging.getLogger("homesh.discovery")
@@ -47,7 +48,7 @@ class _Responder(asyncio.DatagramProtocol):
         # The address a device on the LAN can actually reach. Configuration, as
         # everywhere else — the server does not guess its own address, and
         # localhost would mean nothing to a television.
-        base = settings.lan_base_url or settings.public_origin
+        base = lanaddr.lan_base() or settings.public_origin
 
         reply = json.dumps({"service": "homesh", "url": base, "name": settings.rp_name})
         log.info("discovery probe from %s — replying %s", addr[0], base)
