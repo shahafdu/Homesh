@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import logging
 import re
+from contextlib import closing
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -667,7 +668,8 @@ def import_from_source(source_id: UUID, connector, owner_id: UUID | None = None)
     for dir_path, filename, ext in files:
         rel = f"{dir_path}/{filename}" if dir_path else filename
         try:
-            raw = b"".join(connector.open_range(rel))
+            with closing(connector.open_range(rel)) as chunks:
+                raw = b"".join(chunks)
         except Exception as exc:  # noqa: BLE001 - one unreadable file is not a failed import
             log.warning("could not read playlist %s: %s", rel, exc)
             continue

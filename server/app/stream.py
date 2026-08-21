@@ -10,12 +10,14 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
+from collections.abc import AsyncIterator, Iterator
 from urllib.parse import quote
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy import text
+from starlette.concurrency import iterate_in_threadpool
 
 from .access import may_access_item
 from .config import get_settings
@@ -286,8 +288,39 @@ async def stream(
     headers["Content-Length"] = str(end - start + 1) if size else "0"
 
     return StreamingResponse(
-        connector.open_range(rel, start, end),
+        _closing_body(connector.open_range(rel, start, end)),
         status_code=status_code,
         media_type=media_type,
         headers=headers,
     )
+
+
+async def _closing_body(chunks: Iterator[bytes]) -> AsyncIterator[bytes]:
+    """Stream a range, and close the reader whatever happens to the listener.
+
+    The bug this exists to prevent took the whole server down, so it is worth
+    writing out. `open_range` holds an open HTTP response to Drive while it
+    yields. A listener that goes away mid-file — a phone locking, a seek, ffmpeg
+    being killed — leaves that generator suspended rather than closed, and it is
+    then finalised by the garbage collector, on whichever thread happens to be
+    collecting.
+
+    When that thread is inside httpx's connection pool, holding the pool's lock,
+    the finaliser closes a response, which asks for the same lock. It is not a
+    reentrant lock and it is the same thread, so it waits for itself, forever.
+    Every later request to Drive queues behind a lock nobody will release: no
+    music, no thumbnails, no video, until the server is restarted. Measured, in
+    a stack dump, as twelve worker threads all waiting in `open_range` and one
+    holding the lock while closing a response.
+
+    So the reader is closed here, deterministically, on an ordinary thread —
+    scheduled rather than awaited, because when a listener disconnects this
+    generator is being cancelled, and a cancelled task cannot be relied on to
+    finish an await. The close still runs; nothing waits on it.
+    """
+    loop = asyncio.get_running_loop()
+    try:
+        async for chunk in iterate_in_threadpool(chunks):
+            yield chunk
+    finally:
+        loop.run_in_executor(None, chunks.close)

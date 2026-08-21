@@ -20,6 +20,7 @@ import hashlib
 import logging
 import shutil
 import tempfile
+from contextlib import closing
 from pathlib import Path
 from uuid import UUID
 
@@ -153,8 +154,11 @@ async def document_pdf(item_id: UUID, user: CurrentUser = Depends(require_user))
             # that is a whole document fetched over the network, which on the
             # event loop would stop the server answering anything else.
             def fetch() -> None:
-                with source.open("wb") as fh:
-                    for chunk in connector.open_range(rel_path):
+                with (
+                    source.open("wb") as fh,
+                    closing(connector.open_range(rel_path)) as chunks,
+                ):
+                    for chunk in chunks:
                         fh.write(chunk)
 
             await asyncio.to_thread(fetch)

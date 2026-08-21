@@ -15,7 +15,7 @@ import logging
 import pathlib
 import subprocess
 import tempfile
-from contextlib import contextmanager
+from contextlib import closing, contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -212,10 +212,15 @@ def _id3_length(head: bytes) -> int | None:
 
 def _fetch_prefix(connector, rel_path: str, want: int) -> bytes:
     collected = bytearray()
-    for chunk in connector.open_range(rel_path, 0, want - 1):
-        collected += chunk
-        if len(collected) >= want:
-            break
+    # closing(): the loop breaks as soon as enough bytes have arrived, which
+    # leaves the generator suspended on an open HTTP response. Abandoned, it is
+    # closed whenever the garbage collector gets to it — and that turned out to
+    # deadlock the whole server. See the note in stream.py.
+    with closing(connector.open_range(rel_path, 0, want - 1)) as chunks:
+        for chunk in chunks:
+            collected += chunk
+            if len(collected) >= want:
+                break
     return bytes(collected)
 
 

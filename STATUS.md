@@ -6,7 +6,7 @@ to reconstruct the state of a large, half-finished system from memory.
 **Legend** — ✅ built and verified · 🟡 built, needs Shahaf to confirm ·
 🔴 known broken · ⬜ not started · ⏳ waiting on Shahaf
 
-Last updated: 18 August 2026 · 312 tests · 16 migrations · CI green
+Last updated: 21 August 2026 · 315 tests · 16 migrations · CI green
 
 ---
 
@@ -55,6 +55,7 @@ Deployed and believed correct; not yet confirmed in use.
 
 | | Item | Note |
 |---|---|---|
+| 🟡 | **Odd-sized video converting** | H.264 cannot encode an odd height. `Bebe Complicado.avi` is 640x415, and x264 refused to start — which is why it played but would not share |
 | 🟡 | **Sharing avi, wmv, mkv, mov** | Browsers keep a fixed list of file types a page may attach, and none of those are on it — `canShare()` does not check that list, which is why it said yes and the share then failed. They are converted to MP4 first, reusing the conversion the viewer already makes |
 | 🟡 | Sharing documents | Sent as the PDF the server already renders — `.doc` is not on the browser's list either, and a PDF is what a phone can open |
 | 🟡 | Sharing anything slow to fetch | A share is only permitted for a few seconds after the tap. Slow ones now show progress and turn into **Send now** — one extra tap, nothing re-downloaded |
@@ -76,7 +77,7 @@ Deployed and believed correct; not yet confirmed in use.
 
 | | Item | What is known |
 |---|---|---|
-| 🔴 | **Streaming stops after a few songs** | No cause yet. Needs reproducing with logs open — roughly how many songs in, and whether mid-song or between tracks |
+| 🟡 | **Streaming stops after a few songs** | **Cause found and fixed.** Not the songs — a reader left for the garbage collector to close, which deadlocked httpx's connection pool against itself. Once it happened, nothing that lives on Drive would load until a restart. Found in a stack dump: twelve threads waiting on a lock held by a thread waiting for itself |
 | 🔴 | **Details columns on a phone** | Hidden below 720px with the metadata folded under the filename. If that is not what you see, I need to know what does |
 
 ---

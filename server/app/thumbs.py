@@ -13,6 +13,7 @@ from __future__ import annotations
 import io
 import logging
 import subprocess
+from contextlib import closing
 from pathlib import Path
 from uuid import UUID
 
@@ -139,10 +140,14 @@ def _read_prefix(connector, rel_path: str, limit: int) -> bytes:
     a thumbnail never needs a whole 4 GB film.
     """
     collected = bytearray()
-    for chunk in connector.open_range(rel_path, 0, limit - 1):
-        collected += chunk
-        if len(collected) >= limit:
-            break
+    # closing(): see the note in stream.py. A tiles view asks for forty of these
+    # at once and each one breaks early, so this is where abandoned responses
+    # piled up fastest.
+    with closing(connector.open_range(rel_path, 0, limit - 1)) as chunks:
+        for chunk in chunks:
+            collected += chunk
+            if len(collected) >= limit:
+                break
     return bytes(collected)
 
 

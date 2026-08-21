@@ -224,3 +224,81 @@ class TestDownload:
 
         header = _disposition('we"rd\name.mp3', attachment=True)
         assert header.count('"') == 2, f"unbalanced quoting: {header}"
+
+
+class TestReaderIsClosed:
+    """A range read must never be left for the garbage collector to close.
+
+    A regression test for a server-wide freeze, not a tidiness rule.
+    `open_range` holds an open HTTP response to Drive while it yields. An
+    abandoned generator is finalised by the collector on whatever thread it
+    happens to be running on, and when that thread is inside httpx's connection
+    pool holding the pool lock, closing the response asks for the same lock on
+    the same thread. It is not reentrant: the thread waits for itself forever,
+    and every later read of anything queues behind it. Observed in a stack dump
+    as twelve worker threads stuck in `open_range`.
+
+    These hold their own reference to the reader, so reference counting cannot
+    collect it and quietly make the test pass. Nothing but a deliberate close
+    satisfies them.
+    """
+
+    @staticmethod
+    def _reader(closed: list[bool]):
+        def reader():
+            try:
+                yield b"first"
+                yield b"second"
+            finally:
+                closed.append(True)
+
+        return reader()
+
+    @staticmethod
+    def _wait_for(closed: list[bool]) -> bool:
+        """The close is scheduled rather than awaited, so give it a moment."""
+        for _ in range(200):
+            if closed:
+                return True
+            time.sleep(0.01)
+        return False
+
+    async def test_closed_when_the_listener_goes_away(self):
+        """A phone locking mid-song, a seek, an ffmpeg killed — all this path."""
+        from app.stream import _closing_body
+
+        closed: list[bool] = []
+        held = self._reader(closed)          # a reference nothing can drop
+
+        body = _closing_body(held)
+        assert await body.__anext__() == b"first"
+        await body.aclose()                  # the listener disconnects here
+
+        assert self._wait_for(closed), "the reader was left open mid-file"
+
+    async def test_closed_after_a_complete_read(self):
+        from app.stream import _closing_body
+
+        closed: list[bool] = []
+        held = self._reader(closed)
+
+        assert [chunk async for chunk in _closing_body(held)] == [b"first", b"second"]
+        assert self._wait_for(closed), "the reader was left open after a full read"
+
+    def test_the_endpoint_uses_it(self, client, db, scanned, monkeypatch):
+        """Wired in, and not quietly removed later."""
+        import app.stream as stream
+
+        seen: list[bool] = []
+        original = stream._closing_body
+
+        def spy(chunks):
+            seen.append(True)
+            return original(chunks)
+
+        monkeypatch.setattr(stream, "_closing_body", spy)
+
+        item = _item(db, "beach.mkv")
+        url = client.get(f"/api/items/{item}/url").json()["url"]
+        assert client.get(url).status_code == 200
+        assert seen, "the stream endpoint no longer closes its reader"
