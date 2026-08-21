@@ -210,6 +210,30 @@ async def tv_version() -> Response:
     return FileResponse(info, media_type="application/json")
 
 
+@app.get("/tv.address", include_in_schema=False)
+async def tv_address() -> Response:
+    """Where a television can reach this server.
+
+    Not `window.location.origin`, which is whatever the phone in your hand is
+    using. On a tailnet that is a ts.net name, and a set-top box is not on the
+    tailnet — so the address shown for the app was one the television could not
+    resolve at all, which is exactly the ERR_NAME_NOT_RESOLVED it reported.
+
+    A television is on the house network, so it needs the house address. That is
+    configuration, never written down here.
+    """
+    settings = get_settings()
+    lan = (settings.lan_base_url or "").strip().rstrip("/")
+    return JSONResponse(
+        {
+            "lan": lan or None,
+            # Worth distinguishing: no LAN address configured is a different
+            # problem from a television that cannot reach one.
+            "detail": None if lan else "LAN_BASE_URL is not set on the server.",
+        }
+    )
+
+
 @app.get("/tv.apk", include_in_schema=False)
 async def tv_apk() -> Response:
     apk = _tv_apk_path()

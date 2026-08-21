@@ -27,7 +27,9 @@ export default function App() {
   const closeViewer = useCallback(() => setViewing(null), []);
   const [showZones, setShowZones] = useState(false);
   const [showPeople, setShowPeople] = useState(false);
-  const [showPlaylists, setShowPlaylists] = useState(false);
+  // false, or true for the list of playlists, or the id of one to open. The
+  // player bar opens a specific playlist; the toolbar opens all of them.
+  const [showPlaylists, setShowPlaylists] = useState<boolean | string>(false);
   const [linking, setLinking] = useState(false);
   const [actionsFor, setActionsFor] = useState<{
     file: FileEntry;
@@ -151,7 +153,16 @@ export default function App() {
 
         {showPlaylists && (
           <Playlists
-            onPlay={(files, index) => player.play(files, index, "")}
+            openId={showPlaylists === true ? null : showPlaylists}
+            onPlay={(files, index, origin) => player.play(files, index, "", origin)}
+            onSendTo={(files) => {
+              // The room picker takes a file and its siblings, so the first
+              // track stands for the list and the rest are its siblings —
+              // exactly the shape it already knows how to queue.
+              if (files.length === 0) return;
+              setShowPlaylists(false);
+              setSendTo({ file: files[0], siblings: files });
+            }}
             onClose={() => setShowPlaylists(false)}
           />
         )}
@@ -219,6 +230,14 @@ export default function App() {
           onStop={player.stop}
           shuffle={player.shuffle}
           onShuffle={() => player.setShuffle(!player.shuffle)}
+          onOpenOrigin={() => {
+            const origin = player.state.origin;
+            if (!origin) return;
+            // Back to where the music came from: the playlist reopened at the
+            // list you are hearing, or the folder browsed to.
+            if (origin.kind === "playlist") setShowPlaylists(origin.id);
+            else setReveal({ path: origin.id, itemId: player.current?.item_id ?? "" });
+          }}
         />
 
         <footer className="footer">

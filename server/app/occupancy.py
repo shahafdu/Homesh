@@ -84,6 +84,29 @@ def _describe(now_playing: dict) -> str:
 NETWORK_INPUTS = {"NET", "HEOS", "BT", "AUX"}
 
 
+def _hears_network(state: denon.AvrState, zone2: bool) -> bool:
+    """Whether this zone is the one the network player is feeding.
+
+    The receiver has one HEOS player and two zones, so the player's own state
+    cannot say which room the music is in. The zone's *input* can: a zone
+    switched to a network source is hearing it, and a zone switched to the
+    television or a disc is not — whatever HEOS happens to be doing.
+
+    Powered off is decisive; anything else is not, so an unknown source counts as
+    hearing it. Marking a silent zone busy costs somebody a moment's confusion,
+    while marking a loud one free means starting a second stream over the top of
+    the first — and this receiver cannot run two at once anyway.
+    """
+    if zone2:
+        if state.zone2 is False:
+            return False
+        return state.zone2_source is None or state.zone2_source in NETWORK_INPUTS
+
+    if state.power is False or state.main_zone is False:
+        return False
+    return state.source is None or state.source in NETWORK_INPUTS
+
+
 def _avr_note(state: denon.AvrState, zone2: bool) -> str | None:
     """What the amplifier is switched to, when it is not us.
 
@@ -197,16 +220,35 @@ async def receiver_occupancy(
                 # the room is occupied.
                 result = Occupancy(busy=False, ours=False, note=note)
             else:
-                ours = our_session_state in ("playing", "buffering")
-                detail = None
-                if not ours:
-                    # Only ask what is on when it is not ours; it is an extra
-                    # round trip to hardware that answers slowly.
-                    try:
-                        detail = _describe(await denon.get_now_playing(host, pid))
-                    except denon.DenonError:
-                        detail = "playing something else"
-                result = Occupancy(busy=True, ours=ours, detail=detail)
+                # There is exactly one HEOS player in this receiver, so "HEOS is
+                # playing" is a fact about the box, not about a room. Asking the
+                # amplifier which zone is actually switched to the network input
+                # is what tells the two apart — without it, Spotify in the living
+                # room marked the balcony busy as well, and the balcony was
+                # silent.
+                try:
+                    avr = await denon.query_state(host)
+                    fed = _hears_network(avr, zone2)
+                except denon.DenonError:
+                    # No answer from the amplifier. Fall back to reporting the
+                    # zone busy: a false "occupied" interrupts nobody, while a
+                    # false "free" talks over whoever is listening.
+                    avr, fed = None, True
+
+                if not fed:
+                    result = Occupancy(busy=False, ours=False,
+                                       note=_avr_note(avr, zone2) if avr else None)
+                else:
+                    ours = our_session_state in ("playing", "buffering")
+                    detail = None
+                    if not ours:
+                        # Only ask what is on when it is not ours; it is an extra
+                        # round trip to hardware that answers slowly.
+                        try:
+                            detail = _describe(await denon.get_now_playing(host, pid))
+                        except denon.DenonError:
+                            detail = "playing something else"
+                    result = Occupancy(busy=True, ours=ours, detail=detail)
     except denon.DenonError as exc:
         # Unreachable is not the same as idle, and saying so is the point.
         log.debug("occupancy check failed: %s", exc)

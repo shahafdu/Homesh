@@ -6,7 +6,7 @@ to reconstruct the state of a large, half-finished system from memory.
 **Legend** — ✅ built and verified · 🟡 built, needs Shahaf to confirm ·
 🔴 known broken · ⬜ not started · ⏳ waiting on Shahaf
 
-Last updated: 21 August 2026 · 315 tests · 16 migrations · CI green
+Last updated: 21 August 2026 · 319 tests · 16 migrations · CI green
 
 ---
 
@@ -55,6 +55,13 @@ Deployed and believed correct; not yet confirmed in use.
 
 | | Item | Note |
 |---|---|---|
+| 🟡 | **Clicking a song played the wrong one** | Only Hebrew names, only Windows — the rows were sorted but the *unsorted* list went to the player with the sorted index. Latin names hid it because both orders agree there |
+| 🟡 | **Two rooms claiming one stream** | The receiver has one HEOS player, so "HEOS is playing" names no room. It now asks which zone is switched to the network input. Verified against the receiver with ZONE2 off |
+| 🟡 | **TV app address** | Showed whatever address your browser was using — a ts.net name a television cannot resolve, which is the ERR_NAME_NOT_RESOLVED. Now the house address, from configuration, and it scrolls instead of truncating |
+| 🟡 | **Playlists in rooms** | Same room picker a file uses, given the whole list |
+| 🟡 | **Back to the playing playlist** | The player bar now names where the queue came from and reopens it |
+| 🟡 | **Drag to reorder** | A grip instead of up/down arrows; works with a thumb, and with arrow keys when focused |
+| 🟡 | **Missing tracks look ordinary** | Greyed out and one line, rather than tinted and taller than everything else |
 | 🟡 | **Odd-sized video converting** | H.264 cannot encode an odd height. `Bebe Complicado.avi` is 640x415, and x264 refused to start — which is why it played but would not share |
 | 🟡 | **Sharing avi, wmv, mkv, mov** | Browsers keep a fixed list of file types a page may attach, and none of those are on it — `canShare()` does not check that list, which is why it said yes and the share then failed. They are converted to MP4 first, reusing the conversion the viewer already makes |
 | 🟡 | Sharing documents | Sent as the PDF the server already renders — `.doc` is not on the browser's list either, and a PDF is what a phone can open |

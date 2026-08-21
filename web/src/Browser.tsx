@@ -455,6 +455,16 @@ function Folder(props: {
 
   const tiles = view.startsWith("tiles");
 
+  // Sorted once, and everything downstream works from this array.
+  //
+  // It used to be sorted inline in the map while the *unsorted* listing was
+  // handed to the player alongside the sorted index — so the queue started at
+  // whatever happened to sit at that position in the other order. Invisible for
+  // Latin filenames, where the browser's collator and the database's natural
+  // sort agree; wrong for Hebrew ones on Windows, where they do not. That is
+  // the whole of "clicking a song plays two songs above it".
+  const rows = sortFiles(listing.files, sort);
+
   return (
     <ul className={containerClass(view)}>
       {/* Above everything. It sat between the folders and the files, so a
@@ -534,7 +544,7 @@ function Folder(props: {
         </li>
       ))}
 
-      {sortFiles(listing.files, sort).map((f, i) => (
+      {rows.map((f, i) => (
         <FileRow
           key={f.item_id}
           f={f}
@@ -543,11 +553,9 @@ function Folder(props: {
           view={view}
           isPlaying={playingId === f.item_id}
           onPlay={() =>
-            f.kind === "audio"
-              ? onPlay(listing.files, i, listing.path)
-              : onView(listing.files, i)
+            f.kind === "audio" ? onPlay(rows, i, listing.path) : onView(rows, i)
           }
-          onActions={() => onActions(f, listing.files)}
+          onActions={() => onActions(f, rows)}
         />
       ))}
     </ul>

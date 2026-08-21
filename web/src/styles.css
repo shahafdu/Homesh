@@ -520,6 +520,17 @@ button.compact:hover { color: var(--ink); }
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 
+/* The same line, when it is a way back into the folder or playlist rather than
+   a label. Underlined on hover only: a permanent underline under every playing
+   track turns the quietest line on the bar into the loudest. */
+button.p-where {
+  background: none; border: 0; padding: 0; text-align: left;
+  font: inherit; font-size: 11.5px; cursor: pointer; max-width: 100%;
+}
+button.p-where:hover, button.p-where:focus-visible {
+  color: var(--accent); text-decoration: underline;
+}
+
 .p-scrub { display: flex; align-items: center; gap: 10px; }
 .p-time {
   font-size: 11.5px; color: var(--muted);
@@ -555,7 +566,10 @@ button.compact:hover { color: var(--ink); }
 }
 
 @media (max-width: 640px) {
-  .p-where, .p-count, .p-vol { display: none; }
+  /* The path is noise on a narrow bar. A way back into the playlist is not —
+     it is the only route to the rest of the list, and a phone is where that
+     matters most, so the button form survives where the label does not. */
+  span.p-where, .p-count, .p-vol { display: none; }
   .player { gap: 10px; padding: 8px 12px; }
 }
 
@@ -740,6 +754,17 @@ button.compact:disabled { opacity: .5; cursor: not-allowed; }
   font-family: var(--mono); font-size: 12px;
   padding: 10px 12px; border-radius: 8px;
   background: var(--bg); border: 1px dashed var(--line);
+  /* Wraps rather than overflowing. An address ending in an ellipsis cannot be
+     typed, and on a phone these are read to be typed into something else. */
+  overflow-wrap: anywhere;
+}
+
+/* For the ones that must stay on one line to be read correctly — an address
+   with a port, where a wrap could be mistaken for a space. Drag to see the
+   rest; -webkit-overflow-scrolling keeps that gesture smooth on iOS. */
+.scroll-x {
+  overflow-x: auto; white-space: nowrap; overflow-wrap: normal;
+  -webkit-overflow-scrolling: touch;
 }
 
 /* ── Audience: who a folder or room is for ──────────────────────────────────── */
@@ -968,12 +993,36 @@ button.compact:disabled { opacity: .5; cursor: not-allowed; }
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .pl-play:hover { color: var(--accent); }
-.pl-actions { display: flex; gap: 3px; }
+.pl-actions { display: flex; gap: 3px; align-items: center; }
+
+/* The drag handle. Wider than it looks: a grip that has to be hit precisely is
+   a grip that gets missed, and this is used with a thumb. */
+.pl-grip {
+  background: transparent; border: 1px solid transparent; border-radius: 7px;
+  color: var(--muted); font-size: 15px; line-height: 1;
+  padding: 6px 8px; cursor: grab;
+  touch-action: none;   /* or the browser scrolls the page instead of dragging */
+}
+.pl-grip:hover, .pl-grip:focus-visible { color: var(--fg); border-color: var(--line); }
+.pl-grip:active { cursor: grabbing; }
+
+/* The row being carried, so it is obvious which one moves. */
+.pl-entries li.held {
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  border-radius: 8px;
+}
 
 /* A line whose file could not be found. Dimmed rather than hidden: the whole
    point of keeping it is that somebody can see what is gone. */
-.pl-entries li.missing .pl-track { opacity: 0.55; }
-.pl-entries li.missing { background: color-mix(in srgb, var(--danger) 5%, transparent); }
+/* A missing track is an ordinary row that happens to be greyed out. It used to
+   carry a tinted background and stack onto a second line, which made the thing
+   you have lost the loudest item on the page — the opposite of what a list of
+   what is *there* wants. The words "not found" carry it. */
+.pl-entries li.missing { opacity: 0.5; }
+.pl-entries li.missing .pl-track {
+  flex-direction: row; align-items: baseline; gap: 8px; min-width: 0;
+}
+.pl-entries li.missing .pl-track .nm-clip { flex: 0 1 auto; }
 
 .v-starting {
   display: flex; flex-direction: column; align-items: center; justify-content: center;

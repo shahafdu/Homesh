@@ -65,3 +65,54 @@ class TestOccupancy:
         occupancy._cache["host"] = (0.0, Occupancy(busy=True, ours=False))
         occupancy.invalidate()
         assert occupancy._cache == {}
+
+
+class TestWhichZoneHearsIt:
+    """One HEOS player, two zones — so "HEOS is playing" names no room.
+
+    The receiver has a single network player. Asking it alone reported every
+    zone busy whenever anything streamed: Spotify in the living room marked the
+    balcony occupied while the balcony was switched off. The zone's own input is
+    what tells them apart.
+    """
+
+    @staticmethod
+    def _state(**kwargs):
+        from app.denon import AvrState
+
+        return AvrState(**kwargs)
+
+    def test_a_zone_switched_off_is_not_hearing_it(self):
+        """Measured against the real receiver: main on NET, zone2 off."""
+        from app.occupancy import _hears_network
+
+        state = self._state(power=True, main_zone=True, source="NET",
+                            zone2=False, zone2_source="NET")
+        assert _hears_network(state, zone2=False) is True
+        assert _hears_network(state, zone2=False) != _hears_network(state, zone2=True)
+        assert _hears_network(state, zone2=True) is False
+
+    def test_a_zone_on_the_television_is_not_hearing_it(self):
+        from app.occupancy import _hears_network
+
+        state = self._state(power=True, main_zone=True, source="TV",
+                            zone2=True, zone2_source="NET")
+        assert _hears_network(state, zone2=False) is False
+        assert _hears_network(state, zone2=True) is True
+
+    def test_both_can_hear_it_when_both_are_on_the_network(self):
+        """Not a contradiction: ZONE2 can follow the main zone's source."""
+        from app.occupancy import _hears_network
+
+        state = self._state(power=True, main_zone=True, source="NET",
+                            zone2=True, zone2_source="NET")
+        assert _hears_network(state, zone2=False) is True
+        assert _hears_network(state, zone2=True) is True
+
+    def test_an_unknown_source_counts_as_hearing_it(self):
+        """A false "busy" interrupts nobody; a false "free" talks over someone."""
+        from app.occupancy import _hears_network
+
+        state = self._state(power=True, main_zone=True, source=None, zone2=True)
+        assert _hears_network(state, zone2=False) is True
+        assert _hears_network(state, zone2=True) is True

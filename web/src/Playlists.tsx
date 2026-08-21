@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { ApiError } from "./api";
 import { formatDuration, type FileEntry } from "./library";
+import type { QueueOrigin } from "./player";
 import {
   addToPlaylist,
   copyPlaylist,
@@ -37,7 +38,11 @@ const SECTIONS: { kind: string; title: string; blurb?: string }[] = [
  * but not the sequence somebody chose.
  */
 export default function Playlists(props: {
-  onPlay: (files: FileEntry[], index: number) => void;
+  /** A playlist to open straight away — the player bar points here. */
+  openId?: string | null;
+  onPlay: (files: FileEntry[], index: number, origin: QueueOrigin) => void;
+  /** Send the whole list to a room, using the same picker a file uses. */
+  onSendTo: (files: FileEntry[]) => void;
   onClose: () => void;
 }) {
   useLockScroll();
@@ -62,6 +67,14 @@ export default function Playlists(props: {
     void refresh();
   }, [refresh]);
 
+  // Opened directly at one list, which is what the player bar asks for: while a
+  // playlist is playing, the way back to it should land in it rather than in a
+  // list of everything with the one you want somewhere inside.
+  useEffect(() => {
+    if (!props.openId) return;
+    void getPlaylist(props.openId).then(setOpen).catch(() => undefined);
+  }, [props.openId]);
+
   const act = async (fn: () => Promise<unknown>) => {
     setError(null);
     try {
@@ -81,6 +94,7 @@ export default function Playlists(props: {
         onBack={() => setOpen(null)}
         onClose={props.onClose}
         onPlay={props.onPlay}
+        onSendTo={props.onSendTo}
         onAct={act}
       />
     );
@@ -203,7 +217,8 @@ function PlaylistDetail(props: {
   error: string | null;
   onBack: () => void;
   onClose: () => void;
-  onPlay: (files: FileEntry[], index: number) => void;
+  onPlay: (files: FileEntry[], index: number, origin: QueueOrigin) => void;
+  onSendTo: (files: FileEntry[]) => void;
   onAct: (fn: () => Promise<unknown>) => Promise<void>;
 }) {
   const { playlist } = props;
@@ -213,6 +228,11 @@ function PlaylistDetail(props: {
   // Only the tracks that resolved can be played, and they are what the queue is
   // built from — a missing line has nothing to hand a player.
   const playable = playlist.entries.filter((e) => !e.missing && e.item_id);
+  const origin = (): QueueOrigin => ({
+    kind: "playlist",
+    id: playlist.id,
+    label: playlist.name,
+  });
   const asFiles = (): FileEntry[] =>
     playable.map((e) => ({
       item_id: e.item_id as string,
@@ -226,12 +246,72 @@ function PlaylistDetail(props: {
       available: e.available,
     }));
 
-  const move = (index: number, delta: number) => {
-    const order = playlist.entries.map((e) => e.entry_id);
-    const target = index + delta;
-    if (target < 0 || target >= order.length) return;
-    [order[index], order[target]] = [order[target], order[index]];
-    void props.onAct(() => reorderPlaylist(playlist.id, order));
+  // ── Reordering by dragging ────────────────────────────────────────────────
+  //
+  // Pointer events rather than HTML5 drag-and-drop, which does not fire on
+  // touch at all — and this list is mostly used on a phone. The handle is what
+  // starts a drag, so an ordinary swipe still scrolls the page.
+  //
+  // `dragging` is the local order while a drag is in progress. The server is
+  // told once, on release: a reorder per crossed row would be a request per
+  // frame of a gesture.
+  const [dragging, setDragging] = useState<string[] | null>(null);
+  const [held, setHeld] = useState<string | null>(null);
+
+  const order = dragging ?? playlist.entries.map((e) => e.entry_id);
+  const byId = new Map(playlist.entries.map((e) => [e.entry_id, e]));
+  const shown = order.map((id) => byId.get(id)).filter((e) => e !== undefined);
+
+  const startDrag = (entryId: string) => (event: React.PointerEvent) => {
+    if (playlist.read_only) return;
+    event.preventDefault();
+    const handle = event.currentTarget as HTMLElement;
+    handle.setPointerCapture(event.pointerId);
+
+    const list = handle.closest("ol") as HTMLOListElement | null;
+    if (!list) return;
+
+    setHeld(entryId);
+    let current = [...order];
+
+    const onMove = (move: PointerEvent) => {
+      // Which row is under the finger, by geometry rather than by hit-testing:
+      // the row being dragged sits under the pointer and would swallow it.
+      const rows = [...list.children] as HTMLElement[];
+      const over = rows.findIndex((row) => {
+        const box = row.getBoundingClientRect();
+        return move.clientY >= box.top && move.clientY <= box.bottom;
+      });
+      const from = current.indexOf(entryId);
+      if (over < 0 || over === from) return;
+
+      const next = [...current];
+      next.splice(over, 0, ...next.splice(from, 1));
+      current = next;
+      setDragging(next);
+    };
+
+    const onUp = () => {
+      handle.removeEventListener("pointermove", onMove);
+      handle.removeEventListener("pointerup", onUp);
+      handle.removeEventListener("pointercancel", onUp);
+      setHeld(null);
+
+      const before = playlist.entries.map((e) => e.entry_id);
+      if (current.join() === before.join()) {
+        setDragging(null);
+        return;
+      }
+      // Kept until the reload lands, so the list does not snap back to the old
+      // order for the moment the round trip takes.
+      void props.onAct(() => reorderPlaylist(playlist.id, current)).then(() =>
+        setDragging(null),
+      );
+    };
+
+    handle.addEventListener("pointermove", onMove);
+    handle.addEventListener("pointerup", onUp);
+    handle.addEventListener("pointercancel", onUp);
   };
 
   return (
@@ -269,11 +349,25 @@ function PlaylistDetail(props: {
             className="compact primary"
             disabled={playable.length === 0}
             onClick={() => {
-              props.onPlay(asFiles(), 0);
+              props.onPlay(asFiles(), 0, origin());
               props.onClose();
             }}
           >
             ▶ Play
+          </button>
+          {/* The same picker a single file uses, given the whole list. A
+              playlist that can only be played in the room you are standing in
+              is half a playlist — and this receiver is the reason the feature
+              exists at all. */}
+          <button
+            className="compact"
+            disabled={playable.length === 0}
+            onClick={() => {
+              props.onSendTo(asFiles());
+              props.onClose();
+            }}
+          >
+            ⧉ Play in a room
           </button>
           {/* Copying is always available, and is the answer whenever the rest
               is not: a list you cannot change is one you can take a copy of. */}
@@ -339,8 +433,13 @@ function PlaylistDetail(props: {
         )}
 
         <ol className="pl-entries">
-          {playlist.entries.map((entry, index) => (
-            <li key={entry.entry_id} className={entry.missing ? "missing" : ""}>
+          {shown.map((entry, index) => (
+            <li
+              key={entry.entry_id}
+              className={`${entry.missing ? "missing" : ""}${
+                held === entry.entry_id ? " held" : ""
+              }`}
+            >
               <span className="pl-pos">{index + 1}</span>
 
               <span className="pl-track">
@@ -357,6 +456,7 @@ function PlaylistDetail(props: {
                         props.onPlay(
                           asFiles(),
                           Math.max(0, playable.findIndex((p) => p.entry_id === entry.entry_id)),
+                          origin(),
                         )
                       }
                     >
@@ -372,15 +472,37 @@ function PlaylistDetail(props: {
               <span className="pl-actions">
                 {playlist.read_only ? null : (
                   <>
-                <button className="iconbtn tiny" title="Move up" aria-label="Move up"
-                        disabled={index === 0} onClick={() => move(index, -1)}>↑</button>
-                <button className="iconbtn tiny" title="Move down" aria-label="Move down"
-                        disabled={index === playlist.entries.length - 1}
-                        onClick={() => move(index, 1)}>↓</button>
-                <button className="iconbtn tiny" title="Remove" aria-label="Remove"
-                        onClick={() =>
-                          void props.onAct(() => removeFromPlaylist(playlist.id, entry.entry_id))
-                        }>×</button>
+                    {/* The handle, not the row: dragging anywhere would make the
+                        list impossible to scroll on a phone. Also a keyboard
+                        control, because a drag handle alone cannot be operated
+                        without a pointer. */}
+                    <button
+                      className="pl-grip"
+                      title="Drag to reorder — or use the arrow keys"
+                      aria-label={`Reorder ${entry.title ?? entry.filename ?? "track"}, position ${
+                        index + 1
+                      } of ${shown.length}`}
+                      onPointerDown={startDrag(entry.entry_id)}
+                      onKeyDown={(e) => {
+                        const delta = e.key === "ArrowUp" ? -1 : e.key === "ArrowDown" ? 1 : 0;
+                        if (!delta) return;
+                        e.preventDefault();
+                        const target = index + delta;
+                        if (target < 0 || target >= order.length) return;
+                        const next = [...order];
+                        next.splice(target, 0, ...next.splice(index, 1));
+                        setDragging(next);
+                        void props
+                          .onAct(() => reorderPlaylist(playlist.id, next))
+                          .then(() => setDragging(null));
+                      }}
+                    >
+                      ☰
+                    </button>
+                    <button className="iconbtn tiny" title="Remove" aria-label="Remove"
+                            onClick={() =>
+                              void props.onAct(() => removeFromPlaylist(playlist.id, entry.entry_id))
+                            }>×</button>
                   </>
                 )}
               </span>

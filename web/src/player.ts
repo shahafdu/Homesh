@@ -15,8 +15,23 @@ export interface Track {
   duration_ms?: number | null;
 }
 
+/** Where the playing queue came from, so the player bar can go back to it.
+ *
+ * Without this, starting a playlist meant losing sight of it: the queue plays
+ * on, but there is no way to see the list you are inside or choose a different
+ * track from it. The player bar is the only thing on screen that knows anything
+ * is playing at all, so it is where the way back belongs.
+ */
+export interface QueueOrigin {
+  kind: "folder" | "playlist";
+  /** A playlist id, or a folder path. */
+  id: string;
+  label: string;
+}
+
 export interface PlayerState {
   queue: Track[];
+  origin: QueueOrigin | null;
   index: number;
   playing: boolean;
   position: number;
@@ -28,6 +43,7 @@ export interface PlayerState {
 
 const INITIAL: PlayerState = {
   queue: [],
+  origin: null,
   index: -1,
   playing: false,
   position: 0,
@@ -181,7 +197,8 @@ export function usePlayer() {
   }, []);
 
   const play = useCallback(
-    (files: FileEntry[], startIndex: number, folderPath: string) => {
+    (files: FileEntry[], startIndex: number, folderPath: string,
+     origin?: QueueOrigin | null) => {
       // Queue the whole folder's audio, so playing one track behaves like an album
       // rather than a single file.
       const audioFiles = files.filter((f) => f.kind === "audio" && f.available);
@@ -194,7 +211,13 @@ export function usePlayer() {
       }));
       const index = Math.max(0, queue.findIndex((t) => t.item_id === clicked.item_id));
 
-      setState((s) => ({ ...s, queue, index, error: null }));
+      const from =
+        origin ??
+        (folderPath
+          ? { kind: "folder" as const, id: folderPath, label: folderPath.split("/").pop() ?? "" }
+          : null);
+
+      setState((s) => ({ ...s, queue, index, origin: from, error: null }));
       stateRef.current = { ...stateRef.current, queue, index };
       void loadTrack(index);
     },

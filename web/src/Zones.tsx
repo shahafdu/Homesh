@@ -2,7 +2,8 @@ import { useCallback, useEffect, useState } from "react";
 import { useLockScroll } from "./useLockScroll";
 import AudiencePicker, { type Choice } from "./Audience";
 import { listPeople, type Person } from "./people";
-import { ApiError } from "./api";
+import { ApiError, api } from "./api";
+import { copyText } from "./copy";
 import {
   listZones,
   pairDevice,
@@ -24,6 +25,64 @@ import {
  * possible because the server owns playback state rather than the phone
  * (ARCHITECTURE.md §5.8).
  */
+
+/** The address to type into a television, which is not the one in your browser.
+ *
+ * A phone reaching this server over Tailscale sees a ts.net name. A set-top box
+ * is not on the tailnet and cannot resolve it — the address shown here was one
+ * the television reported as ERR_NAME_NOT_RESOLVED, which looked like a broken
+ * download and was actually a wrong address. So the server is asked for the
+ * house address instead of assuming this browser's.
+ */
+function TvAppAddress() {
+  const [lan, setLan] = useState<string | null>(null);
+  const [detail, setDetail] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    api
+      .get<{ lan: string | null; detail: string | null }>("/tv.address")
+      .then((r) => {
+        setLan(r.lan);
+        setDetail(r.detail);
+      })
+      .catch(() => setDetail("Could not ask the server for its address."));
+  }, []);
+
+  const here = window.location.origin;
+  const url = `${lan ?? here}/tv.apk`;
+  // Only worth pointing out when the two differ — otherwise it is noise.
+  const differs = lan !== null && !here.startsWith(lan);
+
+  return (
+    <>
+      {/* Scrolls rather than truncates: an address that ends in an ellipsis
+          cannot be typed, and this one has to be typed by hand on a remote
+          control with no keyboard. */}
+      <div className="invite-link scroll-x">{url}</div>
+      <div className="zone-controls">
+        <button
+          className="compact"
+          onClick={async () => {
+            setCopied(await copyText(url));
+            window.setTimeout(() => setCopied(false), 2500);
+          }}
+        >
+          {copied ? "Copied" : "Copy address"}
+        </button>
+      </div>
+      {differs && (
+        <p className="muted small">
+          This is the address on your home network. It is not the one in your
+          browser’s bar, because a television is not on your Tailscale network
+          and cannot reach that one.
+        </p>
+      )}
+      {detail && <p className="muted small">{detail} Showing this browser’s address instead.</p>}
+    </>
+  );
+}
+
 export default function Zones(props: { onClose: () => void }) {
   useLockScroll();
   const [zones, setZones] = useState<Zone[] | null>(null);
@@ -319,7 +378,7 @@ function AddDevice(props: { onDone: () => void; onCancel: () => void }) {
         <p className="muted small">
           On the box, open <b>Downloader</b> (or any browser) and go to:
         </p>
-        <div className="invite-link nm-clip">{`${window.location.origin}/tv.apk`}</div>
+        <TvAppAddress />
         <p className="muted small">
           Allow it to install unknown apps when asked. Then open Homesh from the
           launcher — it will ask where this server is, and show a pairing code.

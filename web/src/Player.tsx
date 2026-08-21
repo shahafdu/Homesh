@@ -10,6 +10,8 @@ export default function Player(props: {
   onStop: () => void;
   shuffle: boolean;
   onShuffle: () => void;
+  /** Open the folder or playlist this queue came from. */
+  onOpenOrigin: () => void;
 }) {
   const { state, current } = props;
   if (!current) return null;
@@ -54,7 +56,18 @@ export default function Player(props: {
           <span className="p-name" title={current.filename}>
             {current.filename}
           </span>
-          <span className="p-where">{current.path}</span>
+          {/* The path, and — when the queue came from somewhere you can go back
+              to — a way back to it. Starting a playlist used to mean losing it:
+              you could hear it, but not see it or pick another track from it. */}
+          {state.origin ? (
+            <button className="p-where link" onClick={props.onOpenOrigin}
+                    title={`Open ${state.origin.label}`}>
+              {state.origin.kind === "playlist" ? "≡ " : "▸ "}
+              {state.origin.label || current.path}
+            </button>
+          ) : (
+            <span className="p-where">{current.path}</span>
+          )}
         </div>
 
       </div>
