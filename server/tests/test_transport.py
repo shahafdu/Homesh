@@ -170,7 +170,9 @@ class TestNowPlaying:
         # The filename is the guarantee. Tags may be missing on any given file —
         # plenty of these fixtures have none — but the name always exists.
         assert now["filename"]
-        assert set(now) == {"filename", "title", "artist"}
+        # duration_ms joined these so the tower can draw a position bar: a bar
+        # needs something to be a fraction of.
+        assert set(now) == {"filename", "title", "artist", "duration_ms"}
 
     def test_the_name_follows_a_skip(self, client, db, scanned, screen):
         queue = _tracks(db)
@@ -189,3 +191,113 @@ class TestNowPlaying:
     def test_an_idle_room_reports_nothing(self, client, db, scanned, screen):
         room = next(z for z in client.get("/api/zones").json() if z["id"] == screen)
         assert room["session"] is None
+
+
+class TestSeekingInARoom:
+    """Moving through what another room is playing.
+
+    The control tower could start and stop a room but never move through it, so
+    getting past a slow passage on the bedroom screen meant walking to the
+    bedroom — on an hour-long video, which is exactly when nobody is in that
+    room.
+    """
+
+    def test_a_receiver_says_it_cannot_rather_than_doing_nothing(
+        self, client, db, screen, scanned
+    ):
+        """HEOS is fed a stream, and a live transcode has no index to seek in."""
+        with db.connect() as conn:
+            conn.execute(
+                text("UPDATE renderers SET kind = 'heos' WHERE id = "
+                     "(SELECT renderer_id FROM zones WHERE id = :z)"),
+                {"z": screen},
+            )
+            conn.commit()
+
+        r = client.post(f"/api/zones/{screen}/seek", json={"position_ms": 60_000})
+        assert r.status_code == 409
+        assert "cannot be moved through" in r.json()["detail"]
+
+    def test_a_screen_that_is_not_connected_says_so(self, client, db, screen, scanned):
+        with db.connect() as conn:
+            conn.execute(
+                text("UPDATE renderers SET kind = 'tvapp' WHERE id = "
+                     "(SELECT renderer_id FROM zones WHERE id = :z)"),
+                {"z": screen},
+            )
+            conn.commit()
+
+        r = client.post(f"/api/zones/{screen}/seek", json={"position_ms": 60_000})
+        assert r.status_code == 503
+        assert "not connected" in r.json()["detail"]
+
+    def test_a_negative_position_is_refused(self, client, screen):
+        assert client.post(
+            f"/api/zones/{screen}/seek", json={"position_ms": -1}
+        ).status_code == 422
+
+
+class TestAScreenThatGoesAway:
+    """Closing the app on the television is not "still playing".
+
+    It used to leave the session marked playing, so the tower showed a room
+    happily playing to a screen that no longer existed — and pressing play there
+    did nothing, because resuming asks the screen to carry on and there was no
+    screen left to ask.
+    """
+
+    def test_the_session_goes_idle_but_keeps_its_place(self, client, db, screen, scanned):
+        tracks = _tracks(db)
+        assert client.post(
+            f"/api/zones/{screen}/play", json={"item_ids": tracks}
+        ).status_code in (200, 503)
+
+        with db.connect() as conn:
+            renderer = conn.execute(
+                text("SELECT renderer_id FROM zones WHERE id = :z"), {"z": screen}
+            ).scalar_one()
+            conn.execute(
+                text("UPDATE play_sessions SET state = 'playing', position_ms = 90000 "
+                     "WHERE zone_id = :z"),
+                {"z": screen},
+            )
+            conn.commit()
+
+        from app.renderers import _end_session
+
+        _end_session(renderer)
+
+        with db.connect() as conn:
+            state, position = conn.execute(
+                text("SELECT state::text, position_ms FROM play_sessions WHERE zone_id = :z"),
+                {"z": screen},
+            ).one()
+
+        assert state == "idle"
+        # Where it got to is exactly what somebody wants when the television
+        # comes back on. It is the claim that it is *playing* that was false.
+        assert position == 90000
+
+    def test_an_idle_session_is_left_alone(self, client, db, screen, scanned):
+        with db.connect() as conn:
+            renderer = conn.execute(
+                text("SELECT renderer_id FROM zones WHERE id = :z"), {"z": screen}
+            ).scalar_one()
+            conn.execute(
+                text("INSERT INTO play_sessions (zone_id, state, queue, cursor) "
+                     "VALUES (:z, 'idle', '{}', 0) ON CONFLICT (zone_id) "
+                     "DO UPDATE SET state = 'idle'"),
+                {"z": screen},
+            )
+            conn.commit()
+
+        from app.renderers import _end_session
+
+        _end_session(renderer)
+
+        with db.connect() as conn:
+            state = conn.execute(
+                text("SELECT state::text FROM play_sessions WHERE zone_id = :z"),
+                {"z": screen},
+            ).scalar_one()
+        assert state == "idle"

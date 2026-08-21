@@ -86,7 +86,64 @@ export default function TvApp() {
   const [zoneName, setZoneName] = useState("This screen");
   const [connected, setConnected] = useState(false);
   const [now, setNow] = useState<Command | null>(null);
+  // What is playing, readable from the command handler.
+  //
+  // `handle` is deliberately built once — it is handed to the socket, and
+  // rebuilding it would mean reconnecting whenever a track changed — so it
+  // closes over the *first* render's state. Reading `now` from there gave null
+  // forever, which is why resuming a video went to the media element instead of
+  // the box's own decoder. A ref is current whenever it is read.
+  const nowRef = useRef<Command | null>(null);
+  useEffect(() => {
+    nowRef.current = now;
+  }, [now]);
   const [position, setPosition] = useState(0);
+
+  // ── Showing that the remote was heard ─────────────────────────────────────
+  //
+  // A television has no cursor and no window chrome. If nothing on screen
+  // changes, a press is indistinguishable from a flat battery — which is what
+  // made these controls feel unresponsive: they worked, silently, and the
+  // evidence arrived a second or two later when the stream caught up.
+
+  /** Where a seek asked to land, shown until playback actually reports it. */
+  const [seekTo, setSeekTo] = useState<number | null>(null);
+  /** A short confirmation of the last press: "▸▸ 12:30", "❚❚ Paused". */
+  const [gesture, setGesture] = useState<string | null>(null);
+  /** Whether the title and bar are on screen. They fade out while watching. */
+  const [overlayShown, setOverlayShown] = useState(true);
+
+  const wake = useCallback(() => {
+    setOverlayShown(true);
+    // Deliberately not a dependency-tracked timer: every wake replaces the
+    // previous deadline, which is what "a few seconds after the last press"
+    // means.
+    window.clearTimeout(hideAt.current);
+    hideAt.current = window.setTimeout(() => setOverlayShown(false), 4000);
+  }, []);
+  const hideAt = useRef<number | undefined>(undefined);
+
+  // The bar follows the request until reality catches up with it, then follows
+  // reality. Without the first half a seek looks like nothing happened.
+  const shownPosition = seekTo ?? position;
+  useEffect(() => {
+    if (seekTo === null) return;
+    // Landed near enough, or the stream moved on by itself.
+    if (Math.abs(position - seekTo) < 2) setSeekTo(null);
+  }, [position, seekTo]);
+
+  // The confirmation is a flash, not a status line.
+  useEffect(() => {
+    if (!gesture) return;
+    const clear = window.setTimeout(() => setGesture(null), 1600);
+    return () => window.clearTimeout(clear);
+  }, [gesture]);
+
+  // Playing something new starts the overlay visible and lets it fade.
+  useEffect(() => {
+    wake();
+    setSeekTo(null);
+  }, [now?.item_id, wake]);
   const [duration, setDuration] = useState(0);
 
   const mediaRef = useRef<HTMLVideoElement | null>(null);
@@ -235,7 +292,7 @@ export default function TvApp() {
         media?.pause();
         break;
       case "resume":
-        if (native() && now?.kind === "video") native()!.resume();
+        if (native() && nowRef.current?.kind === "video") native()!.resume();
         else void media?.play().catch(() => undefined);
         break;
       case "stop":
@@ -246,7 +303,19 @@ export default function TvApp() {
         setPhase("idle");
         break;
       case "seek":
-        if (media && cmd.position_ms != null) media.currentTime = cmd.position_ms / 1000;
+        if (cmd.position_ms == null) break;
+        // The native player has no seek of its own — it is restarted at the new
+        // offset, which is also how the transcoded stream is moved through,
+        // since a stream still being encoded has no index to seek in. Without
+        // this branch the tower's bar moved and the television ignored it.
+        if (native() && nowRef.current?.kind === "video") {
+          native()!.play(nowRef.current.url ?? "", cmd.position_ms);
+        } else if (media) {
+          media.currentTime = cmd.position_ms / 1000;
+        }
+        setSeekTo(cmd.position_ms / 1000);
+        setGesture(`▸ ${formatTime(cmd.position_ms / 1000)}`);
+        wake();
         break;
       case "volume":
         if (media && cmd.volume != null) media.volume = Math.max(0, Math.min(1, cmd.volume / 100));
@@ -298,12 +367,26 @@ export default function TvApp() {
       const media = mediaRef.current;
       const player = native();
 
+      // Any key wakes the overlay, including one this does not otherwise
+      // handle: on a television the only evidence a press arrived is the screen
+      // changing, and a remote with no visible effect reads as a dead remote.
+      wake();
+
       const seekBy = (seconds: number) => {
-        if (player && now?.kind === "video") {
-          player.play(now.url ?? "", Math.max(0, player.positionMs() + seconds * 1000));
-        } else if (media) {
-          media.currentTime = Math.max(0, media.currentTime + seconds);
-        }
+        const from = player && now?.kind === "video"
+          ? player.positionMs() / 1000
+          : (media?.currentTime ?? 0);
+        const to = Math.max(0, from + seconds);
+
+        // Shown immediately, before anything has loaded. A jump in a
+        // transcoded stream restarts the encoder, which takes a second or two —
+        // and with the bar frozen at the old position the whole time, there was
+        // nothing to tell you the press had registered or where you had landed.
+        setSeekTo(to);
+        setGesture(`${seconds > 0 ? "▸▸" : "◂◂"} ${formatTime(to)}`);
+
+        if (player && now?.kind === "video") player.play(now.url ?? "", to * 1000);
+        else if (media) media.currentTime = to;
       };
 
       switch (event.key) {
@@ -317,6 +400,7 @@ export default function TvApp() {
         case "Enter":
         case " ": {
           const playing = player?.isPlaying() ?? !media?.paused;
+          setGesture(playing ? "❚❚ Paused" : "▶ Playing");
           report(playing ? "paused" : "playing");
           if (player && now?.kind === "video") {
             playing ? player.pause() : player.resume();
@@ -326,17 +410,18 @@ export default function TvApp() {
           break;
         }
         case "MediaStop":
+          setGesture("■ Stopped");
           handle({ type: "stop" });
           break;
         default:
-          return;
+          return;   // wake() already ran; nothing else to do
       }
       event.preventDefault();
     };
 
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [now, handle, report]);
+  }, [now, handle, report, wake]);
 
 
   useEffect(() => {
@@ -470,19 +555,33 @@ export default function TvApp() {
               </>
             )}
           </div>
-          <div className="meta">
+          {/* Over the picture, not beside it. It used to take a strip off the
+              bottom of every frame, so a 16:9 film was letterboxed into what
+              was left — on the one screen in the house where the whole point is
+              that it fills the wall. It fades out after a few seconds and any
+              remote key brings it back. */}
+          <div className={`meta${overlayShown ? "" : " hidden"}`}>
             <div className="title">{now.filename ?? "Playing"}</div>
             {now.tags && <div className="tags">{now.tags}</div>}
             {!isPhoto && (
               <div className="scrub">
-                <span className="time">{formatTime(position)}</span>
+                <span className="time">{formatTime(shownPosition)}</span>
                 <div className="bar">
-                  <i style={{ width: duration ? `${(position / duration) * 100}%` : "0%" }} />
+                  <i
+                    style={{
+                      width: duration ? `${(shownPosition / duration) * 100}%` : "0%",
+                    }}
+                  />
                 </div>
                 <span className="time right">{formatTime(duration)}</span>
               </div>
             )}
           </div>
+
+          {/* Said plainly and large, because on a television there is no cursor
+              to hover and no window title to check: the only way to know a
+              press registered is to see the screen change. */}
+          {gesture && <div className="gesture">{gesture}</div>}
         </div>
         {!connected && (
           <div className="offline"><span className="dot" /> Reconnecting…</div>

@@ -6,7 +6,7 @@ to reconstruct the state of a large, half-finished system from memory.
 **Legend** — ✅ built and verified · 🟡 built, needs Shahaf to confirm ·
 🔴 known broken · ⬜ not started · ⏳ waiting on Shahaf
 
-Last updated: 21 August 2026 · 327 tests · 16 migrations · CI green
+Last updated: 21 August 2026 · 332 tests · 16 migrations · CI green
 
 ---
 
@@ -55,6 +55,11 @@ Deployed and believed correct; not yet confirmed in use.
 
 | | Item | Note |
 |---|---|---|
+| 🟡 | **wmv / avi on the TV** | The screen was handed the raw file and its decoder refused. It now gets the same live transcode the browser uses — verified: an .avi arrives as h264 640x480 + aac. No decoder bundled into the app |
+| 🟡 | **The TV player fills the screen** | The title and bar used to take a strip off every frame. They float over the picture now and fade after four seconds; any remote key brings them back |
+| 🟡 | **The remote shows it was heard** | Seeking jumps the bar immediately instead of waiting for the stream, and pause/seek/stop each flash a large confirmation. On a television a silent press is indistinguishable from a flat battery |
+| 🟡 | **Closing the TV app frees the room** | The session stayed `playing` against a screen that no longer existed, so the tower lied and play did nothing. It goes idle and keeps its position |
+| 🟡 | **Seek from the control tower** | A draggable position bar per room. Sent on release, not per pixel |
 | 🟡 | **Clicking a song played the wrong one** | Only Hebrew names, only Windows — the rows were sorted but the *unsorted* list went to the player with the sorted index. Latin names hid it because both orders agree there |
 | 🟡 | **Two rooms claiming one stream** | The receiver has one HEOS player, so "HEOS is playing" names no room. It now asks which zone is switched to the network input. Verified against the receiver with ZONE2 off |
 | 🟡 | **TV app address** | Two faults: it showed a ts.net name no television can resolve, and then the address was long enough that the TV browser searched Google for it. Now the house address on port 80 as `‹address›/apk` — no port to type — and it says to press Go rather than the search suggestion. **Not `/tv`**: that is the interface the installed app loads, and putting the download there blacked out every screen in the house |

@@ -1177,3 +1177,44 @@ button.compact:disabled { opacity: .5; cursor: not-allowed; }
 }
 .chrome .bar, .chrome .toolbar { position: static; box-shadow: none; }
 .rows li.rowhead { top: 0; }
+
+/* ── A room's position, and moving it ────────────────────────────────────────
+ *
+ * The tower could always start and stop a room but never move through what it
+ * was playing, which is the control an hour-long video most needs from another
+ * room. */
+.zone-seek {
+  display: flex; align-items: center; gap: 10px; margin-top: 8px;
+}
+.zone-seek .time {
+  font-size: 11.5px; color: var(--muted);
+  font-variant-numeric: tabular-nums; min-width: 40px;
+}
+.zone-seek .time:last-child { text-align: right; }
+.zone-seek input[type="range"] {
+  flex: 1; min-width: 0; -webkit-appearance: none; appearance: none;
+  height: 20px; background: transparent; cursor: pointer;
+}
+.zone-seek input[type="range"]::-webkit-slider-runnable-track {
+  height: 5px; border-radius: 99px;
+  background: linear-gradient(
+    to right, var(--accent) var(--pct, 0%), var(--line) var(--pct, 0%)
+  );
+}
+.zone-seek input[type="range"]::-moz-range-track {
+  height: 5px; border-radius: 99px; background: var(--line);
+}
+.zone-seek input[type="range"]::-moz-range-progress {
+  height: 5px; border-radius: 99px; background: var(--accent);
+}
+/* Generous on purpose: this is dragged with a thumb. */
+.zone-seek input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none;
+  width: 15px; height: 15px; margin-top: -5px;
+  border-radius: 50%; background: var(--accent);
+  border: 2px solid var(--surface);
+}
+.zone-seek input[type="range"]::-moz-range-thumb {
+  width: 15px; height: 15px; border: 2px solid var(--surface);
+  border-radius: 50%; background: var(--accent);
+}

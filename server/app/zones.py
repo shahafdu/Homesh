@@ -28,6 +28,7 @@ from .db import get_engine
 from .people import ROOM, AudienceUpdate, apply_audience
 from .security import CurrentUser, audit, require_user
 from .signing import mint
+from .transcode import needs_conversion
 
 log = logging.getLogger("homesh.zones")
 router = APIRouter(prefix="/api/zones", tags=["zones"])
@@ -200,7 +201,11 @@ def _describe(item_ids: list[str]) -> dict[str, dict]:
                 SELECT i.id,
                        min(r.filename) AS filename,
                        max(CASE WHEN m.key = 'title'  THEN m.value END) AS title,
-                       max(CASE WHEN m.key = 'artist' THEN m.value END) AS artist
+                       max(CASE WHEN m.key = 'artist' THEN m.value END) AS artist,
+                       -- A bar needs something to be a fraction of. Without it
+                       -- the tower could show a position but never how far
+                       -- through, which is not a seek bar.
+                       min(i.duration_ms) AS duration_ms
                 FROM items i
                 JOIN replicas r ON r.item_id = i.id
                 LEFT JOIN item_metadata m ON m.item_id = i.id
@@ -218,6 +223,7 @@ def _describe(item_ids: list[str]) -> dict[str, dict]:
             "filename": r[1],
             "title": r[2],
             "artist": r[3],
+            "duration_ms": r[4],
         }
         for r in rows
     }
@@ -548,12 +554,27 @@ async def _push_to_screen(zone: Zone, item_id: UUID, user: CurrentUser) -> dict:
 
     filename, kind, tags = row if row else ("", "audio", None)
 
+    # A screen decodes with the chip it has. WMV and AVI carry codecs no
+    # television decoder has ever supported, and handing one over produced
+    # exactly what a browser produces: "cannot play that format".
+    #
+    # The answer is the transcode the viewer already uses, not a decoder
+    # bundled into the app. Shipping one would mean ExoPlayer with its FFmpeg
+    # extension — a build system, several megabytes, and a second decoder to
+    # keep working — to solve on the television a problem the server has
+    # already solved for the browser. This is one URL.
+    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+    if kind == "video" and needs_conversion(ext):
+        media_url = f"{base}/api/videos/{item_id}/live.mp4?t={token}"
+    else:
+        media_url = f"{base}/api/stream/{item_id}?t={token}"
+
     sent = await hub.send(
         zone.renderer_id,
         {
             "type": "play",
             "item_id": str(item_id),
-            "url": f"{base}/api/stream/{item_id}?t={token}",
+            "url": media_url,
             "filename": filename,
             "tags": tags,
             "kind": kind,
@@ -737,6 +758,53 @@ async def resume(zone_id: UUID, user: CurrentUser = Depends(require_user)) -> di
         )
     occupancy.invalidate()
     return {"zone": zone.name, "state": "playing"}
+
+
+class SeekRequest(BaseModel):
+    position_ms: int = Field(ge=0, description="Where to jump to, from the start")
+
+
+@router.post("/{zone_id}/seek")
+async def seek(
+    zone_id: UUID, body: SeekRequest, user: CurrentUser = Depends(require_user)
+) -> dict:
+    """Move to a point in what is playing in another room.
+
+    The one control the tower was missing, and the one an hour-long video most
+    needs: without it the only way past a slow passage in the bedroom was to
+    walk to the bedroom.
+    """
+    zone = _load_zone(zone_id)
+    _require_zone_access(zone_id, user)
+
+    if zone.renderer_kind != "tvapp" or not zone.renderer_id:
+        # HEOS seeks within a stream it is being fed, and a stream that is being
+        # transcoded live has no index to seek in. Saying so beats a control
+        # that silently does nothing.
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            f"{zone.name} plays through the receiver, which cannot be moved through",
+        )
+
+    from .renderers import hub
+
+    if not await hub.send(
+        zone.renderer_id, {"type": "seek", "position_ms": body.position_ms}
+    ):
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            f"{zone.name} is not connected — open Homesh on that screen",
+        )
+
+    # Recorded straight away rather than waiting for the screen to report back,
+    # so the bar in the tower moves the moment it is dragged.
+    with get_engine().begin() as conn:
+        conn.execute(
+            text("UPDATE play_sessions SET position_ms = :p, updated_at = now() "
+                 "WHERE zone_id = :z"),
+            {"p": body.position_ms, "z": str(zone_id)},
+        )
+    return {"zone": zone.name, "position_ms": body.position_ms}
 
 
 async def _skip(zone_id: UUID, user: CurrentUser, delta: int) -> dict:

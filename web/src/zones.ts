@@ -12,6 +12,8 @@ export interface NowPlaying {
   filename: string;
   title: string | null;
   artist: string | null;
+  /** What a position bar is a fraction of. Null for a live stream. */
+  duration_ms: number | null;
 }
 
 export interface ZoneSession {
@@ -49,6 +51,12 @@ export interface Zone {
 }
 
 export const listZones = () => api.get<Zone[]>("/api/zones");
+
+/** Move to a point in what is playing in another room. */
+export const seekZone = (zoneId: string, positionMs: number) =>
+  api.post<{ zone: string; position_ms: number }>(`/api/zones/${zoneId}/seek`, {
+    position_ms: Math.max(0, Math.round(positionMs)),
+  });
 
 export const playInZone = (
   zoneId: string,

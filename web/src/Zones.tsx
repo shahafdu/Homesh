@@ -14,6 +14,7 @@ import {
   removeZone,
   renameZone,
   resumeZone,
+  seekZone,
   stopZone,
   zoneStatus,
   type Zone,
@@ -148,6 +149,7 @@ export default function Zones(props: { onClose: () => void }) {
           <ZoneCard
             key={zone.id}
             zone={zone}
+            onSeek={(ms) => act(() => seekZone(zone.id, ms))}
             onStop={() => act(() => stopZone(zone.id))}
             onVolume={(v) => act(() => setZoneVolume(zone.id, v))}
             onToggle={() =>
@@ -180,8 +182,67 @@ export default function Zones(props: { onClose: () => void }) {
   );
 }
 
+/** Where a room is in what it is playing, and a way to move it.
+ *
+ * The control the tower was missing. Without it the only way past a slow
+ * passage on the bedroom screen was to walk to the bedroom — and an hour-long
+ * video is exactly the case where somebody is not in that room.
+ */
+function ZoneSeek(props: { zone: Zone; onSeek: (positionMs: number) => void }) {
+  const session = props.zone.session;
+  const duration = session?.now?.duration_ms ?? 0;
+
+  // While dragging, the bar follows the finger rather than the four-second
+  // poll — which would otherwise yank it back to where the room still is.
+  const [dragging, setDragging] = useState<number | null>(null);
+  const position = dragging ?? session?.position_ms ?? 0;
+
+  // A receiver plays a stream it is being fed and cannot be moved through, so
+  // there is nothing honest to offer. Nor is there for anything with no known
+  // length: a bar with no end is not a bar.
+  if (!session || duration <= 0 || props.zone.renderer?.kind !== "tvapp") return null;
+
+  return (
+    <div className="zone-seek">
+      <span className="time">{formatClock(position)}</span>
+      <input
+        type="range"
+        min={0}
+        max={duration}
+        step={1000}
+        value={Math.min(position, duration)}
+        aria-label={`Position in ${props.zone.name}`}
+        onChange={(e) => setDragging(Number(e.target.value))}
+        // Sent on release, not on every pixel: dragging across an hour would
+        // otherwise be a hundred requests and a hundred restarts of the encoder.
+        onPointerUp={() => {
+          if (dragging !== null) props.onSeek(dragging);
+          setDragging(null);
+        }}
+        onKeyUp={() => {
+          if (dragging !== null) props.onSeek(dragging);
+          setDragging(null);
+        }}
+        style={{ ["--pct" as string]: `${(position / duration) * 100}%` }}
+      />
+      <span className="time">{formatClock(duration)}</span>
+    </div>
+  );
+}
+
+/** mm:ss, or h:mm:ss once it earns the hour. */
+function formatClock(ms: number): string {
+  const total = Math.max(0, Math.round(ms / 1000));
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const sec = total % 60;
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return h > 0 ? `${h}:${pad(m)}:${pad(sec)}` : `${m}:${pad(sec)}`;
+}
+
 function ZoneCard(props: {
   zone: Zone;
+  onSeek: (positionMs: number) => void;
   onStop: () => void;
   onVolume: (level: number) => void;
   onToggle: () => void;
@@ -284,6 +345,8 @@ function ZoneCard(props: {
               Track {zone.session.cursor + 1} of {zone.session.queue_length}
             </div>
           )}
+
+          <ZoneSeek zone={zone} onSeek={props.onSeek} />
           <div className="zone-controls">
             {/* The same four controls whatever is in the room. A phone should not
                 have to know whether it is driving a television or a receiver. */}

@@ -91,6 +91,7 @@ class Hub:
         async with self._lock:
             self._renderers.pop(renderer_id, None)
         await self._set_state(renderer_id, "unavailable")
+        _end_session(renderer_id)
         await self.broadcast_presence()
 
     def is_connected(self, renderer_id: UUID) -> bool:
@@ -447,6 +448,35 @@ def _persist_position(renderer_id: UUID, state: dict) -> None:
                 """
             ),
             {"p": int(position), "r": str(renderer_id)},
+        )
+
+
+def _end_session(renderer_id: UUID) -> None:
+    """A screen that has gone is not still playing.
+
+    Closing the app on the television left the session marked `playing`, so the
+    control tower showed a room happily playing to a screen that no longer
+    existed — and pressing play there did nothing, because resuming asks the
+    screen to carry on and there was no screen to ask.
+
+    Idle rather than a new state: the schema has four and this is precisely what
+    the fourth means — a room with nothing playing in it. The queue and the
+    position are kept. What was being watched and how far in is exactly what
+    somebody wants when the television comes back on; it is the claim that it is
+    *playing* that was false.
+    """
+    with get_engine().begin() as conn:
+        conn.execute(
+            text(
+                """
+                UPDATE play_sessions s
+                SET state = 'idle', updated_at = now()
+                FROM zones z
+                WHERE s.zone_id = z.id AND z.renderer_id = :r
+                  AND s.state IN ('playing', 'paused', 'buffering')
+                """
+            ),
+            {"r": str(renderer_id)},
         )
 
 
