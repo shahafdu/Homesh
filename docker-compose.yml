@@ -48,6 +48,12 @@ services:
       - ./.secrets:/run/secrets:ro
     ports:
       - "8080:8080"
+      # Port 80 as well, purely so the address a television has to be given is
+      # short. "192.168.x.x/tv" can be typed on a remote control in a few
+      # seconds; the same address with ":8080" in the middle is where somebody
+      # gives up, or a browser decides the whole thing was a search query.
+      # 8080 keeps working — nothing that already points at it has to change.
+      - "${HTTP_PORT:-80}:8080"
       # Discovery. UDP, LAN only, and it answers one question — where the server
       # is — to a probe that names this application. It is what saves spelling an
       # address out on a television with a remote control.

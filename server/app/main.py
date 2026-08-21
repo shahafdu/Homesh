@@ -10,11 +10,13 @@ import asyncio
 import logging
 import os
 from contextlib import asynccontextmanager, suppress
+from functools import lru_cache
 from pathlib import Path
 
+import httpx
 from fastapi import FastAPI, Response
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 
 from .auth import ensure_bootstrap_code
 from .auth import router as auth_router
@@ -211,7 +213,7 @@ async def tv_version() -> Response:
 
 
 @app.get("/tv.address", include_in_schema=False)
-async def tv_address() -> Response:
+def tv_address() -> Response:
     """Where a television can reach this server.
 
     Not `window.location.origin`, which is whatever the phone in your hand is
@@ -227,11 +229,50 @@ async def tv_address() -> Response:
     return JSONResponse(
         {
             "lan": lan or None,
+            "short": _short_address(lan),
             # Worth distinguishing: no LAN address configured is a different
             # problem from a television that cannot reach one.
             "detail": None if lan else "LAN_BASE_URL is not set on the server.",
         }
     )
+
+
+@lru_cache(maxsize=4)
+def _short_address(lan: str) -> str | None:
+    """The same server without the port, when port 80 really does answer.
+
+    Deliberately a plain `def`, called from a plain `def` endpoint so FastAPI
+    runs the pair in its threadpool. The probe travels out to the host and back
+    into this very server, so on the event loop it would be waiting for a reply
+    that only the event loop can send — a request that times out against
+    itself. That is not hypothetical: written as `async def` this returned null
+    every time, while the identical probe from a shell returned 200 in 0.18s.
+
+    Cached, because the answer is a property of the deployment and this is asked
+    every time somebody opens the pairing panel.
+    """
+    if not lan.endswith(":8080"):
+        return None
+    bare = lan[: -len(":8080")]
+    try:
+        with httpx.Client(timeout=1.5) as probe:
+            if probe.get(f"{bare}/api/health").status_code == 200:
+                return bare
+    except httpx.HTTPError:
+        pass
+    return None
+
+
+@app.get("/tv", include_in_schema=False)
+async def tv_apk_short() -> Response:
+    """The same download, at an address short enough to type on a remote.
+
+    Every character matters here. This is typed with a d-pad on an on-screen
+    keyboard, and a browser that is handed something long and unfamiliar will
+    offer to search for it instead — which is exactly what happened: a Google
+    results page for the address rather than the file.
+    """
+    return RedirectResponse("/tv.apk", status_code=307)
 
 
 @app.get("/tv.apk", include_in_schema=False)

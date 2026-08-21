@@ -36,21 +36,26 @@ import {
  */
 function TvAppAddress() {
   const [lan, setLan] = useState<string | null>(null);
+  const [short, setShort] = useState<string | null>(null);
   const [detail, setDetail] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     api
-      .get<{ lan: string | null; detail: string | null }>("/tv.address")
+      .get<{ lan: string | null; short: string | null; detail: string | null }>("/tv.address")
       .then((r) => {
         setLan(r.lan);
+        setShort(r.short);
         setDetail(r.detail);
       })
       .catch(() => setDetail("Could not ask the server for its address."));
   }, []);
 
   const here = window.location.origin;
-  const url = `${lan ?? here}/tv.apk`;
+  // The shortest address that answers. Every character is one more press on a
+  // d-pad keyboard, and a long unfamiliar string is what makes a television
+  // browser decide the whole thing was a search query instead of an address.
+  const url = short ? `${short}/tv` : `${lan ?? here}/tv.apk`;
   // Only worth pointing out when the two differ — otherwise it is noise.
   const differs = lan !== null && !here.startsWith(lan);
 
@@ -71,6 +76,13 @@ function TvAppAddress() {
           {copied ? "Copied" : "Copy address"}
         </button>
       </div>
+      <p className="muted small">
+        <b>Use Downloader</b> if the box has it — paste the address and press Go.
+        In a normal browser, type the address and choose <b>Go</b> rather than
+        the search suggestion: a TV browser will happily search Google for an
+        address instead of opening it, and you get a results page rather than
+        the app.
+      </p>
       {differs && (
         <p className="muted small">
           This is the address on your home network. It is not the one in your
