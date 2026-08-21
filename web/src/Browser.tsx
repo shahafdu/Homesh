@@ -194,21 +194,35 @@ export default function Browser(props: {
             ))}
           </nav>
         ) : (
-          <span className="muted small search-scope">
-            {hits?.length ?? 0} result{hits?.length === 1 ? "" : "s"}
-            {/* Offered only where it changes anything: at the top of the
-                library "in this folder" and "everywhere" are the same search. */}
-            {path !== "/" && (
-              <button
-                className="scope-toggle"
-                aria-pressed={hereOnly}
-                title={hereOnly ? "Searching this folder only" : "Searching everything"}
-                onClick={() => setHereOnly(!hereOnly)}
-              >
-                {hereOnly ? `in ${here(path)}` : "everywhere"}
-              </button>
+          <div className="search-scope">
+            {/* Two named choices rather than one word that changes.
+                A single toggle reading "everywhere" is indistinguishable from a
+                label — it says where you are searching but not that it is a
+                control, and it was missed entirely. This is the same segmented
+                shape as the view switcher beside it, which nobody misses.
+
+                Offered only where it changes anything: at the top of the library
+                "in this folder" and "everywhere" are the same search. */}
+            {path !== "/" ? (
+              <div className="seg" role="group" aria-label="Where to search">
+                <button aria-pressed={!hereOnly} onClick={() => setHereOnly(false)}>
+                  Everywhere
+                </button>
+                <button
+                  aria-pressed={hereOnly}
+                  title={`Search only inside ${here(path)}`}
+                  onClick={() => setHereOnly(true)}
+                >
+                  In {here(path)}
+                </button>
+              </div>
+            ) : (
+              <span className="muted small">Searching everything</span>
             )}
-          </span>
+            <span className="muted small">
+              {hits?.length ?? 0} result{hits?.length === 1 ? "" : "s"}
+            </span>
+          </div>
         )}
 
         <div className="seg" role="group" aria-label="View mode">

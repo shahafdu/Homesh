@@ -35,7 +35,24 @@ export async function printDocument(itemId: string, ext: string | null): Promise
       detail: "This file is already open — use your browser's own Print command.",
     };
   }
-  return frameAndPrint(url);
+  const printed = await frameAndPrint(url);
+  if (printed.ok) return printed;
+
+  // A PDF in a hidden frame is a browser plugin document, and a phone often
+  // will not render one at all — the same limitation that made the viewer draw
+  // documents with pdf.js instead of an iframe. Opening it gives the platform's
+  // own PDF viewer, which has printing and "save to Files" in its own menu.
+  const opened = window.open(url, "_blank", "noopener");
+  if (opened) {
+    return {
+      ok: false,
+      detail: "Opened the PDF in a new tab — print it from there.",
+    };
+  }
+  return {
+    ok: false,
+    detail: `${printed.detail} Allow pop-ups, or open the document and print from your browser's menu.`,
+  };
 }
 
 /** Print an image, sized to the paper rather than to the screen.
@@ -62,18 +79,51 @@ export async function printImage(url: string, caption: string): Promise<PrintOut
   <body><img src="${escapeHtml(url)}" alt="${escapeHtml(caption)}"></body>
 </html>`;
 
-  return frameAndPrint(`data:text/html;charset=utf-8,${encodeURIComponent(page)}`, true);
+  // srcdoc, not a data: URL.
+  //
+  // A data: URL gets an *opaque* origin, which makes the frame cross-origin to
+  // the page that created it — so reaching in for its print() is refused:
+  // "Blocked a frame with origin ... from accessing a cross-origin frame". A
+  // srcdoc frame inherits this document's origin, so the call is allowed and
+  // the signed image URL inside it is same-origin too.
+  const printed = await frameAndPrint({ srcdoc: page }, true);
+  if (printed.ok) return printed;
+
+  // A route that does not depend on this being right.
+  //
+  // A blob: URL inherits the origin of the page that created it — unlike a
+  // data: URL, whose origin is opaque and which is what broke this the first
+  // time — so the new tab can print itself even where the hidden frame could
+  // not.
+  const blob = new Blob([page], { type: "text/html" });
+  const opened = window.open(URL.createObjectURL(blob), "_blank", "noopener");
+  if (opened) return { ok: false, detail: "Opened it in a new tab — print it from there." };
+
+  return {
+    ok: false,
+    detail: `${printed.detail} Allow pop-ups, or download it and print from your files.`,
+  };
 }
 
-/** Put a URL in a hidden frame and hand that frame to the print dialog. */
-async function frameAndPrint(url: string, waitForImages = false): Promise<PrintOutcome> {
+/** Put something in a hidden frame and hand that frame to the print dialog.
+ *
+ * Either a URL on this origin, or markup to inherit it. Anything that lands on
+ * a different origin — a data: URL included, since those are opaque — cannot be
+ * printed this way at all: the browser refuses to let the parent call print()
+ * on it.
+ */
+async function frameAndPrint(
+  source: string | { srcdoc: string },
+  waitForImages = false,
+): Promise<PrintOutcome> {
   const frame = document.createElement("iframe");
   // Off-screen rather than display:none: a frame that is not laid out has no
   // content to print, and several browsers print an empty sheet for one.
   frame.setAttribute("aria-hidden", "true");
   frame.style.cssText =
     "position:fixed;right:0;bottom:0;width:1px;height:1px;opacity:0;border:0;";
-  frame.src = url;
+  if (typeof source === "string") frame.src = source;
+  else frame.srcdoc = source.srcdoc;
   document.body.appendChild(frame);
 
   const cleanUp = () => {
