@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "./api";
 import PdfView from "./PdfView";
-import { printDocument, printImage } from "./print";
+import { printDocument, printImage, printViaShareSheet } from "./print";
+import { canShareFiles } from "./share";
 import {
   canPreview,
   documentUrl,
@@ -147,8 +148,12 @@ export default function Viewer(props: {
                 setPrinting(true);
                 setPrintNote(null);
                 try {
-                  const result =
-                    file.kind === "photo"
+                  // The same reasoning as the file menu: where a share sheet
+                  // exists, Print lives inside it and works. Trying to print a
+                  // PDF from a hidden frame on a phone downloads it instead.
+                  const result = canShareFiles()
+                    ? await printViaShareSheet(file)
+                    : file.kind === "photo"
                       ? await printImage(await downloadUrl(file.item_id), file.filename)
                       : await printDocument(file.item_id, file.ext);
                   if (!result.ok) setPrintNote(result.detail);

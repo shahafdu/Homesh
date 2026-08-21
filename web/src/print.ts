@@ -11,7 +11,8 @@
  * to be printed goes into a hidden iframe of its own and that frame is printed.
  */
 
-import { documentUrl, needsConversion } from "./library";
+import { documentUrl, needsConversion, type FileEntry } from "./library";
+import { handOver, prepareShare } from "./share";
 
 export type PrintOutcome = { ok: true } | { ok: false; detail: string };
 
@@ -183,4 +184,26 @@ function escapeHtml(value: string): string {
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
+}
+
+/** Print by handing the file to the system share sheet.
+ *
+ * On a phone this is the whole answer, and it is worth being blunt about why:
+ * Android and iOS both put Print in that sheet, it works, and nothing this code
+ * does can improve on it. A hidden frame cannot — a phone will not render a PDF
+ * in one, so it downloads the file and the wait times out.
+ *
+ * A document arrives as the PDF the server renders, which is what makes the
+ * printed page look like the document rather than a screenshot of one.
+ */
+export async function printViaShareSheet(file: FileEntry): Promise<PrintOutcome> {
+  const prepared = await prepareShare(file);
+  if (!prepared.ok) return { ok: false, detail: prepared.detail };
+
+  const result = await handOver(prepared.file);
+  if (result.ok || result.reason === "cancelled") return { ok: true };
+  if (result.reason === "needs-tap") {
+    return { ok: false, detail: "Tap Print again — it is ready now." };
+  }
+  return { ok: false, detail: result.detail };
 }

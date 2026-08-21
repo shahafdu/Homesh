@@ -61,8 +61,8 @@ Deployed and believed correct; not yet confirmed in use.
 
 | | Item | Note |
 |---|---|---|
-| 🟡 | **Print** | Documents and photographs, to a printer or to PDF from the same dialog. In the file menu and in the viewer. First attempt was refused as cross-origin — a data: URL has an opaque origin; it inherits this page's origin now, and falls back to a new tab either way |
-| 🟡 | **Search in this folder** | Two named buttons — **Everywhere** / **In ‹folder›** — where the breadcrumbs sit while searching. A single toggle read as a caption and was missed. Verified against the real library: 71 hits under one Hebrew folder, 8 under a sub-folder, nothing outside either |
+| 🟡 | **Print** | On a phone it opens the share sheet, where Print already lives and already works — trying to print a PDF from a hidden frame downloads it instead. On a desktop it prints directly |
+| 🟡 | **Search in this folder** | Two named buttons — **Everywhere** / **In ‹folder›** — on their own row while searching. Driven in a real phone-sized browser: 13 of 50 results outside the folder, 0 after switching. Verified against the real library: 71 hits under one Hebrew folder, 8 under a sub-folder, nothing outside either |
 | 🟡 | **"Start at" said 12:30** | It was placeholder text, which reads as a value. It shows the real position now and accepts h:mm:ss |
 | 🟡 | **Next no longer stops the music** | Replacing the source rejects the pending play() with AbortError — which is what next *does*. Both the phone and the TV treated it as a failure; the TV put it on screen and killed the queue |
 | 🟡 | **What a room will play next** | The tower lists the queue, marks what is playing, and any track can be tapped to jump to it |

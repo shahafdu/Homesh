@@ -1258,13 +1258,21 @@ button.compact:disabled { opacity: .5; cursor: not-allowed; }
  * whose label changed read as a caption rather than a control, and went unseen.
  * The folder name is clipped rather than allowed to push the row wide — a
  * Hebrew folder path is long and the phone is narrow. */
+/* Its own row when the view switcher leaves no space for it.
+ *
+ * flex: 1 alone gave it whatever was left over, which on a phone was 33 pixels
+ * — present, laid out, and invisible in practice. A flex-basis wide enough to
+ * be worth showing makes the toolbar wrap instead of squeezing. */
 .search-scope {
-  display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1;
+  display: flex; align-items: center; gap: 10px;
+  flex: 1 1 260px; min-width: 0;
 }
-.search-scope .seg { min-width: 0; }
+.search-scope .seg { min-width: 0; flex-shrink: 1; }
 .search-scope .seg button {
-  max-width: 38vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
+/* The folder name yields before the word that explains the alternative. */
+.search-scope .seg button:last-child { flex-shrink: 1; }
 
 /* A print failure belongs where the thing being printed is, not in a corner. */
 .v-print-note { margin: 0 16px 8px; }

@@ -76,6 +76,34 @@ export default function FileActions(props: {
     return true;
   };
 
+  // Print, on a device that has a share sheet.
+  //
+  // Android and iOS both put Print *in* the share sheet, and it works — which
+  // is the answer to why a print button should be so hard: it should not, and
+  // it is not, as long as it stops trying to do the printing itself. Rendering
+  // a PDF into a hidden frame fights the platform: a phone will not render one
+  // there, so it downloads instead and the wait times out.
+  //
+  // So this is the share flow with a different word on it. The file arrives at
+  // the sheet as a PDF either way, and Print is one of the things offered.
+  const print = async () => {
+    if (sharable) return share();
+
+    setBusy("Preparing to print…");
+    setNote(null);
+    try {
+      const result =
+        file.kind === "photo"
+          ? await printImage(await downloadUrl(file.item_id), file.filename)
+          : await printDocument(file.item_id, file.ext);
+      if (!result.ok) setNote(result.detail);
+    } catch (e) {
+      setNote(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(null);
+    }
+  };
+
   const share = async () => {
     // A second tap on the same button: the file is in hand, so this goes
     // straight to the share sheet with nothing awaited in between.
@@ -150,30 +178,14 @@ export default function FileActions(props: {
               covers both halves of the request, because "save as PDF" lives in
               the same dialog as the printer on every platform. */}
           {(file.kind === "doc" || file.kind === "photo") && (
-            <button
-              className="action"
-              disabled={busy !== null}
-              onClick={async () => {
-                setBusy("Preparing to print…");
-                setNote(null);
-                try {
-                  const result =
-                    file.kind === "photo"
-                      ? await printImage(await downloadUrl(file.item_id), file.filename)
-                      : await printDocument(file.item_id, file.ext);
-                  if (!result.ok) setNote(result.detail);
-                } catch (e) {
-                  setNote(e instanceof Error ? e.message : String(e));
-                } finally {
-                  setBusy(null);
-                }
-              }}
-            >
+            <button className="action" disabled={busy !== null} onClick={print}>
               <span className="action-ic">⎙</span>
               <span>
                 Print…
                 <span className="muted small">
-                  To a printer, or save it as a PDF from the same dialog
+                  {sharable
+                    ? "Opens the share sheet, where Print and Save as PDF live"
+                    : "To a printer, or save it as a PDF from the same dialog"}
                 </span>
               </span>
             </button>
