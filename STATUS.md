@@ -6,7 +6,7 @@ to reconstruct the state of a large, half-finished system from memory.
 **Legend** — ✅ built and verified · 🟡 built, needs Shahaf to confirm ·
 🔴 known broken · ⬜ not started · ⏳ waiting on Shahaf
 
-Last updated: 21 August 2026 · 338 tests · 17 migrations · CI green (privacy
+Last updated: 22 August 2026 · 343 tests · 17 migrations · CI green (privacy
 check was red for three commits — a private address in a test; see below)
 
 ---
@@ -43,8 +43,13 @@ Verified means measured or driven end to end, not merely compiled.
 - ✅ **TV app** — discovery, self-update (confirmed working on the bedroom box),
   pairing, native video player, remote control. Shows its own version on screen
   from 0.5.0
-- ✅ **Sharing** — songs share as files; Drive links work for every type.
-  Passkey registered on the phone, so it works away from the house
+- ✅ **Sharing** — **confirmed across several file types.** Files go as files,
+  documents as PDF, video converted to MP4 first, Drive links for anything too
+  big. Passkey registered on the phone, so it works away from the house
+- ✅ **Ordering** — Hebrew filenames on Windows play the track that was clicked
+- ✅ **Details view on a phone** — title, artist and album under the filename
+- ✅ **Browser playback** — every file type Shahaf has tried
+- ✅ **Track lengths** — shown in listings
 - ✅ **HTTPS** — Tailscale, real certificate, reachable from your phone anywhere,
   nothing on the public internet
 
@@ -56,6 +61,9 @@ Deployed and believed correct; not yet confirmed in use.
 
 | | Item | Note |
 |---|---|---|
+| 🟡 | **Print** | Documents and photographs, to a printer or to PDF from the same dialog. In the file menu and in the viewer |
+| 🟡 | **Search in this folder** | A toggle beside the result count. Verified against the real library: 71 hits under one Hebrew folder, 8 under a sub-folder, nothing outside either |
+| 🟡 | **"Start at" said 12:30** | It was placeholder text, which reads as a value. It shows the real position now and accepts h:mm:ss |
 | 🟡 | **Next no longer stops the music** | Replacing the source rejects the pending play() with AbortError — which is what next *does*. Both the phone and the TV treated it as a failure; the TV put it on screen and killed the queue |
 | 🟡 | **What a room will play next** | The tower lists the queue, marks what is playing, and any track can be tapped to jump to it |
 | 🟡 | **Shuffle in a room** | Reorders what has not played yet; what is on keeps playing |
@@ -67,28 +75,20 @@ Deployed and believed correct; not yet confirmed in use.
 | 🟡 | **The remote shows it was heard** | Seeking jumps the bar immediately instead of waiting for the stream, and pause/seek/stop each flash a large confirmation. On a television a silent press is indistinguishable from a flat battery |
 | 🟡 | **Closing the TV app frees the room** | The session stayed `playing` against a screen that no longer existed, so the tower lied and play did nothing. It goes idle and keeps its position |
 | 🟡 | **Seek from the control tower** | A draggable position bar per room. Sent on release, not per pixel |
-| 🟡 | **Clicking a song played the wrong one** | Only Hebrew names, only Windows — the rows were sorted but the *unsorted* list went to the player with the sorted index. Latin names hid it because both orders agree there |
 | 🟡 | **Two rooms claiming one stream** | The receiver has one HEOS player, so "HEOS is playing" names no room. It now asks which zone is switched to the network input. Verified against the receiver with ZONE2 off |
 | 🟡 | **TV app address** | Two faults: it showed a ts.net name no television can resolve, and then the address was long enough that the TV browser searched Google for it. Now the house address on port 80 as `‹address›/apk` — no port to type — and it says to press Go rather than the search suggestion. **Not `/tv`**: that is the interface the installed app loads, and putting the download there blacked out every screen in the house |
 | 🟡 | **Playlists in rooms** | Same room picker a file uses, given the whole list |
 | 🟡 | **Back to the playing playlist** | The player bar now names where the queue came from and reopens it |
 | 🟡 | **Drag to reorder** | A grip instead of up/down arrows; works with a thumb, and with arrow keys when focused |
 | 🟡 | **Missing tracks look ordinary** | Greyed out and one line, rather than tinted and taller than everything else |
-| 🟡 | **Odd-sized video converting** | H.264 cannot encode an odd height. `Bebe Complicado.avi` is 640x415, and x264 refused to start — which is why it played but would not share |
-| 🟡 | **Sharing avi, wmv, mkv, mov** | Browsers keep a fixed list of file types a page may attach, and none of those are on it — `canShare()` does not check that list, which is why it said yes and the share then failed. They are converted to MP4 first, reusing the conversion the viewer already makes |
-| 🟡 | Sharing documents | Sent as the PDF the server already renders — `.doc` is not on the browser's list either, and a PDF is what a phone can open |
-| 🟡 | Sharing anything slow to fetch | A share is only permitted for a few seconds after the tap. Slow ones now show progress and turn into **Send now** — one extra tap, nothing re-downloaded |
-| 🟡 | Sharing very large videos | Past 256 MB a phone cannot hold the file in memory at all; it says so and points at a Drive link |
 | 🟡 | **Look for new folders** in Settings | Sharing a folder with the Homesh account is how one is added; discovery used to run only at startup |
 | 🟡 | TV app recovers from an unplayable file | Was showing "cannot reach server" and sticking |
 | 🟡 | TV remote controls — seek, pause, stop | New in 0.4.0 |
-| 🟡 | wmv / avi / 3gp playing in the browser | 627 of your 802 videos |
 | 🟡 | mp4 that decoded audio only | Now falls back to converting |
 | 🟡 | First tap on a phone no longer reports a failure | Retries once before complaining |
 | 🟡 | Seek bar usable before the track loads | Length comes from the catalog |
 | 🟡 | Send to a room with a large folder | Cap was 500; your English folder is 1,533 |
 | 🟡 | Header staying put while scrolling | |
-| 🟡 | Track lengths shown | Derived from bitrate and size; **backfill for 9,950 tracks not yet run to completion** |
 
 ---
 
@@ -96,7 +96,6 @@ Deployed and believed correct; not yet confirmed in use.
 
 | | Item | What is known |
 |---|---|---|
-| 🟡 | **Details columns on a phone** | Found. The tags sat *inside* the filename element, which a phone clamps to two lines — so the moment long names were allowed to wrap, a long name used both lines and pushed the tags out of the box. Search results lost their path the same way |
 
 ---
 

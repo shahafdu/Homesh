@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { useLockScroll } from "./useLockScroll";
 import { copyText } from "./copy";
+import { printDocument, printImage } from "./print";
 import { AddToPlaylist } from "./Playlists";
-import type { FileEntry } from "./library";
+import { downloadUrl, type FileEntry } from "./library";
 import {
   canShareFiles,
   createDriveLink,
@@ -140,6 +141,40 @@ export default function FileActions(props: {
               <span>
                 Show in folder
                 <span className="muted small">Open where this file lives</span>
+              </span>
+            </button>
+          )}
+
+          {/* Printing is the one thing asked of a media server that has nothing
+              to do with playing: a recipe, a form, a photograph for a frame. It
+              covers both halves of the request, because "save as PDF" lives in
+              the same dialog as the printer on every platform. */}
+          {(file.kind === "doc" || file.kind === "photo") && (
+            <button
+              className="action"
+              disabled={busy !== null}
+              onClick={async () => {
+                setBusy("Preparing to print…");
+                setNote(null);
+                try {
+                  const result =
+                    file.kind === "photo"
+                      ? await printImage(await downloadUrl(file.item_id), file.filename)
+                      : await printDocument(file.item_id, file.ext);
+                  if (!result.ok) setNote(result.detail);
+                } catch (e) {
+                  setNote(e instanceof Error ? e.message : String(e));
+                } finally {
+                  setBusy(null);
+                }
+              }}
+            >
+              <span className="action-ic">⎙</span>
+              <span>
+                Print…
+                <span className="muted small">
+                  To a printer, or save it as a PDF from the same dialog
+                </span>
               </span>
             </button>
           )}

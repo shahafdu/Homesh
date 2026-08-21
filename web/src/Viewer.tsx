@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "./api";
 import PdfView from "./PdfView";
+import { printDocument, printImage } from "./print";
 import {
   canPreview,
   documentUrl,
@@ -28,6 +29,10 @@ export default function Viewer(props: {
   const previewable = file ? canPreview(file.kind, file.ext) : false;
 
   const [url, setUrl] = useState<string | null>(null);
+  // Printing goes through the browser's own dialog, which can take a moment to
+  // reach: a document is rendered to PDF on the server the first time.
+  const [printing, setPrinting] = useState(false);
+  const [printNote, setPrintNote] = useState<string | null>(null);
   const [text, setText] = useState<string | null>(null);
   // Set when direct play turned out not to work for this file.
   const [fellBack, setFellBack] = useState(false);
@@ -131,6 +136,32 @@ export default function Viewer(props: {
           </span>
         </div>
         <div className="v-actions">
+          {/* Here as well as in the file menu, because this is where somebody
+              is standing when they decide to print: looking at the thing. */}
+          {(file.kind === "photo" || file.kind === "doc") && (
+            <button
+              className="v-btn"
+              disabled={printing}
+              title="Print, or save as a PDF from the same dialog"
+              onClick={async () => {
+                setPrinting(true);
+                setPrintNote(null);
+                try {
+                  const result =
+                    file.kind === "photo"
+                      ? await printImage(await downloadUrl(file.item_id), file.filename)
+                      : await printDocument(file.item_id, file.ext);
+                  if (!result.ok) setPrintNote(result.detail);
+                } catch (e) {
+                  setPrintNote(e instanceof Error ? e.message : String(e));
+                } finally {
+                  setPrinting(false);
+                }
+              }}
+            >
+              {printing ? "Preparing…" : "Print"}
+            </button>
+          )}
           <button className="v-btn" onClick={save} title="Save to this device">
             Download
           </button>
@@ -139,6 +170,8 @@ export default function Viewer(props: {
           </button>
         </div>
       </header>
+
+      {printNote && <div className="error v-print-note">{printNote}</div>}
 
       <div className="v-stage">
         {files.length > 1 && (
@@ -239,14 +272,42 @@ export default function Viewer(props: {
  * actually wants to watch it here rather than send it to a screen that can
  * already decode it.
  */
+/** Seconds as h:mm:ss, or m:ss below an hour. */
+function asClock(seconds: number): string {
+  const total = Math.max(0, Math.floor(seconds));
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${m}:${pad(s)}`;
+}
+
 function Convertible(props: { file: FileEntry }) {
   // Where in the file to begin. A live stream has no index to seek within, so
   // moving through it restarts the encoder further in — crude, but it means a
   // two-hour tape can be watched from the middle without first converting all of
   // it and keeping the result.
   const [start, setStart] = useState(0);
-  const [jump, setJump] = useState("");
+  const [jump, setJump] = useState("0:00");
   const [ready, setReady] = useState(false);
+  const video = useRef<HTMLVideoElement | null>(null);
+
+  // Where you are, kept in the box you type into.
+  //
+  // It used to be empty with "12:30" as a placeholder, which reads as a value —
+  // and a value of half past twelve, at that. Showing the real position makes
+  // the field mean something before it is touched, and makes it obvious what to
+  // type: the stream begins at `start`, and the element counts from there.
+  useEffect(() => {
+    const el = video.current;
+    if (!el) return;
+    const tick = () => {
+      if (document.activeElement === document.getElementById("jump-to")) return;
+      setJump(asClock(start + el.currentTime));
+    };
+    el.addEventListener("timeupdate", tick);
+    return () => el.removeEventListener("timeupdate", tick);
+  }, [start, ready]);
 
   return (
     <div className="v-live">
@@ -264,6 +325,7 @@ function Convertible(props: { file: FileEntry }) {
       )}
 
       <video
+        ref={video}
         className="v-video"
         style={ready ? undefined : { display: "none" }}
         src={liveVideoUrl(props.file.item_id, start)}
@@ -279,23 +341,30 @@ function Convertible(props: { file: FileEntry }) {
         </span>
 
         <span className="v-jump">
-          <label className="muted small" htmlFor="jump-to">Start at</label>
+          <label className="muted small" htmlFor="jump-to">Position</label>
           <input
             id="jump-to"
             className="jump"
             value={jump}
-            placeholder="12:30"
+            inputMode="numeric"
+            aria-label="Position — type a time and press Enter to jump there"
+            title="Type mm:ss or h:mm:ss and press Enter"
             onChange={(e) => setJump(e.target.value)}
             onKeyDown={(e) => {
               if (e.key !== "Enter") return;
               // mm:ss or plain minutes, because a scrub bar cannot be offered
               // and a seconds count is not how anybody thinks about a tape.
+              // h:mm:ss, mm:ss, or plain minutes. A tape runs to two hours, so
+              // the hour form has to be accepted — and a seconds count is not
+              // how anybody thinks about one.
               const parts = jump.split(":").map((n) => parseInt(n, 10));
               const seconds = parts.some(isNaN)
                 ? NaN
-                : parts.length === 2
-                  ? parts[0] * 60 + parts[1]
-                  : parts[0] * 60;
+                : parts.length === 3
+                  ? parts[0] * 3600 + parts[1] * 60 + parts[2]
+                  : parts.length === 2
+                    ? parts[0] * 60 + parts[1]
+                    : parts[0] * 60;
               if (!isNaN(seconds)) {
                 setReady(false);
                 setStart(seconds);

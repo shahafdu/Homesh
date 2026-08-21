@@ -104,3 +104,60 @@ class TestSearch:
 
     def test_empty_query_rejected(self, client):
         assert client.get("/api/search?q=").status_code == 422
+
+
+class TestSearchInOneFolder:
+    """Search narrowed to where you are standing.
+
+    Everywhere is the right default — usually you do not know where a thing is.
+    But inside a folder of 1,500 tracks, "everywhere" is the wrong answer to
+    "which of these is the live one".
+    """
+
+    @staticmethod
+    def _paths(client, q, under=None):
+        params = {"q": q}
+        if under is not None:
+            params["under"] = under
+        return [h["path"] for h in client.get("/api/search", params=params).json()]
+
+    def test_it_keeps_only_what_is_under_the_folder(self, client, scanned):
+        _sid, prefix, _root = scanned
+        wall = f"{prefix}/Music/Pink Floyd/The Wall"
+
+        wide = self._paths(client, "track")
+        narrow = self._paths(client, "track", wall)
+
+        assert narrow, "the folder does contain matches"
+        assert len(narrow) < len(wide), "narrowing should narrow"
+        assert all(p.startswith(wall) for p in narrow)
+
+    def test_descendants_count_as_inside(self, client, scanned):
+        """A folder means the folder and everything below it."""
+        _sid, prefix, _root = scanned
+
+        deep = self._paths(client, "track", f"{prefix}/Music/Pink Floyd/The Wall")
+        above = self._paths(client, "track", f"{prefix}/Music")
+
+        assert deep, "the deeper folder has matches"
+        assert set(deep) <= set(above), "everything deeper is inside the parent"
+
+    def test_a_trailing_slash_means_the_same_folder(self, client, scanned):
+        _sid, prefix, _root = scanned
+        assert self._paths(client, "track", f"{prefix}/Music") == self._paths(
+            client, "track", f"{prefix}/Music/"
+        )
+
+    def test_no_folder_given_searches_everything(self, client, scanned):
+        assert self._paths(client, "track", None) == self._paths(client, "track", "")
+
+    def test_a_sibling_folder_is_excluded(self, client, scanned):
+        """The point of the feature: a name that appears in more than one place."""
+        _sid, prefix, _root = scanned
+
+        everywhere = self._paths(client, "track")
+        one = self._paths(client, "track", f"{prefix}/Music/Pink Floyd/The Wall")
+
+        elsewhere = [p for p in everywhere if p not in one]
+        assert elsewhere, "there are matches outside this folder"
+        assert not any(p in one for p in elsewhere)

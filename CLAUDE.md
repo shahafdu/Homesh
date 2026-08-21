@@ -229,11 +229,17 @@ docker compose logs api           # first-run bootstrap code lives here
 and `sources`; doing so once destroyed a registered passkey. `conftest.py` refuses any
 database whose name lacks "test", and `run-tests.ps1` pins `homesh_test`.
 
-Docker Desktop lives outside the default PATH here. Refresh it first:
+Docker Desktop is a **per-user** install here — `%LOCALAPPDATA%\Programs\DockerDesktop`,
+not Program Files. Its CLI is already on the user PATH; if a shell was started
+without it, refresh:
 
 ```powershell
 $env:Path = "$([Environment]::GetEnvironmentVariable('Path','Machine'));$([Environment]::GetEnvironmentVariable('Path','User'))"
 ```
+
+After a power cut the engine may be down. Start it with
+`& "$env:LOCALAPPDATA\Programs\DockerDesktop\Docker Desktop.exe"` and wait for
+`docker info` to answer; the stack restarts itself.
 
 GitHub API access (for CI status) works via the token in Windows Credential Manager:
 

@@ -91,8 +91,12 @@ export interface Source {
 export const browse = (path: string) =>
   api.get<Listing>(`/api/browse?path=${encodeURIComponent(path)}`);
 
-export const search = (q: string) =>
-  api.get<SearchHit[]>(`/api/search?q=${encodeURIComponent(q)}`);
+/** Search filenames. `under` narrows it to one folder and everything below. */
+export const search = (q: string, under?: string | null) =>
+  api.get<SearchHit[]>(
+    `/api/search?q=${encodeURIComponent(q)}` +
+      (under ? `&under=${encodeURIComponent(under)}` : ""),
+  );
 
 export const listSources = () => api.get<Source[]>("/api/sources");
 

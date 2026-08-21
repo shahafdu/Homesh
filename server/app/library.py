@@ -323,13 +323,24 @@ async def browse(
 async def search(
     q: str = Query(min_length=1, max_length=200),
     limit: int = Query(50, ge=1, le=200),
+    under: str | None = Query(
+        None, description="Restrict to this folder and everything below it"
+    ),
     user: CurrentUser = Depends(require_user),
 ) -> list[dict]:
     """Filename search, typo-tolerant via trigram similarity.
 
+    `under` narrows it to one folder and its descendants. Searching the whole
+    library is the right default — you usually do not know where a thing is —
+    but once you are standing in a folder of 1,500 tracks, "everywhere" is the
+    wrong answer to "which of these is the live one".
+
     Semantic search over content arrives in phase 6; this is the literal-filename
     search that Plex never gave us.
     """
+    # The mount prefix is part of the browsing path but not of dir_path, so a
+    # prefix match has to be built from both halves the same way a listing is.
+    scope_prefix = (under or "").rstrip("/")
     with get_engine().connect() as conn:
         rows = conn.execute(
             text(
@@ -349,18 +360,28 @@ async def search(
                 JOIN sources s ON s.id = r.source_id
                 -- Folder names are searchable too: "wall" should find the contents of
                 -- "Pink Floyd/The Wall" even though no filename contains it (§2).
-                WHERE r.filename ILIKE '%' || :q || '%'
-                   OR r.dir_path ILIKE '%' || :q || '%'
-                   -- 0.3 measured against this corpus: genuine typos score 0.33-0.71
-                   -- ("trck"->track2 = 0.40, "beech"->beach = 0.33), unrelated pairs
-                   -- top out at 0.20. Retune if the corpus character changes.
-                   OR word_similarity(:q, r.filename) > 0.3
-                   OR word_similarity(:q, r.dir_path) > 0.3
+                WHERE (
+                       r.filename ILIKE '%' || :q || '%'
+                    OR r.dir_path ILIKE '%' || :q || '%'
+                    -- 0.3 measured against this corpus: genuine typos score 0.33-0.71
+                    -- ("trck"->track2 = 0.40, "beech"->beach = 0.33), unrelated pairs
+                    -- top out at 0.20. Retune if the corpus character changes.
+                    OR word_similarity(:q, r.filename) > 0.3
+                    OR word_similarity(:q, r.dir_path) > 0.3
+                  )
+                  AND (
+                       :under = ''
+                    OR s.mount_prefix || CASE WHEN r.dir_path = '' THEN ''
+                                              ELSE '/' || r.dir_path END = :under
+                    OR s.mount_prefix || CASE WHEN r.dir_path = '' THEN ''
+                                              ELSE '/' || r.dir_path END
+                       LIKE :under || '/%'
+                  )
                 ORDER BY name_hit DESC, score DESC, r.filename COLLATE natsort
                 LIMIT :lim
                 """
             ),
-            {"q": q, "lim": limit},
+            {"q": q, "lim": limit, "under": scope_prefix},
         ).all()
 
     # Filtered after the query rather than inside it: a result someone cannot

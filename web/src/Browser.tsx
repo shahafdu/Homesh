@@ -21,6 +21,9 @@ import {
 } from "./library";
 import { VIEWS, type View } from "./prefs";
 
+/** The name of a folder, for a label that has to fit on a phone. */
+const here = (path: string) => path.split("/").filter(Boolean).pop() ?? "this folder";
+
 const GLYPH: Record<Kind, string> = {
   audio: "♪",
   video: "▶",
@@ -57,6 +60,10 @@ export default function Browser(props: {
   const [listing, setListing] = useState<Listing | null>(null);
   const [hits, setHits] = useState<SearchHit[] | null>(null);
   const [query, setQuery] = useState("");
+  // Everywhere, or just here. Everywhere is the right default — usually you do
+  // not know where a thing is — but standing in a folder of 1,500 tracks it is
+  // the wrong answer to "which of these is the live one".
+  const [hereOnly, setHereOnly] = useState(false);
   // Not for administering — for naming: the breadcrumbs turn /drive/music into
   // "music", which needs the source list even though scanning now lives in
   // Settings.
@@ -106,17 +113,18 @@ export default function Browser(props: {
     }
     timer.current = window.setTimeout(async () => {
       try {
-        setHits(await search(query.trim()));
+        setHits(await search(query.trim(), hereOnly ? path : null));
       } catch (e) {
         setError(e instanceof ApiError ? e.message : String(e));
       }
     }, 200);
     return () => window.clearTimeout(timer.current);
-  }, [query]);
+  }, [query, hereOnly, path]);
 
   const navigate = (p: string) => {
     setQuery("");
     setHits(null);
+    setHereOnly(false);
     setPath(p);
     window.history.pushState({ p }, "", `?p=${encodeURIComponent(p)}`);
   };
@@ -186,8 +194,20 @@ export default function Browser(props: {
             ))}
           </nav>
         ) : (
-          <span className="muted small">
+          <span className="muted small search-scope">
             {hits?.length ?? 0} result{hits?.length === 1 ? "" : "s"}
+            {/* Offered only where it changes anything: at the top of the
+                library "in this folder" and "everywhere" are the same search. */}
+            {path !== "/" && (
+              <button
+                className="scope-toggle"
+                aria-pressed={hereOnly}
+                title={hereOnly ? "Searching this folder only" : "Searching everything"}
+                onClick={() => setHereOnly(!hereOnly)}
+              >
+                {hereOnly ? `in ${here(path)}` : "everywhere"}
+              </button>
+            )}
           </span>
         )}
 

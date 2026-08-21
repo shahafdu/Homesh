@@ -1251,3 +1251,21 @@ button.compact:disabled { opacity: .5; cursor: not-allowed; }
 .q-artist { flex: 0 1 auto; }
 .q-list li.current { background: color-mix(in srgb, var(--accent) 12%, transparent); }
 .q-list li.current .q-pos, .q-list li.current .q-name { color: var(--accent); font-weight: 600; }
+
+/* ── Where a search looks ───────────────────────────────────────────────────── */
+.search-scope { display: inline-flex; align-items: baseline; gap: 8px; }
+.scope-toggle {
+  background: transparent; border: 1px solid var(--line); border-radius: 99px;
+  color: var(--muted); font: inherit; font-size: 12px;
+  padding: 2px 10px; cursor: pointer; max-width: 45vw;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.scope-toggle:hover { color: var(--ink); }
+.scope-toggle[aria-pressed="true"] {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  color: var(--accent);
+}
+
+/* A print failure belongs where the thing being printed is, not in a corner. */
+.v-print-note { margin: 0 16px 8px; }
