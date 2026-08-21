@@ -375,7 +375,12 @@ function FileRow(props: {
           why these are separate columns rather than a title that falls back to
           the filename. */}
       <span className="nm" title={f.filename}>
-        {f.filename}
+        {/* Its own element, because on a phone the filename is clamped to two
+            lines — and with the tags inside that box, a long name filled both
+            lines and clipped them away entirely. Which is exactly what happened:
+            the tags stopped appearing the moment long names were allowed to
+            wrap. The clamp belongs to the name alone. */}
+        <span className="nm-text">{f.filename}</span>
         {/* The same metadata, folded under the filename. Columns need width a
             phone does not have, and dropping the tags there entirely would make
             the small screen the one that tells you least. Only one of the two is
@@ -616,7 +621,7 @@ function Results(props: {
             <>
               <span className={`ic ${h.kind}`}>{GLYPH[h.kind]}</span>
               <span className="nm">
-                {h.filename}
+                <span className="nm-text">{h.filename}</span>
                 {/* Where it lives matters as much as what it is called. */}
                 <span className="where">{h.path}</span>
               </span>

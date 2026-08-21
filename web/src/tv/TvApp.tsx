@@ -39,6 +39,9 @@ const SEEK_STEP = 10;
  */
 interface NativeVideo {
   available(): boolean;
+  /** Present from 0.5.0. Older builds simply do not answer, which is itself
+   *  the answer: a screen showing no version is running one from before this. */
+  appVersion?(): string;
   play(url: string, positionMs: number): void;
   pause(): void;
   resume(): void;
@@ -91,6 +94,7 @@ export default function TvApp() {
   // there, unable to accept anything else until the app was force-closed.
   const [playFault, setPlayFault] = useState<string | null>(null);
   const [zoneName, setZoneName] = useState("This screen");
+  const appVersion = native()?.appVersion?.() || "";
   const [connected, setConnected] = useState(false);
   const [now, setNow] = useState<Command | null>(null);
   // What is playing, readable from the command handler.
@@ -674,6 +678,9 @@ export default function TvApp() {
           <span className={`dot${connected ? " live" : ""}`} />
           {connected ? "Connected" : "Connecting…"}
         </div>
+        {/* The app updates itself, so the only way to know a television took an
+            update was to walk to it with a cable. Now it says so. */}
+        <div className="version">{appVersion ? `App ${appVersion}` : "App 0.4.0 or older"}</div>
       </div>
     </div>
   );

@@ -33,6 +33,24 @@ public final class NativeVideo {
         return true;
     }
 
+    /**
+     * Which build of the app this is, for the screen to show.
+     *
+     * <p>The app updates itself, which is the point — but it also means nobody
+     * can tell by looking whether a given television took the update. Reading
+     * the version off the screen it is already on beats walking to it with a
+     * laptop and a cable.
+     */
+    @JavascriptInterface
+    public String appVersion() {
+        try {
+            return activity.getPackageManager()
+                    .getPackageInfo(activity.getPackageName(), 0).versionName;
+        } catch (Exception e) {
+            return "";
+        }
+    }
+
     @JavascriptInterface
     public void play(String url, int positionMs) {
         activity.runOnUiThread(() -> {

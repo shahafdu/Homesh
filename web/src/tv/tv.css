@@ -219,3 +219,7 @@ body {
 /* A file that would not play. Amber rather than red: nothing is broken, this one
    file simply cannot be decoded here, and the screen is ready for another. */
 .lede.warn { color: #e0a458; }
+
+/* Quiet, and always there. Small enough to ignore across a room, readable when
+   somebody walks up to check whether this screen took the update. */
+.version { margin-top: 14px; font-size: 15px; color: var(--muted); opacity: .7; }

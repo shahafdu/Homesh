@@ -16,10 +16,7 @@ The list to work from. Everything else can proceed without you.
 
 | | What | Why it matters |
 |---|---|---|
-| ⏳ | **Check the bedroom box updates itself** to TV app 0.4.0 | It may still be on 0.2.0, which predates the native video player |
-| ⏳ | **Add a passkey on your phone** at the ts.net address | Settings → Add a passkey. Then it is a fingerprint, and Share can work |
 | ⏳ | **Point MEDIA_ROOTS at real local media**, or leave it empty | The synthetic test library was removed; nothing local is indexed now |
-| ⏳ | **Revoke the temporary GitHub token** when convenient | You said it was temporary; it still works |
 
 ---
 
@@ -42,8 +39,11 @@ Verified means measured or driven end to end, not merely compiled.
 - ✅ **Audiences** — every folder and room decides who it is for
 - ✅ **Playlists** — 41 Winamp lists imported, 98.6% of tracks matched;
   create, rename, reorder, copy, share
-- ✅ **TV app** — discovery, self-update, pairing, native video player, remote control
-- ✅ **Sharing** — songs share as files; Drive links work for every type
+- ✅ **TV app** — discovery, self-update (confirmed working on the bedroom box),
+  pairing, native video player, remote control. Shows its own version on screen
+  from 0.5.0
+- ✅ **Sharing** — songs share as files; Drive links work for every type.
+  Passkey registered on the phone, so it works away from the house
 - ✅ **HTTPS** — Tailscale, real certificate, reachable from your phone anywhere,
   nothing on the public internet
 
@@ -95,7 +95,7 @@ Deployed and believed correct; not yet confirmed in use.
 
 | | Item | What is known |
 |---|---|---|
-| 🔴 | **Details columns on a phone** | The one report I have never reproduced. Hidden below 720px with the metadata folded under the filename — if that is not what you see, I need a screenshot |
+| 🟡 | **Details columns on a phone** | Found. The tags sat *inside* the filename element, which a phone clamps to two lines — so the moment long names were allowed to wrap, a long name used both lines and pushed the tags out of the box. Search results lost their path the same way |
 
 ---
 

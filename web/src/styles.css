@@ -1109,7 +1109,11 @@ button.compact:disabled { opacity: .5; cursor: not-allowed; }
    simply be cut. On a narrow screen it wraps to two lines and then ellipsises,
    which shows the start and the extension — the two ends people read. */
 @media (max-width: 720px) {
-  .rows .nm, .cols li .nm-clip {
+  /* The name wraps to two lines; whatever sits under it is not part of that
+     count. Clamping the whole cell meant a long filename used both lines and
+     hid the tags — the columns a phone shows instead of the desktop's. */
+  .rows .nm { display: flex; flex-direction: column; min-width: 0; }
+  .rows .nm-text, .cols li .nm-clip {
     white-space: normal;
     display: -webkit-box;
     -webkit-line-clamp: 2;
