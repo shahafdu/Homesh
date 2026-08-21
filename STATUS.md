@@ -6,7 +6,8 @@ to reconstruct the state of a large, half-finished system from memory.
 **Legend** — ✅ built and verified · 🟡 built, needs Shahaf to confirm ·
 🔴 known broken · ⬜ not started · ⏳ waiting on Shahaf
 
-Last updated: 21 August 2026 · 338 tests · 17 migrations · CI green
+Last updated: 21 August 2026 · 338 tests · 17 migrations · CI green (privacy
+check was red for three commits — a private address in a test; see below)
 
 ---
 

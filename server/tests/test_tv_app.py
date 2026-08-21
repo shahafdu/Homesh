@@ -98,14 +98,14 @@ class TestTheAddressForATelevision:
     """
 
     def test_it_offers_the_house_address_not_the_browsers(self, anon_client, monkeypatch):
-        monkeypatch.setenv("LAN_BASE_URL", "http://10.0.0.5:8080")
+        monkeypatch.setenv("LAN_BASE_URL", "http://192.0.2.10:8080")
         monkeypatch.setenv("PUBLIC_ORIGIN", "https://example.ts.net")
         from app.config import get_settings
 
         get_settings.cache_clear()
         try:
             body = anon_client.get("/tv.address").json()
-            assert body["lan"] == "http://10.0.0.5:8080"
+            assert body["lan"] == "http://192.0.2.10:8080"
         finally:
             get_settings.cache_clear()
 
