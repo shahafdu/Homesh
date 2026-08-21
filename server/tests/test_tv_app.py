@@ -169,6 +169,58 @@ class TestTheAddressForATelevision:
         apk.write_bytes(b"PK\x03\x04 pretend apk")
         monkeypatch.setenv("TV_APK_PATH", str(apk))
 
-        short = anon_client.get("/tv", follow_redirects=True)
+        short = anon_client.get("/apk", follow_redirects=True)
         assert short.status_code == 200
         assert short.content == anon_client.get("/tv.apk").content
+
+
+class TestTheTvPageStaysAtSlashTv:
+    """`/tv` is the interface the installed app loads on every launch.
+
+    This exists because a short download address was once put at `/tv`, one
+    character from `/tv.apk` and serving something entirely different. Every
+    screen in the house then loaded an APK into its WebView and went black —
+    with no failing request for the server to log, because from its side
+    everything had been served correctly.
+
+    Asserted against the route table rather than over HTTP, because the built
+    client is not present when these run: the suite mounts the source over
+    /app, so /app/static does not exist and the page handler is never
+    registered. The invariant is that nothing *claims* `/tv`, which is exactly
+    what went wrong and is true either way.
+    """
+
+    @staticmethod
+    def _explicit_paths() -> set[str]:
+        """Routes declared in code, excluding the catch-all that serves files."""
+        from app.main import app
+
+        return {
+            route.path
+            for route in app.routes
+            if getattr(route, "path", None) and "{" not in route.path
+        }
+
+    def test_nothing_claims_the_tv_page(self):
+        assert "/tv" not in self._explicit_paths(), (
+            "/tv is the TV interface. A route registered here shadows it and "
+            "every screen in the house loads that instead — silently."
+        )
+
+    def test_the_download_has_its_own_short_path(self):
+        """Short enough to type, and not on top of anything."""
+        paths = self._explicit_paths()
+        assert "/apk" in paths
+        assert "/tv.apk" in paths
+
+    def test_the_download_and_the_page_are_not_confusable(self, anon_client, tmp_path,
+                                                          monkeypatch):
+        apk = tmp_path / "homesh-tv.apk"
+        apk.write_bytes(b"PK pretend apk")
+        monkeypatch.setenv("TV_APK_PATH", str(apk))
+
+        served = anon_client.get("/apk", follow_redirects=True)
+        assert served.content.startswith(b"PK")
+        # Whatever /tv answers — the page when built, a 404 when not — it is
+        # never the archive.
+        assert not anon_client.get("/tv", follow_redirects=True).content.startswith(b"PK")

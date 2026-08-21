@@ -55,7 +55,7 @@ function TvAppAddress() {
   // The shortest address that answers. Every character is one more press on a
   // d-pad keyboard, and a long unfamiliar string is what makes a television
   // browser decide the whole thing was a search query instead of an address.
-  const url = short ? `${short}/tv` : `${lan ?? here}/tv.apk`;
+  const url = short ? `${short}/apk` : `${lan ?? here}/tv.apk`;
   // Only worth pointing out when the two differ — otherwise it is noise.
   const differs = lan !== null && !here.startsWith(lan);
 

@@ -263,14 +263,20 @@ def _short_address(lan: str) -> str | None:
     return None
 
 
-@app.get("/tv", include_in_schema=False)
+@app.get("/apk", include_in_schema=False)
 async def tv_apk_short() -> Response:
     """The same download, at an address short enough to type on a remote.
 
-    Every character matters here. This is typed with a d-pad on an on-screen
-    keyboard, and a browser that is handed something long and unfamiliar will
-    offer to search for it instead — which is exactly what happened: a Google
-    results page for the address rather than the file.
+    Every character matters here: this is typed with a d-pad on an on-screen
+    keyboard, and a browser handed something long and unfamiliar offers to
+    search for it instead — which is what produced a Google results page where
+    the app should have been.
+
+    **Not `/tv`.** That is the TV interface itself, which is what the installed
+    app loads on every launch. Putting the download there pointed every screen
+    in the house at an APK instead of a page: black screen, no request the
+    server could even log as wrong. The two are one character apart and could
+    not be more different.
     """
     return RedirectResponse("/tv.apk", status_code=307)
 
