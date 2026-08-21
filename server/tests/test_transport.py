@@ -9,6 +9,8 @@ room somebody may not use cannot be driven anyway.
 
 from __future__ import annotations
 
+import uuid
+
 import pytest
 from sqlalchemy import text
 
@@ -301,3 +303,74 @@ class TestAScreenThatGoesAway:
                 {"z": screen},
             ).scalar_one()
         assert state == "idle"
+
+
+class TestSeeingAndChoosingWhatIsNext:
+    """A room's queue, visible and selectable.
+
+    The tower could say "track 4 of 31" but never what the other thirty were,
+    so a playlist sent to a room was a black box: no way to see what was coming
+    or to pick something else without sending the whole list again.
+    """
+
+    def test_the_queue_comes_back_named_and_in_order(self, client, db, screen, scanned):
+        tracks = _tracks(db, limit=3)
+        client.post(f"/api/zones/{screen}/play", json={"item_ids": tracks})
+
+        body = client.get(f"/api/zones/{screen}/queue").json()
+        assert [t["index"] for t in body["tracks"]] == [0, 1, 2]
+        assert [t["item_id"] for t in body["tracks"]] == tracks
+        # The filename is always there, whatever the tags say.
+        assert all(t["filename"] for t in body["tracks"])
+        assert body["cursor"] == 0
+
+    def test_jumping_moves_the_cursor(self, client, db, screen, scanned):
+        tracks = _tracks(db, limit=3)
+        client.post(f"/api/zones/{screen}/play", json={"item_ids": tracks})
+
+        client.post(f"/api/zones/{screen}/jump", json={"index": 2})
+        assert client.get(f"/api/zones/{screen}/queue").json()["cursor"] == 2
+
+    def test_jumping_past_the_end_is_refused(self, client, db, screen, scanned):
+        tracks = _tracks(db, limit=2)
+        client.post(f"/api/zones/{screen}/play", json={"item_ids": tracks})
+
+        r = client.post(f"/api/zones/{screen}/jump", json={"index": 99})
+        assert r.status_code == 409
+
+    def test_shuffling_leaves_what_is_playing_alone(self, client, db, screen, scanned):
+        tracks = _tracks(db, limit=3)
+        client.post(f"/api/zones/{screen}/play", json={"item_ids": tracks})
+
+        assert client.post(f"/api/zones/{screen}/shuffle").status_code == 200
+
+        after = client.get(f"/api/zones/{screen}/queue").json()
+        ids = [t["item_id"] for t in after["tracks"]]
+        # The current track stays put; the rest are the same set, reordered.
+        assert ids[0] == tracks[0]
+        assert sorted(ids) == sorted(tracks)
+
+    def test_nothing_left_to_shuffle_says_so(self, client, db, screen, scanned):
+        tracks = _tracks(db, limit=2)
+        client.post(f"/api/zones/{screen}/play", json={"item_ids": tracks})
+        client.post(f"/api/zones/{screen}/jump", json={"index": 1})
+
+        r = client.post(f"/api/zones/{screen}/shuffle")
+        assert r.status_code == 409
+        assert "nothing left" in r.json()["detail"]
+
+    def test_a_room_you_may_not_use_is_not_readable(self, client, db, screen, scanned, monkeypatch):
+        """The queue names files, so it needs the same check the room does."""
+        tracks = _tracks(db, limit=2)
+        client.post(f"/api/zones/{screen}/play", json={"item_ids": tracks})
+
+        stranger = CurrentUser(
+            id=uuid.uuid4(), handle="stranger", display_name="Stranger", is_admin=False
+        )
+        app.dependency_overrides[require_user] = lambda: stranger
+        app.dependency_overrides[optional_user] = lambda: stranger
+        try:
+            assert client.get(f"/api/zones/{screen}/queue").status_code in (403, 404)
+        finally:
+            app.dependency_overrides.pop(require_user, None)
+            app.dependency_overrides.pop(optional_user, None)

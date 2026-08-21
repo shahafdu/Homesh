@@ -183,7 +183,16 @@ body {
 
 .scrub { display: flex; align-items: center; gap: 18px; padding-top: 20px; }
 .bar { flex: 1; height: 8px; border-radius: 99px; background: var(--line); overflow: hidden; }
+.bar { position: relative; }
 .bar > i { display: block; height: 100%; background: var(--accent); border-radius: 99px; }
+
+/* Where a seek is heading. Deliberately not the same colour as progress: the
+   point is that it is a destination, not a position. */
+.seek-mark {
+  position: absolute; top: -5px; bottom: -5px; width: 3px;
+  margin-left: -1px; border-radius: 2px;
+  background: #fff; box-shadow: 0 0 0 2px rgba(0,0,0,.45);
+}
 .time { font-size: 20px; color: var(--muted); font-variant-numeric: tabular-nums; min-width: 76px; }
 .time.right { text-align: right; }
 

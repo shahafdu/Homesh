@@ -6,7 +6,7 @@ to reconstruct the state of a large, half-finished system from memory.
 **Legend** — ✅ built and verified · 🟡 built, needs Shahaf to confirm ·
 🔴 known broken · ⬜ not started · ⏳ waiting on Shahaf
 
-Last updated: 21 August 2026 · 332 tests · 16 migrations · CI green
+Last updated: 21 August 2026 · 338 tests · 17 migrations · CI green
 
 ---
 
@@ -55,6 +55,12 @@ Deployed and believed correct; not yet confirmed in use.
 
 | | Item | Note |
 |---|---|---|
+| 🟡 | **Next no longer stops the music** | Replacing the source rejects the pending play() with AbortError — which is what next *does*. Both the phone and the TV treated it as a failure; the TV put it on screen and killed the queue |
+| 🟡 | **What a room will play next** | The tower lists the queue, marks what is playing, and any track can be tapped to jump to it |
+| 🟡 | **Shuffle in a room** | Reorders what has not played yet; what is on keeps playing |
+| 🟡 | **A playlist marks the playing track** | Opening one while it plays showed no sign of which track was on |
+| 🟡 | **Tower bar for video too** | It read the catalog's length, which video has none of. The screen reports its own |
+| 🟡 | **TV seeking** | 10s a press and presses accumulate, so the encoder restarts once rather than per tap, with a marker showing where it is heading |
 | 🟡 | **wmv / avi on the TV** | The screen was handed the raw file and its decoder refused. It now gets the same live transcode the browser uses — verified: an .avi arrives as h264 640x480 + aac. No decoder bundled into the app |
 | 🟡 | **The TV player fills the screen** | The title and bar used to take a strip off every frame. They float over the picture now and fade after four seconds; any remote key brings them back |
 | 🟡 | **The remote shows it was heard** | Seeking jumps the bar immediately instead of waiting for the stream, and pause/seek/stop each flash a large confirmation. On a television a silent press is indistinguishable from a flat battery |

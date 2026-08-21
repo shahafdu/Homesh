@@ -1218,3 +1218,32 @@ button.compact:disabled { opacity: .5; cursor: not-allowed; }
   width: 15px; height: 15px; border: 2px solid var(--surface);
   border-radius: 50%; background: var(--accent);
 }
+
+/* ── A playlist entry that is playing ──────────────────────────────────────── */
+.pl-entries li.nowplaying { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.pl-entries li.nowplaying .pl-pos,
+.pl-entries li.nowplaying .pl-play { color: var(--accent); font-weight: 600; }
+
+/* ── What a room will play next ────────────────────────────────────────────── */
+.zone-queue { margin-top: 8px; }
+.q-list {
+  list-style: none; margin: 8px 0 0; padding: 0;
+  max-height: 260px; overflow-y: auto;   /* thirty-one rows is a scroll, not a page */
+  border: 1px solid var(--line); border-radius: 8px;
+}
+.q-list li + li { border-top: 1px solid var(--line); }
+.q-row {
+  display: flex; align-items: baseline; gap: 10px; width: 100%;
+  padding: 7px 10px; background: none; border: 0; text-align: left;
+  color: inherit; font: inherit; cursor: pointer;
+}
+.q-row:hover:not(:disabled) { background: color-mix(in srgb, var(--ink) 5%, transparent); }
+.q-row:disabled { cursor: default; }
+.q-pos {
+  min-width: 22px; text-align: right; font-size: 11.5px; color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.q-name { flex: 1; min-width: 0; font-size: 13px; }
+.q-artist { flex: 0 1 auto; }
+.q-list li.current { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.q-list li.current .q-pos, .q-list li.current .q-name { color: var(--accent); font-weight: 600; }

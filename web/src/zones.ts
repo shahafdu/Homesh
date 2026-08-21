@@ -23,6 +23,9 @@ export interface ZoneSession {
   current_item: string | null;
   now: NowPlaying | null;
   position_ms: number | null;
+  /** As the screen reports it. The only source for a live transcode, whose
+   *  length the catalog cannot know. */
+  duration_ms: number | null;
   volume: number | null;
   updated_at: string | null;
 }
@@ -51,6 +54,27 @@ export interface Zone {
 }
 
 export const listZones = () => api.get<Zone[]>("/api/zones");
+
+export interface QueueTrack {
+  index: number;
+  item_id: string;
+  filename: string | null;
+  title: string | null;
+  artist: string | null;
+  duration_ms: number | null;
+}
+
+/** What a room is going to play, in order. */
+export const zoneQueue = (zoneId: string) =>
+  api.get<{ cursor: number; tracks: QueueTrack[] }>(`/api/zones/${zoneId}/queue`);
+
+/** Play a particular track of what the room already has. */
+export const jumpInZone = (zoneId: string, index: number) =>
+  api.post<{ zone: string; state: string }>(`/api/zones/${zoneId}/jump`, { index });
+
+/** Reorder what the room has not played yet. */
+export const shuffleZone = (zoneId: string) =>
+  api.post<{ shuffled: number }>(`/api/zones/${zoneId}/shuffle`);
 
 /** Move to a point in what is playing in another room. */
 export const seekZone = (zoneId: string, positionMs: number) =>

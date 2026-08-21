@@ -40,6 +40,10 @@ const SECTIONS: { kind: string; title: string; blurb?: string }[] = [
 export default function Playlists(props: {
   /** A playlist to open straight away — the player bar points here. */
   openId?: string | null;
+  /** What is playing, so the list can mark it. Opening a playlist while it is
+   *  playing and finding no sign of which track is on makes the list useless
+   *  for the one thing it is opened for: choosing the next one. */
+  playingId?: string | null;
   onPlay: (files: FileEntry[], index: number, origin: QueueOrigin) => void;
   /** Send the whole list to a room, using the same picker a file uses. */
   onSendTo: (files: FileEntry[]) => void;
@@ -95,6 +99,7 @@ export default function Playlists(props: {
         onClose={props.onClose}
         onPlay={props.onPlay}
         onSendTo={props.onSendTo}
+        playingId={props.playingId ?? null}
         onAct={act}
       />
     );
@@ -219,6 +224,7 @@ function PlaylistDetail(props: {
   onClose: () => void;
   onPlay: (files: FileEntry[], index: number, origin: QueueOrigin) => void;
   onSendTo: (files: FileEntry[]) => void;
+  playingId: string | null;
   onAct: (fn: () => Promise<unknown>) => Promise<void>;
 }) {
   const { playlist } = props;
@@ -438,9 +444,13 @@ function PlaylistDetail(props: {
               key={entry.entry_id}
               className={`${entry.missing ? "missing" : ""}${
                 held === entry.entry_id ? " held" : ""
-              }`}
+              }${entry.item_id && entry.item_id === props.playingId ? " nowplaying" : ""}`}
             >
-              <span className="pl-pos">{index + 1}</span>
+              {/* Marked, not merely coloured: a glyph is readable to everyone
+                  and survives whatever palette is chosen. */}
+              <span className="pl-pos">
+                {entry.item_id && entry.item_id === props.playingId ? "▶" : index + 1}
+              </span>
 
               <span className="pl-track">
                 {entry.missing ? (

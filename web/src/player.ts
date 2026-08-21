@@ -61,6 +61,8 @@ async function signedUrl(itemId: string): Promise<string> {
 
 export function usePlayer() {
   const [state, setState] = useState<PlayerState>(INITIAL);
+  /** Bumped by every load, so an overtaken one cannot report its own outcome. */
+  const generation = useRef(0);
   // Play in a shuffled order. Kept beside the queue rather than shuffling the
   // queue itself, so turning it off restores the album order rather than
   // leaving a permanently jumbled list.
@@ -128,7 +130,7 @@ export function usePlayer() {
    * evidence of anything. The retry costs a few hundred milliseconds and
    * removes the error message that used to appear on every first tap.
    */
-  const start = async (audio: HTMLAudioElement): Promise<void> => {
+  const start = async (audio: HTMLAudioElement, mine: number): Promise<void> => {
     try {
       await audio.play();
     } catch (first) {
@@ -137,8 +139,13 @@ export function usePlayer() {
         throw first;
       }
       await new Promise((resolve) => window.setTimeout(resolve, 250));
+      // Somebody pressed next during the wait. Retrying here would call play()
+      // on a source this attempt knows nothing about, racing the load that
+      // replaced it — which is how pressing next twice stopped the music.
+      if (generation.current !== mine) return;
       await audio.play();
     }
+    if (generation.current !== mine) return;
     setState((s) => ({ ...s, playing: true, error: null }));
   };
 
@@ -146,6 +153,13 @@ export function usePlayer() {
     const audio = audioRef.current;
     const track = stateRef.current.queue[index];
     if (!audio || !track) return;
+
+    // Every load supersedes the one before it. Without this, a load that has
+    // been overtaken still reports its own outcome — and since replacing src
+    // rejects the pending play() with AbortError, pressing next reliably wrote
+    // "not playing" over a track that had just started.
+    generation.current += 1;
+    const mine = generation.current;
 
     // Move the cursor first. Setting it only on success made the UI lie about
     // which track was selected whenever loading failed.
@@ -167,10 +181,14 @@ export function usePlayer() {
     }
 
     try {
-      audio.src = await signedUrl(track.item_id);
+      const url = await signedUrl(track.item_id);
+      // Minting a URL is a round trip, and next can be pressed during it.
+      if (generation.current !== mine) return;
+      audio.src = url;
       if (resumeAt > 0) audio.currentTime = resumeAt;
-      await start(audio);
+      await start(audio, mine);
     } catch (e) {
+      if (generation.current !== mine) return;
       // Only after a real failure. A first tap on a phone routinely rejects for
       // reasons that disappear on the retry — the element was not yet unlocked,
       // or the source changed while play() was in flight — and reporting those

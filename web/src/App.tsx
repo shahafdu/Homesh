@@ -154,6 +154,7 @@ export default function App() {
         {showPlaylists && (
           <Playlists
             openId={showPlaylists === true ? null : showPlaylists}
+            playingId={player.current?.item_id ?? null}
             onPlay={(files, index, origin) => player.play(files, index, "", origin)}
             onSendTo={(files) => {
               // The room picker takes a file and its siblings, so the first

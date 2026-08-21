@@ -24,6 +24,13 @@ interface Command {
 
 const STORAGE_KEY = "homesh.tv.credential";
 
+/** Seconds per press of left or right.
+ *
+ * Small enough to aim with. Presses accumulate, so reaching a minute in is six
+ * taps rather than a single overshoot — and unlike one large jump, this shows
+ * you where you are going before it goes there. */
+const SEEK_STEP = 10;
+
 /** The native player, when this screen is the Android shell rather than a browser.
  *
  * A WebView carries roughly H.264 and VP8/9; the box underneath it decodes
@@ -94,6 +101,11 @@ export default function TvApp() {
   // forever, which is why resuming a video went to the media element instead of
   // the box's own decoder. A ref is current whenever it is read.
   const nowRef = useRef<Command | null>(null);
+  /** Bumped by every play command, so a stale deferred start can be discarded. */
+  const generation = useRef(0);
+  /** Where held arrow presses have added up to, before the stream is moved. */
+  const pendingSeek = useRef<number | null>(null);
+  const commitSeek = useRef<number | undefined>(undefined);
   useEffect(() => {
     nowRef.current = now;
   }, [now]);
@@ -269,23 +281,43 @@ export default function TvApp() {
           break;
         }
         // The element mounts with this render, so defer until it exists.
-        window.setTimeout(() => {
-          const el = mediaRef.current;
-          if (!el || !cmd.url) return;
-          el.src = cmd.url;
-          if (cmd.position_ms) el.currentTime = cmd.position_ms / 1000;
-          void el.play().catch((e) => {
-            const why =
-              e instanceof Error && e.name === "NotSupportedError"
-                ? "this screen cannot decode that format"
-                : String(e);
-            setPlayFault(`${cmd.filename ?? "That file"} — ${why}`);
-            // Back to a state that can be given something else. A screen stuck
-            // on an error is a screen somebody has to walk over to.
-            setPhase("idle");
-            setNow(null);
-          });
-        }, 0);
+        //
+        // Stamped, because two play commands in quick succession — pressing
+        // next twice — would otherwise race: the older timer would fire after
+        // the newer one and put the previous track back.
+        generation.current += 1;
+        {
+          const mine = generation.current;
+          window.setTimeout(() => {
+            if (generation.current !== mine) return;
+            const el = mediaRef.current;
+            if (!el || !cmd.url) return;
+            el.src = cmd.url;
+            if (cmd.position_ms) el.currentTime = cmd.position_ms / 1000;
+            void el.play().catch((e) => {
+              // Superseded, not failed.
+              //
+              // Replacing src while a play() promise is still pending rejects
+              // it with AbortError — which is exactly what pressing next does,
+              // every time. Treating that as a failure put "the media was
+              // removed from the document" on the television and stopped the
+              // queue dead, on a perfectly good file that was already being
+              // replaced by the next one.
+              if (e instanceof Error && e.name === "AbortError") return;
+              if (generation.current !== mine) return;
+
+              const why =
+                e instanceof Error && e.name === "NotSupportedError"
+                  ? "this screen cannot decode that format"
+                  : String(e);
+              setPlayFault(`${cmd.filename ?? "That file"} — ${why}`);
+              // Back to a state that can be given something else. A screen stuck
+              // on an error is a screen somebody has to walk over to.
+              setPhase("idle");
+              setNow(null);
+            });
+          }, 0);
+        }
         break;
       case "pause":
         if (native()?.isPlaying()) native()!.pause();
@@ -327,14 +359,27 @@ export default function TvApp() {
   const report = useCallback((state: string) => {
     const socket = socketRef.current;
     const media = mediaRef.current;
+    const player = nowRef.current?.kind === "video" ? native() : null;
     if (!socket || socket.readyState !== WebSocket.OPEN) return;
     socket.send(
       JSON.stringify({
         type: "state",
         state,
         item_id: now?.item_id,
-        position_ms: media ? Math.round(media.currentTime * 1000) : 0,
-        duration_ms: media && isFinite(media.duration) ? Math.round(media.duration * 1000) : null,
+        // From whichever is actually playing. Video goes to the box's own
+        // decoder, where the hidden media element knows nothing and reports
+        // NaN — so the tower was told the length of every song and the length
+        // of no film, and could draw a bar for one and not the other.
+        position_ms: player
+          ? player.positionMs()
+          : media
+            ? Math.round(media.currentTime * 1000)
+            : 0,
+        duration_ms: player
+          ? player.durationMs() || null
+          : media && isFinite(media.duration)
+            ? Math.round(media.duration * 1000)
+            : null,
       }),
     );
   }, [now]);
@@ -372,29 +417,44 @@ export default function TvApp() {
       // changing, and a remote with no visible effect reads as a dead remote.
       wake();
 
+      // Presses accumulate, and only the last one moves anything.
+      //
+      // Each press used to jump the stream immediately, which for a transcoded
+      // video restarts the encoder — so three quick presses meant three
+      // restarts and a second or two of black between each. Ten seconds is also
+      // a size you can aim with: thirty overshot whatever you were going back
+      // for. Now the bar moves per press, the total is shown, and the stream is
+      // told once you stop pressing.
       const seekBy = (seconds: number) => {
-        const from = player && now?.kind === "video"
+        const live = player && now?.kind === "video"
           ? player.positionMs() / 1000
           : (media?.currentTime ?? 0);
-        const to = Math.max(0, from + seconds);
+        const from = pendingSeek.current ?? live;
+        const to = Math.max(0, Math.min(from + seconds, duration || Infinity));
 
-        // Shown immediately, before anything has loaded. A jump in a
-        // transcoded stream restarts the encoder, which takes a second or two —
-        // and with the bar frozen at the old position the whole time, there was
-        // nothing to tell you the press had registered or where you had landed.
+        pendingSeek.current = to;
         setSeekTo(to);
-        setGesture(`${seconds > 0 ? "▸▸" : "◂◂"} ${formatTime(to)}`);
+        setGesture(
+          `${seconds > 0 ? "▸▸" : "◂◂"}  ${formatTime(to)}` +
+            (duration ? `  /  ${formatTime(duration)}` : ""),
+        );
 
-        if (player && now?.kind === "video") player.play(now.url ?? "", to * 1000);
-        else if (media) media.currentTime = to;
+        window.clearTimeout(commitSeek.current);
+        commitSeek.current = window.setTimeout(() => {
+          const target = pendingSeek.current;
+          pendingSeek.current = null;
+          if (target == null) return;
+          if (player && now?.kind === "video") player.play(now.url ?? "", target * 1000);
+          else if (media) media.currentTime = target;
+        }, 550);
       };
 
       switch (event.key) {
         case "ArrowRight":
-          seekBy(30);
+          seekBy(SEEK_STEP);
           break;
         case "ArrowLeft":
-          seekBy(-15);
+          seekBy(-SEEK_STEP);
           break;
         case "MediaPlayPause":
         case "Enter":
@@ -572,6 +632,16 @@ export default function TvApp() {
                       width: duration ? `${(shownPosition / duration) * 100}%` : "0%",
                     }}
                   />
+                  {/* Where a seek is heading, before the stream gets there. The
+                      filled part alone could not show it: it looks identical to
+                      ordinary progress, so there was no way to tell a jump had
+                      been registered. */}
+                  {seekTo !== null && duration > 0 && (
+                    <b
+                      className="seek-mark"
+                      style={{ left: `${Math.min(100, (seekTo / duration) * 100)}%` }}
+                    />
+                  )}
                 </div>
                 <span className="time right">{formatTime(duration)}</span>
               </div>

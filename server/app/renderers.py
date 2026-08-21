@@ -437,17 +437,27 @@ def _persist_position(renderer_id: UUID, state: dict) -> None:
     position = state.get("position_ms")
     if position is None:
         return
+    # coalesce, because the length arrives a moment after the position does —
+    # the screen knows where it is before it knows how long the file runs, and
+    # a later null must not erase a length already learned.
+    duration = state.get("duration_ms")
     with get_engine().begin() as conn:
         conn.execute(
             text(
                 """
                 UPDATE play_sessions s
-                SET position_ms = :p, updated_at = now()
+                SET position_ms = :p,
+                    duration_ms = coalesce(:d, s.duration_ms),
+                    updated_at = now()
                 FROM zones z
                 WHERE s.zone_id = z.id AND z.renderer_id = :r
                 """
             ),
-            {"p": int(position), "r": str(renderer_id)},
+            {
+                "p": int(position),
+                "d": int(duration) if duration else None,
+                "r": str(renderer_id),
+            },
         )
 
 

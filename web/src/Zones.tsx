@@ -13,9 +13,13 @@ import {
   previousInZone,
   removeZone,
   renameZone,
+  jumpInZone,
   resumeZone,
   seekZone,
+  shuffleZone,
   stopZone,
+  zoneQueue,
+  type QueueTrack,
   zoneStatus,
   type Zone,
 } from "./zones";
@@ -149,6 +153,7 @@ export default function Zones(props: { onClose: () => void }) {
           <ZoneCard
             key={zone.id}
             zone={zone}
+            onChanged={() => void refresh()}
             onSeek={(ms) => act(() => seekZone(zone.id, ms))}
             onStop={() => act(() => stopZone(zone.id))}
             onVolume={(v) => act(() => setZoneVolume(zone.id, v))}
@@ -190,7 +195,11 @@ export default function Zones(props: { onClose: () => void }) {
  */
 function ZoneSeek(props: { zone: Zone; onSeek: (positionMs: number) => void }) {
   const session = props.zone.session;
-  const duration = session?.now?.duration_ms ?? 0;
+  // What the screen reports first, the catalog second. Music has a length in
+  // the catalog; a video being transcoded as it plays does not, and only the
+  // thing decoding it knows — which is why the bar appeared for songs and
+  // never for films.
+  const duration = session?.duration_ms ?? session?.now?.duration_ms ?? 0;
 
   // While dragging, the bar follows the finger rather than the four-second
   // poll — which would otherwise yank it back to where the room still is.
@@ -240,8 +249,105 @@ function formatClock(ms: number): string {
   return h > 0 ? `${h}:${pad(m)}:${pad(sec)}` : `${m}:${pad(sec)}`;
 }
 
+/** What a room is going to play, and picking something else from it.
+ *
+ * A playlist sent to a room used to be a black box: the tower could say "4 of
+ * 31" but not what the other thirty were, so choosing a different song meant
+ * sending the whole list again from the top.
+ *
+ * Collapsed by default — thirty-one rows under every card is a wall — and
+ * fetched only when opened, since it is one query per room per poll otherwise.
+ */
+function ZoneQueue(props: { zone: Zone; onChanged: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [tracks, setTracks] = useState<QueueTrack[] | null>(null);
+  const [busy, setBusy] = useState(false);
+  const { zone } = props;
+  const cursor = zone.session?.cursor ?? 0;
+  const total = zone.session?.queue_length ?? 0;
+
+  const load = useCallback(async () => {
+    try {
+      setTracks((await zoneQueue(zone.id)).tracks);
+    } catch {
+      setTracks([]);
+    }
+  }, [zone.id]);
+
+  useEffect(() => {
+    if (open) void load();
+    // Reloaded when the room moves on, so the highlight follows the music
+    // rather than sitting on whatever was playing when this was opened.
+  }, [open, load, cursor]);
+
+  if (total < 1) return null;
+
+  return (
+    <div className="zone-queue">
+      <div className="zone-controls">
+        <button className="compact" aria-expanded={open} onClick={() => setOpen(!open)}>
+          {open ? "▾" : "▸"} Playing next
+          <span className="muted small"> · {total}</span>
+        </button>
+        {total > 1 && (
+          <button
+            className="compact"
+            disabled={busy}
+            title="Reorder what has not played yet"
+            onClick={async () => {
+              setBusy(true);
+              try {
+                await shuffleZone(zone.id);
+                await load();
+              } catch {
+                /* nothing left to shuffle; the button says enough */
+              } finally {
+                setBusy(false);
+              }
+            }}
+          >
+            ⤨ Shuffle
+          </button>
+        )}
+      </div>
+
+      {open && tracks === null && <p className="muted small">Loading…</p>}
+
+      {open && tracks && (
+        <ol className="q-list">
+          {tracks.map((t) => (
+            <li key={`${t.index}-${t.item_id}`} className={t.index === cursor ? "current" : ""}>
+              <button
+                className="q-row"
+                disabled={busy}
+                onClick={async () => {
+                  if (t.index === cursor) return;
+                  setBusy(true);
+                  try {
+                    await jumpInZone(zone.id, t.index);
+                    props.onChanged();
+                  } finally {
+                    setBusy(false);
+                  }
+                }}
+              >
+                {/* The playing one is marked rather than merely highlighted:
+                    colour alone is not something everyone can see. */}
+                <span className="q-pos">{t.index === cursor ? "▶" : t.index + 1}</span>
+                <span className="q-name nm-clip">{t.title ?? t.filename ?? "—"}</span>
+                {t.artist && <span className="muted small q-artist">{t.artist}</span>}
+              </button>
+            </li>
+          ))}
+        </ol>
+      )}
+    </div>
+  );
+}
+
 function ZoneCard(props: {
   zone: Zone;
+  onChanged: () => void;
   onSeek: (positionMs: number) => void;
   onStop: () => void;
   onVolume: (level: number) => void;
@@ -380,6 +486,8 @@ function ZoneCard(props: {
             </button>
             <button className="compact" onClick={props.onStop}>Stop</button>
           </div>
+
+          <ZoneQueue zone={zone} onChanged={props.onChanged} />
 
           {/* Its own row beneath the buttons. Six controls on one line pushed the
               slider past the edge of the card, and the slider is the one that

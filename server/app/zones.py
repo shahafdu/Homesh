@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import logging
+import secrets
 from dataclasses import dataclass
 from typing import Literal
 from uuid import UUID
@@ -238,7 +239,7 @@ async def list_zones(user: CurrentUser = Depends(require_user)) -> list[dict]:
                 """
                 SELECT z.id, z.name, r.kind::text, r.state::text, r.name,
                        s.state::text, s.queue, s.cursor, s.position_ms, s.volume,
-                       s.updated_at, z.preroll
+                       s.updated_at, z.preroll, s.duration_ms
                 FROM zones z
                 LEFT JOIN renderers r ON r.id = z.renderer_id
                 LEFT JOIN play_sessions s ON s.zone_id = z.id
@@ -331,6 +332,9 @@ async def list_zones(user: CurrentUser = Depends(require_user)) -> list[dict]:
                     # a list.
                     "now": described.get(queue[cursor]) if cursor < len(queue) else None,
                     "position_ms": row[8],
+                    # What the screen reports, which is the only source for a
+                    # live transcode — the catalog has no length for one.
+                    "duration_ms": row[12],
                     "volume": row[9],
                     "updated_at": row[10].isoformat() if row[10] else None,
                 }
@@ -442,7 +446,8 @@ async def play(
                 VALUES (:zid, CAST(:queue AS jsonb), :cursor, 0, 'buffering')
                 ON CONFLICT (zone_id) DO UPDATE
                 SET queue = EXCLUDED.queue, cursor = EXCLUDED.cursor,
-                    position_ms = 0, state = 'buffering', updated_at = now()
+                    position_ms = 0, duration_ms = NULL,
+                    state = 'buffering', updated_at = now()
                 """
             ),
             {
@@ -502,7 +507,7 @@ async def _stream_to_receiver(
     with get_engine().begin() as conn:
         conn.execute(
             text("UPDATE play_sessions SET state = 'playing', position_ms = 0, "
-                 "updated_at = now() WHERE zone_id = :z"),
+                 "duration_ms = NULL, updated_at = now() WHERE zone_id = :z"),
             {"z": str(zone.id)},
         )
     occupancy.invalidate()
@@ -617,7 +622,7 @@ async def stop(zone_id: UUID, user: CurrentUser = Depends(require_user)) -> dict
     with get_engine().begin() as conn:
         conn.execute(
             text("UPDATE play_sessions SET state = 'idle', position_ms = 0, "
-                 "updated_at = now() WHERE zone_id = :z"),
+                 "duration_ms = NULL, updated_at = now() WHERE zone_id = :z"),
             {"z": str(zone_id)},
         )
     occupancy.invalidate()
@@ -807,6 +812,92 @@ async def seek(
     return {"zone": zone.name, "position_ms": body.position_ms}
 
 
+@router.get("/{zone_id}/queue")
+async def zone_queue(zone_id: UUID, user: CurrentUser = Depends(require_user)) -> dict:
+    """What a room is going to play, in order.
+
+    The tower could say "track 4 of 31" but never what the other thirty were,
+    so a playlist sent to a room became a black box: no way to see what was
+    coming or to choose something else from it without sending the whole list
+    again from the beginning.
+    """
+    _load_zone(zone_id)
+    _require_zone_access(zone_id, user)
+
+    queue, cursor = _queue_of(zone_id)
+    described = _describe([UUID(i) for i in queue])
+
+    return {
+        "cursor": cursor,
+        "tracks": [
+            {
+                "index": i,
+                "item_id": item,
+                # Same shape a listing uses, so the filename is always present
+                # even where a tag is missing.
+                **(described.get(item) or {"filename": None, "title": None,
+                                           "artist": None, "duration_ms": None}),
+            }
+            for i, item in enumerate(queue)
+        ],
+    }
+
+
+class JumpRequest(BaseModel):
+    index: int = Field(ge=0, description="Which track in the queue to play")
+
+
+@router.post("/{zone_id}/jump")
+async def jump(
+    zone_id: UUID, body: JumpRequest, user: CurrentUser = Depends(require_user)
+) -> dict:
+    """Play a particular track of what the room already has.
+
+    Skipping forward one at a time works but is not a way to reach the ninth
+    song of a playlist from another room.
+    """
+    queue, cursor = _queue_of(zone_id)
+    if body.index >= len(queue):
+        raise HTTPException(status.HTTP_409_CONFLICT, "that track is not in the queue")
+    return await _skip(zone_id, user, body.index - cursor)
+
+
+@router.post("/{zone_id}/shuffle")
+async def shuffle_queue(zone_id: UUID, user: CurrentUser = Depends(require_user)) -> dict:
+    """Reorder what a room has not played yet.
+
+    Deliberately an action rather than a switch. A switch has to mean something
+    for tracks already behind the cursor, and a room's queue is a fixed list
+    that was sent to it — so "shuffle the rest" is both the whole of what anyone
+    wants here and the only thing that can be said honestly. What is playing
+    keeps playing; everything after it is reordered, and the tower shows the new
+    order immediately.
+    """
+    _load_zone(zone_id)
+    _require_zone_access(zone_id, user)
+
+    queue, cursor = _queue_of(zone_id)
+    upcoming = queue[cursor + 1 :]
+    if len(upcoming) < 2:
+        raise HTTPException(status.HTTP_409_CONFLICT, "there is nothing left to shuffle")
+
+    # secrets, not random: ruff's S311 is right that a predictable shuffle is a
+    # smell, and this costs nothing.
+    shuffled = list(upcoming)
+    for i in range(len(shuffled) - 1, 0, -1):
+        j = secrets.randbelow(i + 1)
+        shuffled[i], shuffled[j] = shuffled[j], shuffled[i]
+
+    with get_engine().begin() as conn:
+        conn.execute(
+            text("UPDATE play_sessions SET queue = CAST(:q AS jsonb), updated_at = now() "
+                 "WHERE zone_id = :z"),
+            {"q": json.dumps(queue[: cursor + 1] + shuffled), "z": str(zone_id)},
+        )
+
+    return {"shuffled": len(shuffled)}
+
+
 async def _skip(zone_id: UUID, user: CurrentUser, delta: int) -> dict:
     zone = _load_zone(zone_id)
     _require_zone_access(zone_id, user)
@@ -829,7 +920,7 @@ async def _skip(zone_id: UUID, user: CurrentUser, delta: int) -> dict:
 
     with get_engine().begin() as conn:
         conn.execute(
-            text("UPDATE play_sessions SET cursor = :c, position_ms = 0, "
+            text("UPDATE play_sessions SET cursor = :c, position_ms = 0, duration_ms = NULL, "
                  "updated_at = now() WHERE zone_id = :z"),
             {"c": target, "z": str(zone_id)},
         )
