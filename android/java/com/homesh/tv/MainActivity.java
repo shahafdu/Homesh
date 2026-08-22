@@ -138,25 +138,42 @@ public class MainActivity extends Activity {
      */
     private void verifyAddress() {
         new Thread(() -> {
-            if (Server.reachable(server)) return;
+            // Keeps looking rather than giving up after one try.
+            //
+            // A single attempt at launch is enough when the server has merely
+            // moved, and no use at all in the case that actually happens: the
+            // power comes back, every device boots at once, and the television
+            // is asking before the server has finished starting. It then sat
+            // showing an address that had been wrong for a minute until
+            // somebody walked over with the remote — which is the chore all of
+            // this exists to remove.
+            for (int attempt = 0; ; attempt++) {
+                if (Server.reachable(server)) return;
 
-            String found = Discovery.find();
-            if (found == null || found.equals(server)) {
-                // Either nothing answered or it named the address that is already
-                // failing. Both mean the server is not there, which the error
-                // screen says better than a silent retry would.
-                return;
+                String found = Discovery.find();
+                if (found != null && !found.equals(server)) {
+                    Log.i("Homesh", "server moved to " + found);
+                    Prefs.setServer(this, found);
+                    server = found;
+
+                    runOnUiThread(() -> {
+                        problem.setVisibility(View.GONE);
+                        web.setVisibility(View.VISIBLE);
+                        web.loadUrl(server + "/tv");
+                    });
+                    return;
+                }
+
+                // Backing off to half a minute: brisk while somebody is standing
+                // there watching it fail, quiet once the room has been given up
+                // on for the evening.
+                try {
+                    Thread.sleep(attempt < 5 ? 3000 : 30000);
+                } catch (InterruptedException stop) {
+                    Thread.currentThread().interrupt();
+                    return;
+                }
             }
-
-            Log.i("Homesh", "server moved to " + found);
-            Prefs.setServer(this, found);
-            server = found;
-
-            runOnUiThread(() -> {
-                problem.setVisibility(View.GONE);
-                web.setVisibility(View.VISIBLE);
-                web.loadUrl(found + "/tv");
-            });
         }).start();
     }
 

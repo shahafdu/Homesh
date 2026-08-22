@@ -114,9 +114,14 @@ async def lifespan(app: FastAPI):
     # memory instead of waiting on the hardware.
     watcher = asyncio.create_task(watch_receiver())
 
+    # Notices when the configured LAN address stops answering — a DHCP lease
+    # moving is the ordinary case — so the address handed to screens can fall
+    # back to one that devices are demonstrably reaching us at.
+    address = asyncio.create_task(lanaddr.watch())
+
     yield
 
-    for task in (upkeep, finder, watcher):
+    for task in (upkeep, finder, watcher, address):
         task.cancel()
         with suppress(asyncio.CancelledError):
             await task

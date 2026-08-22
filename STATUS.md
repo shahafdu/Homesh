@@ -6,7 +6,7 @@ to reconstruct the state of a large, half-finished system from memory.
 **Legend** — ✅ built and verified · 🟡 built, needs Shahaf to confirm ·
 🔴 known broken · ⬜ not started · ⏳ waiting on Shahaf
 
-Last updated: 22 August 2026 · 349 tests · 17 migrations · CI green (privacy
+Last updated: 22 August 2026 · 351 tests · 17 migrations · CI green (privacy
 check was red for three commits — a private address in a test; see below)
 
 ---
@@ -61,6 +61,8 @@ Deployed and believed correct; not yet confirmed in use.
 
 | | Item | Note |
 |---|---|---|
+| 🟡 | **A screen keeps looking for the server** | One attempt at launch was no use in the case that happens: the power returns, everything boots at once, and the television asks before the server has started |
+| 🟡 | **Clearing a search** | The ✕ stays while there is text. The native one appears only on focus, so clearing took two taps |
 | 🟡 | **The server finds its own address** | DHCP moved this machine from .206 to .205 and `LAN_BASE_URL` was silently wrong — so the TV install address pointed nowhere. It is a seed now: the server learns a working address from anything reaching it over the house network, and prefers that when the configured one stops answering |
 | 🟡 | **The whole file menu in the viewer** | Share, print, send to a room and add to a playlist, from where you are looking at the file. Opening something used to be a dead end |
 | 🟡 | **.txt sharing** | The server sends `text/plain; charset=utf-8`, and the browser matches its permitted list *exactly* — so the charset made it unrecognised. Parameters are stripped now |

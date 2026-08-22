@@ -255,6 +255,48 @@ class TestLearningItsOwnAddress:
         finally:
             get_settings.cache_clear()
 
+    def test_the_answer_does_not_change_with_the_port_asked_on(self, monkeypatch):
+        """Port 80 is published for typing comfort, not for a screen to depend on.
+
+        A Host header carries whichever port the caller used, so learning the
+        whole thing made the answer flip between "…" and "…:8080" depending on
+        which request arrived last — and a television stores whatever it is
+        told.
+        """
+        from app import lanaddr
+
+        monkeypatch.setattr(lanaddr, "_configured_answers", False)
+        monkeypatch.setenv("LAN_BASE_URL", "http://192.0.2.1:8080")
+        from app.config import get_settings
+
+        get_settings.cache_clear()
+        try:
+            lanaddr.note_host("192.168.7.9")        # reached on port 80
+            first = lanaddr.lan_base()
+            lanaddr.note_host("192.168.7.9:8080")   # and on 8080
+            assert lanaddr.lan_base() == first == "http://192.168.7.9:8080"
+        finally:
+            get_settings.cache_clear()
+
+    def test_it_does_no_network_work(self, monkeypatch):
+        """lan_base() is called from the discovery responder, on the event loop.
+
+        A probe there leaves this server and comes back into it — waiting for a
+        reply that only the loop it is blocking can send. It timed out against
+        itself every time, and logged that the address did not answer while curl
+        got 200 in 0.16s.
+        """
+        import httpx
+
+        from app import lanaddr
+
+        def refuse(*args, **kwargs):
+            raise AssertionError("lan_base() must not touch the network")
+
+        monkeypatch.setattr(httpx, "Client", refuse)
+        lanaddr.note_host("192.168.7.9:8080")
+        lanaddr.lan_base()
+
     def test_loopback_is_not_a_house_address(self):
         """127.0.0.1 is private by every definition and reaches no other room.
 
@@ -284,7 +326,7 @@ class TestLearningItsOwnAddress:
     def test_the_configured_address_wins_while_it_answers(self, monkeypatch):
         from app import lanaddr
 
-        monkeypatch.setattr(lanaddr, "_answers", lambda base: True)
+        monkeypatch.setattr(lanaddr, "_configured_answers", True)
         monkeypatch.setenv("LAN_BASE_URL", "http://192.0.2.1:8080")
         from app.config import get_settings
 
@@ -299,7 +341,7 @@ class TestLearningItsOwnAddress:
         """The whole point: unreachable is the failure being fixed."""
         from app import lanaddr
 
-        monkeypatch.setattr(lanaddr, "_answers", lambda base: False)
+        monkeypatch.setattr(lanaddr, "_configured_answers", False)
         monkeypatch.setenv("LAN_BASE_URL", "http://192.0.2.1:8080")
         from app.config import get_settings
 

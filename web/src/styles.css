@@ -1267,7 +1267,20 @@ button.compact:disabled { opacity: .5; cursor: not-allowed; }
   display: flex; align-items: center; gap: 8px;
   padding: 8px 0 0; min-width: 0;
 }
-.searchrow .searchbox { flex: 1 1 auto; min-width: 0; }
+.searchrow .searchbox-wrap { flex: 1 1 auto; min-width: 0; position: relative; display: flex; }
+.searchrow .searchbox { flex: 1 1 auto; min-width: 0; padding-right: 38px; }
+
+/* The cross the browser only shows on focus, shown whenever there is text.
+   Hiding the native one so there are never two. */
+.searchbox::-webkit-search-cancel-button { display: none; }
+.searchclear {
+  position: absolute; right: 4px; top: 50%; transform: translateY(-50%);
+  width: 30px; height: 30px; padding: 0; line-height: 1;
+  display: grid; place-items: center;
+  background: transparent; border: 0; border-radius: 7px;
+  color: var(--muted); font-size: 13px; cursor: pointer;
+}
+.searchclear:hover { color: var(--ink); background: color-mix(in srgb, var(--ink) 7%, transparent); }
 .nowrap { white-space: nowrap; }
 .bar-spacer { flex: 1; }
 

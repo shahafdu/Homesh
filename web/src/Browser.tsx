@@ -179,13 +179,30 @@ export default function Browser(props: {
           looks and what it found — rather than up in the brand row away from
           both. */}
       <div className="searchrow">
-        <input
-          className="searchbox"
-          type="search"
-          placeholder="Search filenames and folders…"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-        />
+        {/* Our own clear button, not the one type="search" provides.
+            The native one appears only while the box has focus, so clearing a
+            search took two taps: one to focus the box, one to press the cross
+            that had just appeared. This one is there whenever there is
+            something to clear. */}
+        <span className="searchbox-wrap">
+          <input
+            className="searchbox"
+            type="search"
+            placeholder="Search filenames and folders…"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+          />
+          {query && (
+            <button
+              className="searchclear"
+              aria-label="Clear the search"
+              title="Clear"
+              onClick={() => setQuery("")}
+            >
+              ✕
+            </button>
+          )}
+        </span>
         {/* One button that changes, not two. Where it looks is a single choice
             with two states, and a segmented pair spent a whole row saying so. */}
         {path !== "/" && (
