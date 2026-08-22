@@ -6,7 +6,7 @@ to reconstruct the state of a large, half-finished system from memory.
 **Legend** — ✅ built and verified · 🟡 built, needs Shahaf to confirm ·
 🔴 known broken · ⬜ not started · ⏳ waiting on Shahaf
 
-Last updated: 23 August 2026 · 356 tests · 18 migrations · CI green (privacy
+Last updated: 23 August 2026 · 357 tests · 18 migrations · CI green (privacy
 check was red for three commits — a private address in a test; see below)
 
 ---
@@ -121,8 +121,9 @@ not decisions waiting on anybody.
    of 20 across five formats passed
 2. ⬜ **Finish the duration backfill** — ~9,950 tracks still have no length, so
    listings show none for them
-3. ⬜ **Shuffle scope on the phone** — within the folder or list, versus the
-   whole library. Still undecided; rooms got shuffle as an action instead
+3. ✅ **Shuffle scope** — settled: the folder or list you are playing, never the
+   whole library. It already worked that way on both the phone and in a room;
+   there is now a test that fails if it ever reaches outside the queue
 
 ---
 

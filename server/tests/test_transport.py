@@ -447,3 +447,24 @@ class TestTheEndsOfAQueue:
             landed.add(after)
 
         assert len(landed) > 1, "twelve shuffled skips landed on one track"
+
+    def test_shuffle_never_leaves_the_queue(self, client, db, screen, scanned):
+        """Shuffle means this folder or this playlist, never the library.
+
+        A room is given a queue — the folder or list somebody chose — and
+        shuffle reorders *that*. Reaching outside it would turn "play this album
+        in a random order" into "play anything in the house", which is a
+        different request and not one anybody made here.
+        """
+        chosen = _tracks(db, limit=3)
+        client.post(f"/api/zones/{screen}/play", json={"item_ids": chosen})
+        client.post(f"/api/zones/{screen}/shuffle", json={"on": True})
+
+        everything = _tracks(db, limit=50)
+        assert len(everything) > len(chosen), "the library is bigger than this queue"
+
+        for _ in range(20):
+            client.post(f"/api/zones/{screen}/next")
+            body = client.get(f"/api/zones/{screen}/queue").json()
+            playing = body["tracks"][body["cursor"]]["item_id"]
+            assert playing in chosen, f"shuffle reached {playing}, which was never queued"
