@@ -52,6 +52,32 @@ if ($Verbose_) { $pytestArgs = @('tests', '-vv') }
 # -k takes a whole expression, so it must survive as one shell word.
 if ($Filter) { $pytestArgs += @('-k', "'$Filter'") }
 
+# The same check CI runs, run first and locally.
+#
+# This repository is public and describes a real house, so a private address in
+# a tracked file is refused. Finding that out from a red build twenty minutes
+# after pushing — which is how it was found twice — is the slowest possible way
+# to learn it, and the check costs a grep.
+#
+# git grep exits 1 when it finds nothing, which is the good case here. In
+# PowerShell 5.1 a native non-zero exit sets $? false and, with the stricter
+# preference this script starts under, turns into a terminating error — so the
+# preference is relaxed first and the exit code read deliberately.
+$ErrorActionPreference = 'Continue'
+Write-Host "Checking for private addresses and device ids..." -ForegroundColor Cyan
+
+$pattern = '(10|192\.168|172\.(1[6-9]|2[0-9]|3[01]))\.[0-9]{1,3}\.[0-9]{1,3}'
+$leaks = @(git grep -nIE $pattern -- . 2>$null)
+$ids   = @(git grep -nIE 'uuid:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}' -- . 2>$null)
+
+if ($leaks.Count -gt 0 -or $ids.Count -gt 0) {
+    Write-Host "  A tracked file names a private address or a device id:" -ForegroundColor Red
+    ($leaks + $ids) | ForEach-Object { Write-Host "    $_" -ForegroundColor Red }
+    Write-Host "  Use an RFC 5737 documentation address (192.0.2.x, 198.51.100.x)." -ForegroundColor Red
+    exit 1
+}
+Write-Host "  clean" -ForegroundColor DarkGray
+
 Write-Host "Running tests against $testDb..." -ForegroundColor Cyan
 
 # Compose writes progress ("Container ... Running") to stderr, which PowerShell 5.1

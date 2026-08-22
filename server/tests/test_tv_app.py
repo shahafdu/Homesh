@@ -242,6 +242,12 @@ class TestLearningItsOwnAddress:
 
     teardown_method = setup_method
 
+    # Addresses here are RFC 5737 documentation ranges, never RFC 1918 ones.
+    # A grep cannot tell a made-up 192.168.x from a real one and should not have
+    # to: the repository is public and describes a real house, so CI refuses any
+    # private address in a tracked file. Python treats the documentation ranges
+    # as private too, so they exercise exactly the same code path.
+
     def test_it_learns_from_a_house_network_request(self, monkeypatch):
         from app import lanaddr
 
@@ -250,8 +256,8 @@ class TestLearningItsOwnAddress:
 
         get_settings.cache_clear()
         try:
-            lanaddr.note_host("192.168.7.9:8080")
-            assert lanaddr.lan_base() == "http://192.168.7.9:8080"
+            lanaddr.note_host("198.51.100.9:8080")
+            assert lanaddr.lan_base() == "http://198.51.100.9:8080"
         finally:
             get_settings.cache_clear()
 
@@ -271,10 +277,10 @@ class TestLearningItsOwnAddress:
 
         get_settings.cache_clear()
         try:
-            lanaddr.note_host("192.168.7.9")        # reached on port 80
+            lanaddr.note_host("198.51.100.9")        # reached on port 80
             first = lanaddr.lan_base()
-            lanaddr.note_host("192.168.7.9:8080")   # and on 8080
-            assert lanaddr.lan_base() == first == "http://192.168.7.9:8080"
+            lanaddr.note_host("198.51.100.9:8080")   # and on 8080
+            assert lanaddr.lan_base() == first == "http://198.51.100.9:8080"
         finally:
             get_settings.cache_clear()
 
@@ -294,7 +300,7 @@ class TestLearningItsOwnAddress:
             raise AssertionError("lan_base() must not touch the network")
 
         monkeypatch.setattr(httpx, "Client", refuse)
-        lanaddr.note_host("192.168.7.9:8080")
+        lanaddr.note_host("198.51.100.9:8080")
         lanaddr.lan_base()
 
     def test_loopback_is_not_a_house_address(self):
@@ -332,7 +338,7 @@ class TestLearningItsOwnAddress:
 
         get_settings.cache_clear()
         try:
-            lanaddr.note_host("192.168.7.9:8080")
+            lanaddr.note_host("198.51.100.9:8080")
             assert lanaddr.lan_base() == "http://192.0.2.1:8080"
         finally:
             get_settings.cache_clear()
@@ -347,7 +353,7 @@ class TestLearningItsOwnAddress:
 
         get_settings.cache_clear()
         try:
-            lanaddr.note_host("192.168.7.9:8080")
-            assert lanaddr.lan_base() == "http://192.168.7.9:8080"
+            lanaddr.note_host("198.51.100.9:8080")
+            assert lanaddr.lan_base() == "http://198.51.100.9:8080"
         finally:
             get_settings.cache_clear()
