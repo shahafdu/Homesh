@@ -14,4 +14,7 @@
     <string name="setup_failed">Nothing answered at %1$s. Check the address and that the server is running.</string>
 
     <string name="cannot_reach">Cannot reach %1$s.\n\nLooking for the server on this network. This takes a few seconds.\n\nPress OK to type the address yourself.</string>
+    <string name="change_address">Change the address</string>
+    <string name="search_again">Search for the server again</string>
+    <string name="searching">Searching…</string>
 </resources>

@@ -16,6 +16,8 @@ import android.webkit.WebResourceRequest;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
+import android.widget.Button;
+import android.widget.LinearLayout;
 import android.widget.FrameLayout;
 import android.widget.TextView;
 import android.widget.VideoView;
@@ -38,6 +40,9 @@ public class MainActivity extends Activity {
     private WebView web;
     private VideoView video;
     private TextView problem;
+    private LinearLayout trouble;
+    private Button changeAddress;
+    private Button searchAgain;
     private String server;
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -105,15 +110,58 @@ public class MainActivity extends Activity {
             return true;
         });
 
+        // The error screen: what went wrong, and two buttons that do something
+        // about it.
+        //
+        // It used to be a line of text naming a key on the remote, which is a
+        // poor way to offer a control: the key does not exist on every remote,
+        // and nothing on screen looked like it could be pressed. A button that
+        // is visible and takes focus needs no instructions.
         problem = new TextView(this);
         problem.setTextColor(Color.WHITE);
         problem.setTextSize(18);
-        problem.setPadding(64, 64, 64, 64);
+        problem.setPadding(0, 0, 0, 32);
         problem.setVisibility(View.GONE);
+
+        changeAddress = new Button(this);
+        changeAddress.setText(R.string.change_address);
+        changeAddress.setOnClickListener(v ->
+                startActivity(new Intent(this, SetupActivity.class)));
+
+        searchAgain = new Button(this);
+        searchAgain.setText(R.string.search_again);
+        searchAgain.setOnClickListener(v -> {
+            searchAgain.setText(R.string.searching);
+            new Thread(() -> {
+                String found = Discovery.find();
+                runOnUiThread(() -> {
+                    searchAgain.setText(R.string.search_again);
+                    if (found == null) return;
+                    Prefs.setServer(this, found);
+                    server = found;
+                    trouble.setVisibility(View.GONE);
+                    web.setVisibility(View.VISIBLE);
+                    web.loadUrl(found + "/tv");
+                });
+            }).start();
+        });
+
+        trouble = new LinearLayout(this);
+        trouble.setOrientation(LinearLayout.VERTICAL);
+        trouble.setPadding(64, 64, 64, 64);
+        trouble.setVisibility(View.GONE);
+        // Filling the frame rather than wrapping its contents, which is what a
+        // FrameLayout child does by default — a panel sized to its text sits in
+        // the corner of a television and reads as a glitch.
+        trouble.setLayoutParams(new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
+        trouble.addView(problem);
+        trouble.addView(changeAddress);
+        trouble.addView(searchAgain);
 
         root.addView(web);
         root.addView(video);
-        root.addView(problem);
+        root.addView(trouble);
         setContentView(root);
 
         immersive();
@@ -166,7 +214,7 @@ public class MainActivity extends Activity {
                     server = found;
 
                     runOnUiThread(() -> {
-                        problem.setVisibility(View.GONE);
+                        trouble.setVisibility(View.GONE);
                         web.setVisibility(View.VISIBLE);
                         web.loadUrl(server + "/tv");
                     });
@@ -274,7 +322,7 @@ public class MainActivity extends Activity {
 
         // While the error is showing, the ordinary buttons mean "fix this" —
         // there is nothing else on that screen for them to do.
-        if (problem.getVisibility() == View.VISIBLE) {
+        if (trouble.getVisibility() == View.VISIBLE) {
             wantsSettings = wantsSettings
                     || code == KeyEvent.KEYCODE_DPAD_CENTER
                     || code == KeyEvent.KEYCODE_ENTER
