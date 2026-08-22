@@ -156,6 +156,13 @@ KEYSTORE="${HOMESH_TV_KEYSTORE:-$ROOT/.local/homesh-tv.jks}"
 mkdir -p "$(dirname "$KEYSTORE")"
 if [ ! -f "$KEYSTORE" ]; then
   echo "Generating a signing key at $KEYSTORE (first build only)"
+  echo
+  echo "  NOTE: Android identifies an app by its signature, so a build signed"
+  echo "  with a new key CANNOT be installed over one signed with the old key —"
+  echo "  every screen would have to be uninstalled first. Keep this file. If"
+  echo "  screens are already running an earlier build, use that machine's"
+  echo "  keystore rather than letting this make a fresh one."
+  echo
   "$KEYTOOL" -genkeypair -v \
     -keystore "$KEYSTORE" -storepass homesh -keypass homesh \
     -alias homesh -keyalg RSA -keysize 2048 -validity 10000 \

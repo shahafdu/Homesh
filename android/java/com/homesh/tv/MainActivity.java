@@ -218,6 +218,11 @@ public class MainActivity extends Activity {
 
     private void showProblem(String message) {
         problem.setText(message);
+        // Also reachable by touch, for a box driven by a phone remote app where
+        // the key codes are whatever that app decides to send.
+        problem.setClickable(true);
+        problem.setFocusable(true);
+        problem.setOnClickListener(v -> startActivity(new Intent(this, SetupActivity.class)));
         problem.setVisibility(View.VISIBLE);
         web.setVisibility(View.GONE);
     }
@@ -238,10 +243,31 @@ public class MainActivity extends Activity {
 
     @Override
     public boolean onKeyDown(int code, KeyEvent event) {
-        // The only way back to the address field once the app is set up. MENU is
-        // on most remotes; the error screen offers the same route for the case
-        // where the address is wrong and the page never loads.
-        if (code == KeyEvent.KEYCODE_MENU) {
+        // Any of these, not only MENU.
+        //
+        // MENU alone was a trap: plenty of remotes do not have that key at all,
+        // and the one screen that needs it is the one showing an address that no
+        // longer works — so there was no way in from the only place it mattered,
+        // and no way out but uninstalling the app. OK, the centre button and the
+        // media keys all lead to the same place, and the error screen says so.
+        boolean wantsSettings =
+                code == KeyEvent.KEYCODE_MENU
+                        || code == KeyEvent.KEYCODE_SETTINGS
+                        || code == KeyEvent.KEYCODE_PROG_RED
+                        || code == KeyEvent.KEYCODE_INFO;
+
+        // While the error is showing, the ordinary buttons mean "fix this" —
+        // there is nothing else on that screen for them to do.
+        if (problem.getVisibility() == View.VISIBLE) {
+            wantsSettings = wantsSettings
+                    || code == KeyEvent.KEYCODE_DPAD_CENTER
+                    || code == KeyEvent.KEYCODE_ENTER
+                    || code == KeyEvent.KEYCODE_NUMPAD_ENTER
+                    || code == KeyEvent.KEYCODE_BUTTON_A
+                    || code == KeyEvent.KEYCODE_SPACE;
+        }
+
+        if (wantsSettings) {
             startActivity(new Intent(this, SetupActivity.class));
             return true;
         }
