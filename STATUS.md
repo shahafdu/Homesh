@@ -6,7 +6,7 @@ to reconstruct the state of a large, half-finished system from memory.
 **Legend** — ✅ built and verified · 🟡 built, needs Shahaf to confirm ·
 🔴 known broken · ⬜ not started · ⏳ waiting on Shahaf
 
-Last updated: 22 August 2026 · 351 tests · 17 migrations · CI green (privacy
+Last updated: 23 August 2026 · 356 tests · 18 migrations · CI green (privacy
 check was red for three commits — a private address in a test; see below)
 
 ---
@@ -40,6 +40,8 @@ Verified means measured or driven end to end, not merely compiled.
 - ✅ **Audiences** — every folder and room decides who it is for
 - ✅ **Playlists** — 41 Winamp lists imported, 98.6% of tracks matched;
   create, rename, reorder, copy, share
+- ✅ **Casting** — a Chromecast plays what Google's list allows; everything else
+  says so and points at a room
 - ✅ **TV app** — discovery, self-update (confirmed working on the bedroom box),
   pairing, native video player, remote control. Shows its own version on screen
   from 0.5.0
@@ -61,8 +63,9 @@ Deployed and believed correct; not yet confirmed in use.
 
 | | Item | Note |
 |---|---|---|
+| 🟡 | **Shuffle in a room is a switch** | It was an action, so the button looked identical whether or not it had been pressed. The state lives with the queue now, where several phones can see it |
+| 🟡 | **Next at the end of a list** | Started the list again rather than sitting greyed out. Previous on the first still restarts that track — nobody presses previous hoping to reach the end |
 | 🟡 | **Cast from the viewer** | The real cast mark, in the viewer's header. Lit for what a Chromecast plays — MP4, WebM, MP3, WAV, OGG, images — and greyed with a reason for the rest, which here is most of it: 152 of your 820 videos are MP4 |
-| ⏳ | **Install TV app 0.5.1 and photograph the screen** | Every version was served under one filename, so a browser or Downloader reinstalled the file it already had — a day of testing an app that never changed. The name now carries the version and the response forbids caching. The error screen ends in "Homesh TV 0.5.1", which is how we will both know the install took |
 | 🟡 | **A screen finds the server by sweeping** | Broadcast fails silently on many networks. It now asks all 254 addresses on this subnet directly — measured against the real network: 8.5s, found the server, no false positives |
 | 🟡 | **A screen keeps looking for the server** | One attempt at launch was no use in the case that happens: the power returns, everything boots at once, and the television asks before the server has started |
 | 🟡 | **Clearing a search** | The ✕ stays while there is text. The native one appears only on focus, so clearing took two taps |

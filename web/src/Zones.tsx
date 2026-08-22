@@ -291,22 +291,28 @@ function ZoneQueue(props: { zone: Zone; onChanged: () => void }) {
         </button>
         {total > 1 && (
           <button
-            className="compact"
+            className={`compact${zone.session?.shuffle ? " primary" : ""}`}
             disabled={busy}
-            title="Reorder what has not played yet"
+            aria-pressed={zone.session?.shuffle ?? false}
+            title={
+              zone.session?.shuffle
+                ? "Shuffle is on — tap to play in order"
+                : "Play what is left in a random order"
+            }
             onClick={async () => {
               setBusy(true);
               try {
-                await shuffleZone(zone.id);
+                await shuffleZone(zone.id, !zone.session?.shuffle);
+                // Both, because the button's own state lives on the zone and
+                // the order it just changed lives in the queue.
+                props.onChanged();
                 await load();
-              } catch {
-                /* nothing left to shuffle; the button says enough */
               } finally {
                 setBusy(false);
               }
             }}
           >
-            ⤨ Shuffle
+            ⤨ Shuffle{zone.session?.shuffle ? " on" : ""}
           </button>
         )}
       </div>

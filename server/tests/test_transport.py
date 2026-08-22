@@ -112,14 +112,18 @@ class TestSkipping:
         assert client.post(f"/api/zones/{screen}/previous").status_code == 200
         assert _cursor(db, screen) == 0
 
-    def test_next_past_the_end_stops(self, client, db, scanned, screen):
-        """Rather than erroring, or wrapping round to the start uninvited."""
+    def test_next_past_the_end_starts_the_list_again(self, client, db, scanned, screen):
+        """This used to stop the room, on the reasoning that wrapping round
+        uninvited was presumptuous. It reads as a broken button: the end of a
+        list is exactly when somebody reaches for next, and it sat greyed out
+        having done nothing. Changed on Shahaf's report."""
         queue = _tracks(db, 2)
         client.post(f"/api/zones/{screen}/play", json={"item_ids": queue, "start_index": 1})
 
         r = client.post(f"/api/zones/{screen}/next")
         assert r.status_code == 200
-        assert _state(db, screen) == "idle"
+        assert _cursor(db, screen) == 0
+        assert _state(db, screen) != "idle"
 
     def test_skipping_an_idle_room_is_refused(self, client, db, scanned, screen):
         r = client.post(f"/api/zones/{screen}/next")
@@ -342,7 +346,9 @@ class TestSeeingAndChoosingWhatIsNext:
         tracks = _tracks(db, limit=3)
         client.post(f"/api/zones/{screen}/play", json={"item_ids": tracks})
 
-        assert client.post(f"/api/zones/{screen}/shuffle").status_code == 200
+        assert client.post(
+            f"/api/zones/{screen}/shuffle", json={"on": True}
+        ).status_code == 200
 
         after = client.get(f"/api/zones/{screen}/queue").json()
         ids = [t["item_id"] for t in after["tracks"]]
@@ -350,14 +356,31 @@ class TestSeeingAndChoosingWhatIsNext:
         assert ids[0] == tracks[0]
         assert sorted(ids) == sorted(tracks)
 
-    def test_nothing_left_to_shuffle_says_so(self, client, db, screen, scanned):
+    def test_the_room_remembers_that_shuffle_is_on(self, client, db, screen, scanned):
+        """The button said nothing about its own state, so the only way to know
+        whether shuffle was on was to listen."""
+        tracks = _tracks(db, limit=3)
+        client.post(f"/api/zones/{screen}/play", json={"item_ids": tracks})
+
+        def shuffling():
+            zone = next(z for z in client.get("/api/zones").json() if z["id"] == screen)
+            return zone["session"]["shuffle"]
+
+        assert shuffling() is False
+        client.post(f"/api/zones/{screen}/shuffle", json={"on": True})
+        assert shuffling() is True
+        client.post(f"/api/zones/{screen}/shuffle", json={"on": False})
+        assert shuffling() is False
+
+    def test_a_short_queue_can_still_be_switched(self, client, db, screen, scanned):
+        """Refusing when there was nothing to reorder also refused the switch."""
         tracks = _tracks(db, limit=2)
         client.post(f"/api/zones/{screen}/play", json={"item_ids": tracks})
         client.post(f"/api/zones/{screen}/jump", json={"index": 1})
 
-        r = client.post(f"/api/zones/{screen}/shuffle")
-        assert r.status_code == 409
-        assert "nothing left" in r.json()["detail"]
+        assert client.post(
+            f"/api/zones/{screen}/shuffle", json={"on": True}
+        ).status_code == 200
 
     def test_a_room_you_may_not_use_is_not_readable(self, client, db, screen, scanned, monkeypatch):
         """The queue names files, so it needs the same check the room does."""
@@ -374,3 +397,53 @@ class TestSeeingAndChoosingWhatIsNext:
         finally:
             app.dependency_overrides.pop(require_user, None)
             app.dependency_overrides.pop(optional_user, None)
+
+
+class TestTheEndsOfAQueue:
+    """Next on the last track, and previous on the first.
+
+    Next did nothing at the end and the button sat greyed out, which reads as
+    broken: a list that has finished is exactly when somebody reaches for next,
+    and every music player in the world starts it again.
+    """
+
+    def test_next_on_the_last_track_returns_to_the_first(self, client, db, screen, scanned):
+        tracks = _tracks(db, limit=3)
+        client.post(f"/api/zones/{screen}/play", json={"item_ids": tracks})
+        client.post(f"/api/zones/{screen}/jump", json={"index": 2})
+
+        client.post(f"/api/zones/{screen}/next")
+        assert client.get(f"/api/zones/{screen}/queue").json()["cursor"] == 0
+
+    def test_previous_on_the_first_restarts_rather_than_wrapping(
+        self, client, db, screen, scanned
+    ):
+        """Only next wraps. Nobody presses previous hoping to be sent to the end."""
+        tracks = _tracks(db, limit=3)
+        client.post(f"/api/zones/{screen}/play", json={"item_ids": tracks})
+
+        client.post(f"/api/zones/{screen}/previous")
+        assert client.get(f"/api/zones/{screen}/queue").json()["cursor"] == 0
+
+    def test_a_single_track_stays_where_it_is(self, client, db, screen, scanned):
+        tracks = _tracks(db, limit=1)
+        client.post(f"/api/zones/{screen}/play", json={"item_ids": tracks})
+
+        client.post(f"/api/zones/{screen}/next")
+        assert client.get(f"/api/zones/{screen}/queue").json()["cursor"] == 0
+
+    def test_shuffle_moves_somewhere_else(self, client, db, screen, scanned):
+        """Not merely onwards: the point is that the order stops being the order."""
+        tracks = _tracks(db, limit=4)
+        client.post(f"/api/zones/{screen}/play", json={"item_ids": tracks})
+        client.post(f"/api/zones/{screen}/shuffle", json={"on": True})
+
+        landed = set()
+        for _ in range(12):
+            before = client.get(f"/api/zones/{screen}/queue").json()["cursor"]
+            client.post(f"/api/zones/{screen}/next")
+            after = client.get(f"/api/zones/{screen}/queue").json()["cursor"]
+            assert after != before, "shuffle must not land on the track already playing"
+            landed.add(after)
+
+        assert len(landed) > 1, "twelve shuffled skips landed on one track"

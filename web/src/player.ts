@@ -268,8 +268,14 @@ export function usePlayer() {
         return;
       }
 
-      const next = index + delta;
-      if (next < 0 || next >= queue.length) return;
+      if (queue.length === 0) return;
+      // Next on the last track starts the list again — it did nothing before,
+      // and the button sat greyed out, which reads as broken. A list that has
+      // finished is exactly when somebody reaches for next.
+      //
+      // Previous on the first restarts it rather than jumping to the end:
+      // nobody presses previous hoping to be sent to the far end of a list.
+      const next = index + delta < 0 ? 0 : (index + delta) % queue.length;
       void loadTrack(next);
     },
     [loadTrack],

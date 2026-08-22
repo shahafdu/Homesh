@@ -26,6 +26,8 @@ export interface ZoneSession {
   /** As the screen reports it. The only source for a live transcode, whose
    *  length the catalog cannot know. */
   duration_ms: number | null;
+  /** Whether this room is playing its queue in a random order. */
+  shuffle: boolean;
   volume: number | null;
   updated_at: string | null;
 }
@@ -72,9 +74,9 @@ export const zoneQueue = (zoneId: string) =>
 export const jumpInZone = (zoneId: string, index: number) =>
   api.post<{ zone: string; state: string }>(`/api/zones/${zoneId}/jump`, { index });
 
-/** Reorder what the room has not played yet. */
-export const shuffleZone = (zoneId: string) =>
-  api.post<{ shuffled: number }>(`/api/zones/${zoneId}/shuffle`);
+/** Turn shuffle on or off for a room. */
+export const shuffleZone = (zoneId: string, on: boolean) =>
+  api.post<{ shuffle: boolean }>(`/api/zones/${zoneId}/shuffle`, { on });
 
 /** Move to a point in what is playing in another room. */
 export const seekZone = (zoneId: string, positionMs: number) =>

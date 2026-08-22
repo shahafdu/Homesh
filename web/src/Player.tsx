@@ -25,7 +25,7 @@ export default function Player(props: {
         <button
           className="p-btn"
           onClick={() => props.onSkip(-1)}
-          disabled={index <= 0}
+          disabled={queue.length < 2}
           aria-label="Previous track"
           title="Previous"
         >
@@ -42,7 +42,7 @@ export default function Player(props: {
         <button
           className="p-btn"
           onClick={() => props.onSkip(1)}
-          disabled={index >= queue.length - 1}
+          disabled={queue.length < 2}
           aria-label="Next track"
           title="Next"
         >

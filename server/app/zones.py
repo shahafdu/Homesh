@@ -238,7 +238,7 @@ async def list_zones(user: CurrentUser = Depends(require_user)) -> list[dict]:
                 """
                 SELECT z.id, z.name, r.kind::text, r.state::text, r.name,
                        s.state::text, s.queue, s.cursor, s.position_ms, s.volume,
-                       s.updated_at, z.preroll, s.duration_ms
+                       s.updated_at, z.preroll, s.duration_ms, s.shuffle
                 FROM zones z
                 LEFT JOIN renderers r ON r.id = z.renderer_id
                 LEFT JOIN play_sessions s ON s.zone_id = z.id
@@ -334,6 +334,7 @@ async def list_zones(user: CurrentUser = Depends(require_user)) -> list[dict]:
                     # What the screen reports, which is the only source for a
                     # live transcode — the catalog has no length for one.
                     "duration_ms": row[12],
+                    "shuffle": bool(row[13]),
                     "volume": row[9],
                     "updated_at": row[10].isoformat() if row[10] else None,
                 }
@@ -701,6 +702,16 @@ async def device_state(zone_id: UUID, user: CurrentUser = Depends(require_user))
 # not have to know what is in the room to control it.
 
 
+def _shuffling(zone_id: UUID) -> bool:
+    with get_engine().connect() as conn:
+        return bool(
+            conn.execute(
+                text("SELECT shuffle FROM play_sessions WHERE zone_id = :z"),
+                {"z": str(zone_id)},
+            ).scalar()
+        )
+
+
 def _queue_of(zone_id: UUID) -> tuple[list[str], int]:
     with get_engine().connect() as conn:
         row = conn.execute(
@@ -861,40 +872,52 @@ async def jump(
     return await _skip(zone_id, user, body.index - cursor)
 
 
-@router.post("/{zone_id}/shuffle")
-async def shuffle_queue(zone_id: UUID, user: CurrentUser = Depends(require_user)) -> dict:
-    """Reorder what a room has not played yet.
+class ShuffleRequest(BaseModel):
+    on: bool
 
-    Deliberately an action rather than a switch. A switch has to mean something
-    for tracks already behind the cursor, and a room's queue is a fixed list
-    that was sent to it — so "shuffle the rest" is both the whole of what anyone
-    wants here and the only thing that can be said honestly. What is playing
-    keeps playing; everything after it is reordered, and the tower shows the new
-    order immediately.
+
+@router.post("/{zone_id}/shuffle")
+async def shuffle_queue(
+    zone_id: UUID, body: ShuffleRequest, user: CurrentUser = Depends(require_user)
+) -> dict:
+    """Turn shuffle on or off for a room.
+
+    A switch rather than an action. Reordering what is left works, but says
+    nothing once it is done: the button looked the same whether or not it had
+    been pressed, so the only way to know was to listen. A room is driven from
+    several phones and then walked away from, so the state belongs beside the
+    queue rather than in whichever phone last touched it.
+
+    Turning it on also shuffles what has not played yet, so it takes effect now
+    instead of at the end of the current track.
     """
     _load_zone(zone_id)
     _require_zone_access(zone_id, user)
 
     queue, cursor = _queue_of(zone_id)
-    upcoming = queue[cursor + 1 :]
-    if len(upcoming) < 2:
-        raise HTTPException(status.HTTP_409_CONFLICT, "there is nothing left to shuffle")
-
-    # secrets, not random: ruff's S311 is right that a predictable shuffle is a
-    # smell, and this costs nothing.
-    shuffled = list(upcoming)
-    for i in range(len(shuffled) - 1, 0, -1):
-        j = secrets.randbelow(i + 1)
-        shuffled[i], shuffled[j] = shuffled[j], shuffled[i]
 
     with get_engine().begin() as conn:
-        conn.execute(
-            text("UPDATE play_sessions SET queue = CAST(:q AS jsonb), updated_at = now() "
-                 "WHERE zone_id = :z"),
-            {"q": json.dumps(queue[: cursor + 1] + shuffled), "z": str(zone_id)},
-        )
+        if body.on and len(queue) - cursor > 2:
+            upcoming = queue[cursor + 1 :]
+            # secrets, not random: ruff's S311 is right that a predictable
+            # shuffle is a smell, and this costs nothing.
+            for i in range(len(upcoming) - 1, 0, -1):
+                j = secrets.randbelow(i + 1)
+                upcoming[i], upcoming[j] = upcoming[j], upcoming[i]
+            conn.execute(
+                text("UPDATE play_sessions SET queue = CAST(:q AS jsonb), shuffle = :on, "
+                     "updated_at = now() WHERE zone_id = :z"),
+                {"q": json.dumps(queue[: cursor + 1] + upcoming), "on": body.on,
+                 "z": str(zone_id)},
+            )
+        else:
+            conn.execute(
+                text("UPDATE play_sessions SET shuffle = :on, updated_at = now() "
+                     "WHERE zone_id = :z"),
+                {"on": body.on, "z": str(zone_id)},
+            )
 
-    return {"shuffled": len(shuffled)}
+    return {"shuffle": body.on}
 
 
 async def _skip(zone_id: UUID, user: CurrentUser, delta: int) -> dict:
@@ -905,13 +928,24 @@ async def _skip(zone_id: UUID, user: CurrentUser, delta: int) -> dict:
     if not queue:
         raise HTTPException(status.HTTP_409_CONFLICT, "nothing is playing in that room")
 
-    target = cursor + delta
-    if target < 0:
-        # Back from the first track restarts it, which is what every music player
-        # does and what the button is reached for.
-        target = 0
-    if target >= len(queue):
-        return await stop(zone_id, user)
+    if _shuffling(zone_id) and len(queue) > 1 and delta > 0:
+        # Anything but this one.
+        target = cursor
+        while target == cursor:
+            target = secrets.randbelow(len(queue))
+    else:
+        target = cursor + delta
+        if target < 0:
+            # Back from the first track restarts it, which is what every music
+            # player does and what the button is reached for. Deliberately not
+            # wrapping to the end: nobody presses previous hoping to be sent to
+            # the far end of a list.
+            target = 0
+        else:
+            # Forward from the last one starts again. A list that has finished
+            # is exactly when somebody reaches for next, and stopping the room
+            # dead is not what that button is for.
+            target = target % len(queue)
 
     item_id = UUID(queue[target])
     if not may_access_item(item_id, user.id):
