@@ -15,6 +15,23 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SRC="$ROOT/android"
 OUT="${1:-$ROOT/build/homesh-tv.apk}"
+
+# What is already published, captured before this build overwrites it.
+#
+# A screen only updates when the offered versionCode is greater than the one it
+# runs, so shipping changed code under an unchanged number strands every box
+# already on it — permanently, because the build that would fix them is the one
+# they will never be offered. That happened: the subnet sweep shipped as
+# versionCode 5 beside the build before it, and a television sat on an address
+# that had not existed for days.
+PREVIOUS_JSON="$(dirname "$OUT")/homesh-tv.json"
+PREVIOUS_CODE=$(grep -o '"versionCode": *[0-9]*' "$PREVIOUS_JSON" 2>/dev/null | grep -o '[0-9]*' || true)
+PREVIOUS_SOURCE=$(grep -o '"source": *"[a-f0-9]*"' "$PREVIOUS_JSON" 2>/dev/null | cut -d'"' -f4 || true)
+
+# The sources, not the APK: two builds of identical code produce different
+# archives, because a zip carries timestamps. Hashing what was written by hand
+# is what distinguishes "rebuilt" from "changed".
+SOURCE_SUM=$(find "$SRC/java" "$SRC/res" "$SRC/AndroidManifest.xml" -type f   | LC_ALL=C sort | xargs cat | md5sum | cut -d" " -f1)
 WORK="$ROOT/build/tv"
 
 MIN_SDK=21          # Lollipop: the floor for Android TV set-top boxes
@@ -182,8 +199,17 @@ fi
 # that gets forgotten.
 VERSION_CODE=$(grep -o 'android:versionCode="[0-9]*"' "$SRC/AndroidManifest.xml" | grep -o '[0-9]*')
 VERSION_NAME=$(grep -o 'android:versionName="[^"]*"' "$SRC/AndroidManifest.xml" | cut -d'"' -f2)
+if [ -n "$PREVIOUS_CODE" ] && [ -n "$PREVIOUS_SOURCE" ]    && [ "$VERSION_CODE" -le "$PREVIOUS_CODE" ] && [ "$SOURCE_SUM" != "$PREVIOUS_SOURCE" ]; then
+  echo
+  echo "REFUSING: the source differs from what was published as versionCode"
+  echo "$PREVIOUS_CODE, but this build still carries versionCode $VERSION_CODE."
+  echo "Every screen on $PREVIOUS_CODE would be stranded — a screen is only"
+  echo "offered builds with a higher number. Bump android:versionCode."
+  exit 1
+fi
+
 cat > "$(dirname "$OUT")/homesh-tv.json" <<EOF
-{"versionCode": ${VERSION_CODE:-1}, "versionName": "${VERSION_NAME:-0}"}
+{"versionCode": ${VERSION_CODE:-1}, "versionName": "${VERSION_NAME:-0}", "source": "$SOURCE_SUM"}
 EOF
 echo "published version ${VERSION_NAME:-0} (${VERSION_CODE:-1})"
 echo

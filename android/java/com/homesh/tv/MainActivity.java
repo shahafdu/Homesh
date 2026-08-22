@@ -218,6 +218,10 @@ public class MainActivity extends Activity {
                         web.setVisibility(View.VISIBLE);
                         web.loadUrl(server + "/tv");
                     });
+                    // Now that there is a server to ask. A screen that has just
+                    // rediscovered its server is the most likely one in the
+                    // house to be running an old build.
+                    checkForUpdate();
                     return;
                 }
 
@@ -241,6 +245,15 @@ public class MainActivity extends Activity {
      * working: an update is not worth delaying the thing somebody just opened.
      * Without this, every change means walking to each television and typing a
      * URL with a remote control.
+     */
+    /**
+     * Ask the server for a newer build, and install it if there is one.
+     *
+     * <p>Called at launch and again the moment a working address is found. The
+     * launch call uses whatever address was stored, so on a screen whose server
+     * has moved it fails — and if that were the only call, the one build that
+     * could fix the screen would be the one it could never fetch. That is not
+     * hypothetical: it is exactly how a box ended up stranded.
      */
     private void checkForUpdate() {
         new Thread(() -> {
