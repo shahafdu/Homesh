@@ -136,6 +136,15 @@ public class MainActivity extends Activity {
      * <p>In the background, after the page has already been asked for: when the
      * address is still right — the ordinary case — nothing is delayed.
      */
+    /** This build's version name, for a screen that has to be read across a room. */
+    private String appVersion() {
+        try {
+            return getPackageManager().getPackageInfo(getPackageName(), 0).versionName;
+        } catch (Exception e) {
+            return "?";
+        }
+    }
+
     private void verifyAddress() {
         new Thread(() -> {
             // Keeps looking rather than giving up after one try.
@@ -217,7 +226,14 @@ public class MainActivity extends Activity {
     }
 
     private void showProblem(String message) {
-        problem.setText(message);
+        // With the version on it.
+        //
+        // A photograph of this screen is how the state of a box across the
+        // house gets reported, and without a version it cannot answer the first
+        // question worth asking: is this even the build we think it is? A day
+        // was lost to an install that silently kept the old app, and this
+        // screen said nothing either way.
+        problem.setText(message + "\n\nHomesh TV " + appVersion());
         // Also reachable by touch, for a box driven by a phone remote app where
         // the key codes are whatever that app decides to send.
         problem.setClickable(true);

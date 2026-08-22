@@ -7,6 +7,7 @@ Auth, sources and the control tower land in the phases that follow.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
 from contextlib import asynccontextmanager, suppress
@@ -316,10 +317,25 @@ async def tv_apk() -> Response:
             },
             status_code=404,
         )
+    # The version is in the filename, and nothing may cache it.
+    #
+    # Downloader — the tool used to install this on a set-top box — saves to the
+    # name the server gives and offers to install whatever is already there
+    # under that name. With every build called homesh-tv.apk, a box that had
+    # ever downloaded one could quietly reinstall the old file and report
+    # success, which is a full day of testing an app that never changed. A name
+    # that carries the version cannot be confused with an earlier one.
+    version = "unknown"
+    info = apk.with_name("homesh-tv.json")
+    if info.is_file():
+        with suppress(Exception):
+            version = json.loads(info.read_text()).get("versionName", "unknown")
+
     return FileResponse(
         apk,
         media_type="application/vnd.android.package-archive",
-        filename="homesh-tv.apk",
+        filename=f"homesh-tv-{version}.apk",
+        headers={"Cache-Control": "no-store, must-revalidate"},
     )
 
 
