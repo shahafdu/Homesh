@@ -21,7 +21,16 @@ from datetime import UTC, datetime, timedelta
 from typing import Literal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect, status
+from fastapi import (
+    APIRouter,
+    Depends,
+    HTTPException,
+    Query,
+    Response,
+    WebSocket,
+    WebSocketDisconnect,
+    status,
+)
 from pydantic import BaseModel, Field
 from sqlalchemy import text
 
@@ -488,6 +497,36 @@ def _end_session(renderer_id: UUID) -> None:
             ),
             {"r": str(renderer_id)},
         )
+
+
+class CrashReport(BaseModel):
+    device: str = Field(default="", max_length=120)
+    thread: str = Field(default="", max_length=120)
+    version: str = Field(default="", max_length=40)
+    trace: str = Field(default="", max_length=9000)
+
+
+@router.post("/crash", status_code=status.HTTP_204_NO_CONTENT)
+async def report_crash(body: CrashReport) -> Response:
+    """A screen saying why it died.
+
+    Unauthenticated on purpose: a process that is already crashing may have no
+    usable credential, and the alternative is the crash going nowhere. Nothing
+    is stored and nothing is trusted — it is written to the log, which is where
+    somebody is already looking when a television has stopped working.
+
+    A screen has no console anybody will read. Without this, diagnosing one
+    means carrying a laptop to it with a cable, which in practice means guessing
+    — and every guess costs somebody an evening.
+    """
+    log.error(
+        "a screen crashed — %s, Homesh TV %s, thread %s\n%s",
+        body.device or "unknown device",
+        body.version or "unknown version",
+        body.thread or "?",
+        body.trace or "(no stack trace)",
+    )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.websocket("/watch")

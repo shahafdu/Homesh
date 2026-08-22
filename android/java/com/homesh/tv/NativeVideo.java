@@ -1,6 +1,7 @@
 package com.homesh.tv;
 
 import android.app.Activity;
+import android.util.Log;
 import android.webkit.JavascriptInterface;
 import android.widget.VideoView;
 
@@ -18,6 +19,8 @@ import android.widget.VideoView;
  * start, stop, and where it has got to.
  */
 public final class NativeVideo {
+
+    private static final String TAG = "HomeshVideo";
 
     private final Activity activity;
     private final VideoView view;
@@ -54,48 +57,97 @@ public final class NativeVideo {
     @JavascriptInterface
     public void play(String url, int positionMs) {
         activity.runOnUiThread(() -> {
-            view.setVisibility(android.view.View.VISIBLE);
-            view.setVideoPath(url);
-            view.requestFocus();
-            if (positionMs > 0) view.seekTo(positionMs);
-            view.start();
+            try {
+                view.setVisibility(android.view.View.VISIBLE);
+                view.setVideoPath(url);
+                view.requestFocus();
+
+                // Seek only once the player exists.
+                //
+                // setVideoPath is asynchronous: it asks for a player and returns
+                // long before there is one. Calling seekTo straight afterwards
+                // reaches a MediaPlayer in no state to be seeked, which throws —
+                // on the UI thread, from inside a posted runnable, where nothing
+                // catches it and the app simply dies. It only bit once the
+                // server started sending a position with the content: an
+                // interrupted film resumes where it stopped, so the first press
+                // of "send to this room" crashed the television.
+                view.setOnPreparedListener(player -> {
+                    try {
+                        if (positionMs > 0) player.seekTo(positionMs);
+                        player.start();
+                    } catch (IllegalStateException gone) {
+                        Log.w(TAG, "the player went away before it could start", gone);
+                    }
+                });
+            } catch (RuntimeException e) {
+                Log.w(TAG, "could not start " + url, e);
+                view.setVisibility(android.view.View.GONE);
+            }
         });
     }
 
     @JavascriptInterface
     public void pause() {
-        activity.runOnUiThread(view::pause);
+        activity.runOnUiThread(() -> quietly(view::pause));
     }
 
     @JavascriptInterface
     public void resume() {
-        activity.runOnUiThread(view::start);
+        activity.runOnUiThread(() -> quietly(view::start));
     }
 
     @JavascriptInterface
     public void stop() {
         activity.runOnUiThread(() -> {
-            view.stopPlayback();
+            quietly(view::stopPlayback);
             // Hidden as well as stopped: a VideoView left visible keeps a black
             // rectangle over the web app that nothing else can be seen through.
             view.setVisibility(android.view.View.GONE);
         });
     }
 
+    /** Run something on the player, treating a bad state as nothing to do.
+     *
+     * <p>Every one of these reaches a MediaPlayer whose state belongs to the
+     * platform, not to us: pausing something already stopped, or starting
+     * something still opening, is a normal consequence of a command arriving
+     * from another room at an awkward moment. None of it is worth a crash.
+     */
+    private void quietly(Runnable action) {
+        try {
+            action.run();
+        } catch (IllegalStateException | NullPointerException e) {
+            Log.w(TAG, "the player was not in a state for that", e);
+        }
+    }
+
     /** Polled by the web app so the server's idea of position stays true. */
     @JavascriptInterface
     public int positionMs() {
-        return view.getCurrentPosition();
+        try {
+            return view.getCurrentPosition();
+        } catch (RuntimeException e) {
+            return 0;
+        }
     }
 
     @JavascriptInterface
     public int durationMs() {
-        int d = view.getDuration();
-        return d > 0 ? d : 0;
+        try {
+            int d = view.getDuration();
+            return d > 0 ? d : 0;
+        } catch (RuntimeException e) {
+            return 0;
+        }
     }
 
     @JavascriptInterface
     public boolean isPlaying() {
-        return view.isPlaying();
+        try {
+            return view.isPlaying();
+        } catch (RuntimeException e) {
+            return false;
+        }
     }
 }

@@ -167,6 +167,13 @@ public class MainActivity extends Activity {
         immersive();
         web.loadUrl(server + "/tv");
 
+        // Before anything else that could fail: a television has no console
+        // anybody will read, so a crash that is not sent somewhere is a crash
+        // nobody can act on.
+        // The version is read now rather than while the process is dying: a
+        // crash handler that goes looking for a PackageManager may not get one.
+        CrashReport.install(server, android.os.Build.MODEL, appVersion());
+
         verifyAddress();
         checkForUpdate();
     }
