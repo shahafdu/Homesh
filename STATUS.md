@@ -62,6 +62,8 @@ Deployed and believed correct; not yet confirmed in use.
 | | Item | Note |
 |---|---|---|
 | 🟡 | **Cast from the viewer** | The real cast mark, in the viewer's header. Lit for what a Chromecast plays — MP4, WebM, MP3, WAV, OGG, images — and greyed with a reason for the rest, which here is most of it: 152 of your 820 videos are MP4 |
+| ⏳ | **Install TV app 0.5.1 and photograph the screen** | Every version was served under one filename, so a browser or Downloader reinstalled the file it already had — a day of testing an app that never changed. The name now carries the version and the response forbids caching. The error screen ends in "Homesh TV 0.5.1", which is how we will both know the install took |
+| 🟡 | **A screen finds the server by sweeping** | Broadcast fails silently on many networks. It now asks all 254 addresses on this subnet directly — measured against the real network: 8.5s, found the server, no false positives |
 | 🟡 | **A screen keeps looking for the server** | One attempt at launch was no use in the case that happens: the power returns, everything boots at once, and the television asks before the server has started |
 | 🟡 | **Clearing a search** | The ✕ stays while there is text. The native one appears only on focus, so clearing took two taps |
 | 🟡 | **The server finds its own address** | DHCP moved this machine from .206 to .205 and `LAN_BASE_URL` was silently wrong — so the TV install address pointed nowhere. It is a seed now: the server learns a working address from anything reaching it over the house network, and prefers that when the configured one stops answering |
