@@ -1306,3 +1306,11 @@ button.compact:disabled { opacity: .5; cursor: not-allowed; }
 
 /* A print failure belongs where the thing being printed is, not in a corner. */
 .v-print-note { margin: 0 16px 8px; }
+
+/* ── Casting ─────────────────────────────────────────────────────────────────
+ *
+ * Greyed rather than hidden when the format is wrong: a missing button raises
+ * "why can I not cast this?", while a dim one that explains itself answers it. */
+.v-btn.cast { display: inline-grid; place-items: center; padding: 6px 10px; }
+.v-btn.cast.off { opacity: .4; }
+.v-btn.cast.off:hover { opacity: .6; }

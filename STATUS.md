@@ -61,6 +61,7 @@ Deployed and believed correct; not yet confirmed in use.
 
 | | Item | Note |
 |---|---|---|
+| 🟡 | **Cast from the viewer** | The real cast mark, in the viewer's header. Lit for what a Chromecast plays — MP4, WebM, MP3, WAV, OGG, images — and greyed with a reason for the rest, which here is most of it: 152 of your 820 videos are MP4 |
 | 🟡 | **A screen keeps looking for the server** | One attempt at launch was no use in the case that happens: the power returns, everything boots at once, and the television asks before the server has started |
 | 🟡 | **Clearing a search** | The ✕ stays while there is text. The native one appears only on focus, so clearing took two taps |
 | 🟡 | **The server finds its own address** | DHCP moved this machine from .206 to .205 and `LAN_BASE_URL` was silently wrong — so the TV install address pointed nowhere. It is a seed now: the server learns a working address from anything reaching it over the house network, and prefers that when the configured one stops answering |

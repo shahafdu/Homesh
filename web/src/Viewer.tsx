@@ -5,6 +5,7 @@ import FileActions from "./FileActions";
 import PlayTo from "./PlayTo";
 import { printDocument, printImage, printViaShareSheet } from "./print";
 import { canShareFiles } from "./share";
+import { castFile, castable, loadCast, whyNotCastable } from "./cast";
 import {
   canPreview,
   documentUrl,
@@ -37,7 +38,16 @@ export default function Viewer(props: {
   const [printing, setPrinting] = useState(false);
   const [printNote, setPrintNote] = useState<string | null>(null);
   const [showActions, setShowActions] = useState(false);
+  // Whether this browser can cast at all. Chrome in a secure context; absent
+  // in Firefox, on a television, and over plain http — so the button is hidden
+  // rather than shown as something that cannot work.
+  const [canCast, setCanCast] = useState(false);
+  const [casting, setCasting] = useState(false);
   const [sendingTo, setSendingTo] = useState(false);
+
+  useEffect(() => {
+    void loadCast().then(setCanCast);
+  }, []);
   const [text, setText] = useState<string | null>(null);
   // Set when direct play turned out not to work for this file.
   const [fellBack, setFellBack] = useState(false);
@@ -146,6 +156,40 @@ export default function Viewer(props: {
               share, print, send to a room and the rest all lived back in the
               list, so using any of them meant closing what you had opened and
               finding it again. */}
+          {/* Cast, when there is anything to cast from.
+              Lit for what a Chromecast will play and greyed for what it will
+              not — this library is mostly formats Google's list does not
+              include, and a button that starts something doomed to fail on the
+              television is worse than one that says so first. */}
+          {canCast && file.kind !== "doc" && (
+            <button
+              className={`v-btn cast${castable(file.ext) ? "" : " off"}`}
+              disabled={casting}
+              aria-label="Cast to a screen"
+              title={
+                castable(file.ext)
+                  ? "Cast to a Chromecast"
+                  : "This kind of file cannot be cast"
+              }
+              onClick={async () => {
+                if (!castable(file.ext)) {
+                  setPrintNote(whyNotCastable(file.ext));
+                  return;
+                }
+                setCasting(true);
+                setPrintNote(null);
+                try {
+                  const result = await castFile(file.item_id, file.filename, file.ext);
+                  if (!result.ok) setPrintNote(result.detail);
+                } finally {
+                  setCasting(false);
+                }
+              }}
+            >
+              {casting ? "…" : <CastGlyph />}
+            </button>
+          )}
+
           <button
             className="v-btn"
             onClick={() => setShowActions(true)}
@@ -314,6 +358,30 @@ export default function Viewer(props: {
  * actually wants to watch it here rather than send it to a screen that can
  * already decode it.
  */
+/** The cast mark everybody already knows: a screen with waves in its corner.
+ *
+ * Drawn rather than borrowed from a font. There is no character for this — the
+ * nearest are unrelated shapes that read as "fullscreen" or "two windows", and
+ * an icon nobody recognises is worse than a word.
+ */
+function CastGlyph() {
+  return (
+    <svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true" focusable="false">
+      {/* The screen */}
+      <path
+        d="M3 6.5A2.5 2.5 0 0 1 5.5 4h13A2.5 2.5 0 0 1 21 6.5v11a2.5 2.5 0 0 1-2.5 2.5H13"
+        fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"
+      />
+      {/* The waves, from its bottom-left corner */}
+      <path d="M3 20a1 1 0 0 0 0-2 1 1 0 0 0 0 2Z" fill="currentColor" />
+      <path
+        d="M3 15.5A4.5 4.5 0 0 1 7.5 20M3 11.5A8.5 8.5 0 0 1 11.5 20"
+        fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
 /** Seconds as h:mm:ss, or m:ss below an hour. */
 function asClock(seconds: number): string {
   const total = Math.max(0, Math.floor(seconds));
