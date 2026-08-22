@@ -48,6 +48,16 @@ _configured_answers: bool | None = None
 
 CHECK_EVERY = 60.0
 
+# Nothing is probed for the first few seconds of a process.
+#
+# The address cannot have gone stale in the time it takes to start, and this is
+# what keeps short-lived instances from doing network work at all: the test
+# suite starts the application several hundred times, and probing on each one
+# put a few hundred two-second socket waits into the default executor. One
+# startup eventually failed outright — "server disconnected without sending a
+# response" — which is a strange way to be told about a watchdog.
+FIRST_CHECK_AFTER = 5.0
+
 
 def _is_house_host(host: str) -> bool:
     """A bare house-network IPv4, with or without a port.
@@ -133,10 +143,15 @@ async def watch() -> None:
     through the host's published port, and is answered by this same process.
     """
     global _configured_answers
+    await asyncio.sleep(FIRST_CHECK_AFTER)
     while True:
         configured = (get_settings().lan_base_url or "").strip().rstrip("/")
         if configured:
-            ok = await asyncio.to_thread(_answers, configured)
+            try:
+                ok = await asyncio.to_thread(_answers, configured)
+            except Exception as exc:  # noqa: BLE001 - a watchdog must not take the server with it
+                log.debug("could not check the configured address: %s", exc)
+                ok = _configured_answers
             if ok != _configured_answers:
                 log.info(
                     "configured address %s %s", configured, "answers" if ok else "does not answer"
