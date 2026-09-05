@@ -1,0 +1,175 @@
+# Where Homesh stands
+
+Living status. Updated as things move; the point of it is that neither of us has
+to reconstruct the state of a large, half-finished system from memory.
+
+**Legend** — ✅ built and verified · 🟡 built, needs Shahaf to confirm ·
+🔴 known broken · ⬜ not started · ⏳ waiting on Shahaf
+
+Last updated: 5 September 2026 · 364 tests · 18 migrations · CI green
+(verified with `tools/verify-ci.ps1`, not assumed)
+
+---
+
+## Needs Shahaf
+
+The list to work from. Everything else can proceed without you.
+
+| | What | Why it matters |
+|---|---|---|
+| ⏳ | **Ask GitHub to purge one orphaned commit** | A real LAN address reached this public repository and the history has been rewritten — the branch is clean. But GitHub keeps a force-pushed commit reachable by its full SHA until it garbage-collects, and that one still holds the address. Only GitHub Support can remove it: support.github.com, quote the repository and commit `b1fcf4e`. The address is non-routable, so the exposure is small — but it is your rule and it was broken |
+| ⏳ | **Add a folder of your own media** | Settings → *Folders on this computer* browses your storage. `BROWSE_ROOT` in `.env` sets where browsing starts — currently your user folder — and narrowing it narrows what the server may ever look at |
+
+---
+
+## Working and verified
+
+Verified means measured or driven end to end, not merely compiled.
+
+- ✅ **Catalog** — 16,600 files across three Drive folders. Filenames indexed,
+  displayed and searchable; metadata never replaces them
+- ✅ **Scanning** — daily and automatic, with progress; manual per folder
+- ✅ **Tags** — title, artist, album read from ~70 KB per track rather than whole files
+- ✅ **Search** — typo-tolerant; results act like files and can show themselves in place
+- ✅ **Playback** — audio, photos, documents, video; direct play first
+- ✅ **Documents** — doc, docx, xls, xlsx, ppt, pptx and the rest, rendered to PDF
+  and drawn in the page (works on a phone, where an iframe cannot)
+- ✅ **Video conversion** — MPEG-2, WMV, AVI and friends transcoded as they play,
+  nothing stored; verified on a 13.6 GB wedding tape at 720p
+- ✅ **Rooms** — zones, sessions, transport, volume, occupancy from the receiver
+- ✅ **People** — invitations, per-folder and per-room access, owner who cannot be removed
+- ✅ **Audiences** — every folder and room decides who it is for
+- ✅ **Playlists** — 41 Winamp lists imported, 98.6% of tracks matched;
+  create, rename, reorder, copy, share
+- ✅ **Casting** — a Chromecast plays what Google's list allows; everything else
+  says so and points at a room
+- ✅ **TV app** — discovery, self-update (confirmed working on the bedroom box),
+  pairing, native video player, remote control. Shows its own version on screen
+  from 0.5.0
+- ✅ **Sharing** — **confirmed across several file types.** Files go as files,
+  documents as PDF, video converted to MP4 first, Drive links for anything too
+  big. Passkey registered on the phone, so it works away from the house
+- ✅ **Ordering** — Hebrew filenames on Windows play the track that was clicked
+- ✅ **Details view on a phone** — title, artist and album under the filename
+- ✅ **Browser playback** — every file type Shahaf has tried
+- ✅ **Track lengths** — shown in listings
+- ✅ **HTTPS** — Tailscale, real certificate, reachable from your phone anywhere,
+  nothing on the public internet
+
+---
+
+## Built, waiting on your eyes
+
+Deployed and believed correct; not yet confirmed in use.
+
+| | Item | Note |
+|---|---|---|
+| 🟡 | **Any file can be opened** | Files nothing could preview were inert — a `.MSWMM` or one with no extension could not even be clicked. The viewer shows the bytes as text or hex, choosing whichever answers the question, and either can be switched to |
+| 🟡 | **Homesh Connect, the phone app** | Install from `‹your server›/phone` — the address is in Settings. Checks both addresses, offers **Open Tailscale** when neither answers, then hands off to the browser. Tailscale reconnects on being opened, and coming back continues by itself |
+| 🟡 | **The logo goes home** | From four folders deep, one tap |
+| 🟡 | **Browsing this computer for a folder** | Settings browses your own storage — descend, breadcrumbs, **Add this folder** at any depth. The first attempt only listed the top of one mounted folder, which is not browsing: the folder somebody wants is three levels down |
+| 🟡 | **Shuffle in a room is a switch** | It was an action, so the button looked identical whether or not it had been pressed. The state lives with the queue now, where several phones can see it |
+| 🟡 | **Next at the end of a list** | Started the list again rather than sitting greyed out. Previous on the first still restarts that track — nobody presses previous hoping to reach the end |
+| 🟡 | **Cast from the viewer** | The real cast mark, in the viewer's header. Lit for what a Chromecast plays — MP4, WebM, MP3, WAV, OGG, images — and greyed with a reason for the rest, which here is most of it: 152 of your 820 videos are MP4 |
+| 🟡 | **A screen finds the server by sweeping** | Broadcast fails silently on many networks. It now asks all 254 addresses on this subnet directly — measured against the real network: 8.5s, found the server, no false positives |
+| 🟡 | **A screen keeps looking for the server** | One attempt at launch was no use in the case that happens: the power returns, everything boots at once, and the television asks before the server has started |
+| 🟡 | **Clearing a search** | The ✕ stays while there is text. The native one appears only on focus, so clearing took two taps |
+| 🟡 | **The server finds its own address** | DHCP moved this machine from .206 to .205 and `LAN_BASE_URL` was silently wrong — so the TV install address pointed nowhere. It is a seed now: the server learns a working address from anything reaching it over the house network, and prefers that when the configured one stops answering |
+| 🟡 | **The whole file menu in the viewer** | Share, print, send to a room and add to a playlist, from where you are looking at the file. Opening something used to be a dead end |
+| 🟡 | **.txt sharing** | The server sends `text/plain; charset=utf-8`, and the browser matches its permitted list *exactly* — so the charset made it unrecognised. Parameters are stripped now |
+| 🟡 | **Print** | On a phone it opens the share sheet, where Print already lives and already works — trying to print a PDF from a hidden frame downloads it instead. On a desktop it prints directly |
+| 🟡 | **Search in this folder** | The search box moved down beside one button that switches **Everywhere** ↔ the folder name. Driven in a phone-sized browser: 13 of 50 results outside the folder, 0 after switching. Verified against the real library: 71 hits under one Hebrew folder, 8 under a sub-folder, nothing outside either |
+| 🟡 | **"Start at" said 12:30** | It was placeholder text, which reads as a value. It shows the real position now and accepts h:mm:ss |
+| 🟡 | **Next no longer stops the music** | Replacing the source rejects the pending play() with AbortError — which is what next *does*. Both the phone and the TV treated it as a failure; the TV put it on screen and killed the queue |
+| 🟡 | **What a room will play next** | The tower lists the queue, marks what is playing, and any track can be tapped to jump to it |
+| 🟡 | **Shuffle in a room** | Reorders what has not played yet; what is on keeps playing |
+| 🟡 | **A playlist marks the playing track** | Opening one while it plays showed no sign of which track was on |
+| 🟡 | **Tower bar for video too** | It read the catalog's length, which video has none of. The screen reports its own |
+| 🟡 | **TV seeking** | 10s a press and presses accumulate, so the encoder restarts once rather than per tap, with a marker showing where it is heading |
+| 🟡 | **wmv / avi on the TV** | The screen was handed the raw file and its decoder refused. It now gets the same live transcode the browser uses — verified: an .avi arrives as h264 640x480 + aac. No decoder bundled into the app |
+| 🟡 | **The TV player fills the screen** | The title and bar used to take a strip off every frame. They float over the picture now and fade after four seconds; any remote key brings them back |
+| 🟡 | **The remote shows it was heard** | Seeking jumps the bar immediately instead of waiting for the stream, and pause/seek/stop each flash a large confirmation. On a television a silent press is indistinguishable from a flat battery |
+| 🟡 | **Closing the TV app frees the room** | The session stayed `playing` against a screen that no longer existed, so the tower lied and play did nothing. It goes idle and keeps its position |
+| 🟡 | **Seek from the control tower** | A draggable position bar per room. Sent on release, not per pixel |
+| 🟡 | **Two rooms claiming one stream** | The receiver has one HEOS player, so "HEOS is playing" names no room. It now asks which zone is switched to the network input. Verified against the receiver with ZONE2 off |
+| 🟡 | **TV app address** | Two faults: it showed a ts.net name no television can resolve, and then the address was long enough that the TV browser searched Google for it. Now the house address on port 80 as `‹address›/apk` — no port to type — and it says to press Go rather than the search suggestion. **Not `/tv`**: that is the interface the installed app loads, and putting the download there blacked out every screen in the house |
+| 🟡 | **Playlists in rooms** | Same room picker a file uses, given the whole list |
+| 🟡 | **Back to the playing playlist** | The player bar now names where the queue came from and reopens it |
+| 🟡 | **Drag to reorder** | A grip instead of up/down arrows; works with a thumb, and with arrow keys when focused |
+| 🟡 | **Missing tracks look ordinary** | Greyed out and one line, rather than tinted and taller than everything else |
+| 🟡 | **Look for new folders** in Settings | Sharing a folder with the Homesh account is how one is added; discovery used to run only at startup |
+| 🟡 | TV app recovers from an unplayable file | Was showing "cannot reach server" and sticking |
+| 🟡 | TV remote controls — seek, pause, stop | New in 0.4.0 |
+| 🟡 | mp4 that decoded audio only | Now falls back to converting |
+| 🟡 | First tap on a phone no longer reports a failure | Retries once before complaining |
+| 🟡 | Seek bar usable before the track loads | Length comes from the catalog |
+| 🟡 | Send to a room with a large folder | Cap was 500; your English folder is 1,533 |
+| 🟡 | Header staying put while scrolling | |
+
+---
+
+## Known broken
+
+| | Item | What is known |
+|---|---|---|
+| 🟠 | **Stopping a playlist crashed the TV app** | Reported on 0.5.3. The likely cause — `stopPlayback()` on a player in no state for it — is wrapped in 0.5.4, but no crash report has arrived to confirm it. From 0.5.4 a crash sends its stack trace to the server, so if it happens again it can be read rather than guessed at |
+
+---
+
+## Owed, from work already done
+
+Started or promised and not finished. Listed separately because these are mine,
+not decisions waiting on anybody.
+
+1. ⬜ **Finish the encoder sweep** — every video opened through the encoder to
+   prove the odd-dimension class is closed. Started twice: killed once by my own
+   rebuild, then it timed out on one file at 900s and never completed. A sample
+   of 20 across five formats passed
+2. ⬜ **Finish the duration backfill** — ~9,950 tracks still have no length, so
+   listings show none for them
+3. ✅ **Shuffle scope** — settled: the folder or list you are playing, never the
+   whole library. It already worked that way on both the phone and in a room;
+   there is now a test that fails if it ever reaches outside the queue
+
+---
+
+## Next, in order
+
+1. ⬜ **Rate limiting on sign-in** — listed in the architecture, never built, and
+   worth having now the server has a real hostname
+2. ⬜ **Database backups** — daily, a week back, plus two-week and one-month
+   points; restore from inside the app, administrators only.
+   **Prerequisite for anything with AI in it**
+3. ⬜ **Audio caching** — first play fetches, later plays are instant.
+   Drive's own latency is ~1.4s per request and nothing else will remove it
+
+---
+
+## AI — agreed, not started
+
+Decisions are settled and recorded in CLAUDE.md. Sequenced after backups.
+
+1. ⬜ **Provider layer** — your own key (Claude / Gemini / OpenAI), OpenRouter,
+   local model, or none. Tiered by cost, paid tier gated per account
+2. ⬜ **Offline tagging pass** — one run over the library, cached in
+   `item_metadata` with `origin='ai'`, so later questions filter locally first
+3. ⬜ **Commands** — play here, stop there, skip, build a list. Calls the same
+   API as the interface, as the user, so permissions are enforced by the code
+   that already enforces them
+4. ⬜ **Find things** — natural language over the catalog, results actionable
+5. ⬜ **Content search** — documents first (cheap and exact), then photos
+   (CLIP embeddings), then audio and video transcription on demand only
+6. ⬜ **Activity history** — what the AI did, readable in the app
+
+**The AI cannot**: add or remove rooms · change permissions · act beyond the
+asking user's own access · delete anything without confirmation · send anything
+outside the house without you pressing something.
+
+---
+
+## Later phases
+
+- ⬜ **Photo availability** — RAID→Drive sync, Wake-on-LAN, Takeout gap-fill
+- ⬜ **Oracle deployment** — the always-on node
+- ⬜ **Gapless audio and ReplayGain**
+- ⬜ **Public release** — screenshots, documentation

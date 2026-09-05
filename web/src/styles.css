@@ -1,0 +1,1391 @@
+/* Homesh interface.
+ *
+ * Three palettes ship; the user picks one in Settings and it follows the account
+ * across devices. Each palette defines a full light set on the bare selector, then
+ * redefines only the values for dark — twice, so that both the OS preference and an
+ * explicit choice resolve correctly:
+ *
+ *   :root[data-palette=X]                                  → light values
+ *   @media (dark) :root[data-palette=X]:not([appearance=light]) → dark values
+ *   :root[data-palette=X][data-appearance=dark]            → dark values
+ *
+ * Components only ever read the tokens, never a literal colour.
+ */
+
+/* ── Hearth: warm charcoal, lit amber ────────────────────────────────────────── */
+:root,
+:root[data-palette="warm"] {
+  --bg: #fdfaf6;
+  --surface: #ffffff;
+  --line: #ece4d9;
+  --ink: #1f1b16;
+  --muted: #6e6459;
+  --accent: #c2670f;
+  --accent-ink: #ffffff;
+  --audio: #c2670f;
+  --video: #b0453a;
+  --photo: #3e7a4e;
+  --doc: #5b57b8;
+  --ok: #2f7a4b;
+  --danger: #b33a2b;
+  --shadow: 0 1px 2px rgba(31,27,22,.06), 0 8px 24px rgba(31,27,22,.08);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-appearance="light"]),
+  :root[data-palette="warm"]:not([data-appearance="light"]) {
+    --bg: #17130f;
+    --surface: #221d18;
+    --line: #372f27;
+    --ink: #f2ebe2;
+    --muted: #a79b8d;
+    --accent: #f5a94d;
+    --accent-ink: #231808;
+    --audio: #f5a94d;
+    --video: #e28068;
+    --photo: #7fc08b;
+    --doc: #a99bf0;
+    --ok: #6fc98c;
+    --danger: #ec8272;
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 10px 30px rgba(0,0,0,.45);
+  }
+}
+:root[data-appearance="dark"],
+:root[data-palette="warm"][data-appearance="dark"] {
+  --bg: #17130f;
+  --surface: #221d18;
+  --line: #372f27;
+  --ink: #f2ebe2;
+  --muted: #a79b8d;
+  --accent: #f5a94d;
+  --accent-ink: #231808;
+  --audio: #f5a94d;
+  --video: #e28068;
+  --photo: #7fc08b;
+  --doc: #a99bf0;
+  --ok: #6fc98c;
+  --danger: #ec8272;
+  --shadow: 0 1px 2px rgba(0,0,0,.4), 0 10px 30px rgba(0,0,0,.45);
+}
+
+/* ── Studio: deep slate, instrument cyan ─────────────────────────────────────── */
+:root[data-palette="studio"] {
+  --bg: #f7f9fb;
+  --surface: #ffffff;
+  --line: #e1e8ee;
+  --ink: #131a21;
+  --muted: #5b6875;
+  --accent: #0f7fa8;
+  --accent-ink: #ffffff;
+  --audio: #0f7fa8;
+  --video: #a9503a;
+  --photo: #3c7a4e;
+  --doc: #5d51a8;
+  --ok: #2e7a55;
+  --danger: #ac3b2e;
+  --shadow: 0 1px 2px rgba(19,26,33,.06), 0 8px 24px rgba(19,26,33,.09);
+}
+@media (prefers-color-scheme: dark) {
+  :root[data-palette="studio"]:not([data-appearance="light"]) {
+    --bg: #0e1318;
+    --surface: #171e25;
+    --line: #273139;
+    --ink: #e6edf3;
+    --muted: #90a0ae;
+    --accent: #4cc2e8;
+    --accent-ink: #06202a;
+    --audio: #4cc2e8;
+    --video: #e08a6c;
+    --photo: #7ec489;
+    --doc: #a79bee;
+    --ok: #64c48e;
+    --danger: #ed8271;
+    --shadow: 0 1px 2px rgba(0,0,0,.45), 0 10px 30px rgba(0,0,0,.5);
+  }
+}
+:root[data-palette="studio"][data-appearance="dark"] {
+  --bg: #0e1318;
+  --surface: #171e25;
+  --line: #273139;
+  --ink: #e6edf3;
+  --muted: #90a0ae;
+  --accent: #4cc2e8;
+  --accent-ink: #06202a;
+  --audio: #4cc2e8;
+  --video: #e08a6c;
+  --photo: #7ec489;
+  --doc: #a79bee;
+  --ok: #64c48e;
+  --danger: #ed8271;
+  --shadow: 0 1px 2px rgba(0,0,0,.45), 0 10px 30px rgba(0,0,0,.5);
+}
+
+/* ── Violet: ink and orchid ──────────────────────────────────────────────────── */
+:root[data-palette="daylight"] {
+  --bg: #faf8fc;
+  --surface: #ffffff;
+  --line: #e8e2ef;
+  --ink: #1d1826;
+  --muted: #675e75;
+  --accent: #6d4aa8;
+  --accent-ink: #ffffff;
+  --audio: #6d4aa8;
+  --video: #a85440;
+  --photo: #3f7a4f;
+  --doc: #a0479b;
+  --ok: #327a54;
+  --danger: #ae3b31;
+  --shadow: 0 1px 2px rgba(29,24,38,.06), 0 8px 24px rgba(29,24,38,.09);
+}
+@media (prefers-color-scheme: dark) {
+  :root[data-palette="daylight"]:not([data-appearance="light"]) {
+    --bg: #14111c;
+    --surface: #1e1929;
+    --line: #312a3f;
+    --ink: #ede8f5;
+    --muted: #9e94b0;
+    --accent: #b79bff;
+    --accent-ink: #1a1030;
+    --audio: #b79bff;
+    --video: #e08a6c;
+    --photo: #85c58f;
+    --doc: #e39bd8;
+    --ok: #6cc791;
+    --danger: #ed8272;
+    --shadow: 0 1px 2px rgba(0,0,0,.45), 0 10px 30px rgba(0,0,0,.5);
+  }
+}
+:root[data-palette="daylight"][data-appearance="dark"] {
+  --bg: #14111c;
+  --surface: #1e1929;
+  --line: #312a3f;
+  --ink: #ede8f5;
+  --muted: #9e94b0;
+  --accent: #b79bff;
+  --accent-ink: #1a1030;
+  --audio: #b79bff;
+  --video: #e08a6c;
+  --photo: #85c58f;
+  --doc: #e39bd8;
+  --ok: #6cc791;
+  --danger: #ed8272;
+  --shadow: 0 1px 2px rgba(0,0,0,.45), 0 10px 30px rgba(0,0,0,.5);
+}
+
+/* ── Type ───────────────────────────────────────────────────────────────────── */
+:root {
+  --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  /* Filenames are set in a monospaced face: track numbers line up, extensions are
+     scannable down a column, and the filename reads as data rather than a caption. */
+  --mono: ui-monospace, "SF Mono", "Cascadia Mono", "Segoe UI Mono", Menlo, monospace;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font: 15px/1.55 var(--sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+button, input { font: inherit; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* ── Auth screens ───────────────────────────────────────────────────────────── */
+
+.shell { min-height: 100dvh; display: grid; place-items: center; padding: 24px; }
+
+.card {
+  box-shadow: var(--shadow);
+  width: 100%; max-width: 400px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 28px;
+}
+
+h1 { margin: 0 0 4px; font-size: 22px; letter-spacing: -0.015em; }
+.sub { margin: 0 0 22px; color: var(--muted); font-size: 14px; }
+
+label { display: block; margin: 14px 0 5px; font-size: 13px; color: var(--muted); }
+
+input[type="text"], input:not([type]), input[type="search"] {
+  width: 100%;
+  padding: 10px 12px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--ink);
+}
+
+.card button {
+  width: 100%;
+  margin-top: 20px;
+  padding: 11px 16px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  border: 0; border-radius: 8px;
+  font-weight: 600; cursor: pointer;
+}
+.card button:disabled { opacity: 0.55; cursor: not-allowed; }
+.card button.secondary {
+  background: transparent; color: var(--muted);
+  border: 1px solid var(--line); font-weight: 400; margin-top: 10px;
+}
+
+.error {
+  margin-top: 16px; padding: 10px 12px; border-radius: 8px;
+  background: color-mix(in srgb, var(--danger) 13%, transparent);
+  border: 1px solid color-mix(in srgb, var(--danger) 38%, transparent);
+  font-size: 13px;
+}
+
+.hint {
+  margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--line);
+  color: var(--muted); font-size: 12.5px;
+}
+.hint code { background: var(--bg); padding: 1px 5px; border-radius: 4px; font-size: 12px; }
+
+/* ── App shell ──────────────────────────────────────────────────────────────── */
+
+.app { min-height: 100dvh; display: flex; flex-direction: column; }
+
+.browser { flex: 1; width: 100%; max-width: 1100px; margin: 0 auto; padding: 0 16px 32px; }
+
+.bar {
+  position: sticky; top: 0; z-index: 10;
+  display: flex; gap: 14px; align-items: center;
+  padding: 13px 0;
+  background: var(--bg);
+  border-bottom: 1px solid var(--line);
+}
+.brand {
+  background: none; border: 0; padding: 0; cursor: pointer;
+  font: inherit; color: inherit; font-weight: 700; letter-spacing: -0.01em; }
+.searchbox { flex: 1; min-width: 0; }
+
+.iconbtn {
+  flex: none;
+  padding: 7px 10px;
+  background: transparent; color: var(--muted);
+  border: 1px solid var(--line); border-radius: 8px;
+  cursor: pointer; line-height: 1;
+}
+.iconbtn:hover { color: var(--ink); }
+.iconbtn[aria-pressed="true"] {
+  background: var(--ink); border-color: var(--ink); color: var(--bg);
+}
+
+.toolbar {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; flex-wrap: wrap; padding: 12px 0 8px;
+}
+.seg { display: flex; gap: 4px; }
+.seg button {
+  padding: 6px 11px; font-size: 13px;
+  background: transparent; color: var(--muted);
+  border: 1px solid var(--line); border-radius: 7px; cursor: pointer;
+}
+.seg button:hover { color: var(--ink); }
+/* Tinted rather than inverted. Filling the selected view with --ink puts a
+   glaring white slab in the middle of a dark interface, which draws the eye to
+   the least interesting control on the screen. */
+.seg button[aria-pressed="true"] {
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--line));
+  color: var(--ink);
+}
+
+.crumbs { display: flex; flex-wrap: wrap; align-items: center; font-size: 13px; }
+.crumb {
+  padding: 2px 4px; background: none; border: 0; color: var(--muted);
+  cursor: pointer; border-radius: 4px;
+}
+.crumb:hover { color: var(--ink); background: var(--surface); }
+.crumbs .sep { color: var(--line); padding: 0 2px; }
+.crumbs > span:last-child .crumb { color: var(--ink); font-weight: 600; }
+
+/* ── Details view ───────────────────────────────────────────────────────────── */
+
+.rows { list-style: none; margin: 0; padding: 0; }
+
+.rows li {
+  display: grid;
+  /* icon | name+tags | duration | status | date */
+  grid-template-columns: 22px 1fr auto auto auto;
+  align-items: center; gap: 14px;
+  padding: 9px 8px;
+  border-radius: 7px;
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 55%, transparent);
+}
+.rows li:hover { background: var(--surface); }
+.rows li.dir, .rows li.hit { cursor: pointer; }
+
+.rows .ic { text-align: center; font-size: 13px; }
+.rows .nm {
+  font-family: var(--mono); font-size: 13px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.rows li.dir .nm { font-family: var(--sans); font-size: 14.5px; font-weight: 600; }
+.rows .where, .rows .tags {
+  display: block; font-family: var(--sans);
+  font-size: 12px; color: var(--muted);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.rows .meta.dur { min-width: 46px; text-align: right; }
+.rows .meta {
+  font-size: 12.5px; color: var(--muted); font-variant-numeric: tabular-nums;
+}
+.rows .meta.date { min-width: 92px; text-align: right; opacity: .75; }
+
+/* ── Columns view: name only, for the folder with two thousand tracks ───────── */
+
+.cols { columns: 250px; column-gap: 24px; list-style: none; margin: 0; padding: 6px 4px; }
+.cols li {
+  break-inside: avoid;
+  display: flex; align-items: center; gap: 9px;
+  padding: 3px 6px; border-radius: 5px;
+  font-family: var(--mono); font-size: 12.5px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.cols li:hover { background: var(--surface); }
+.cols li.dir { font-family: var(--sans); font-weight: 600; font-size: 13px; cursor: pointer; }
+.cols .ic { font-size: 11px; flex: none; }
+
+/* ── Tiles: two sizes, because one cannot serve both a photo album and a
+      folder of two thousand tracks ──────────────────────────────────────────── */
+
+.tiles { display: grid; gap: 14px; list-style: none; margin: 0; padding: 8px 4px; }
+.tiles.small { grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 10px; }
+.tiles.large { grid-template-columns: repeat(auto-fill, minmax(168px, 1fr)); }
+
+.tiles li { display: flex; flex-direction: column; gap: 6px; }
+.tiles li.dir, .tiles li.hit { cursor: pointer; }
+.thumb {
+  aspect-ratio: 1;
+  border-radius: 9px; border: 1px solid var(--line);
+  background: var(--surface);
+  display: grid; place-items: center;
+  overflow: hidden;
+}
+.thumb img {
+  width: 100%; height: 100%;
+  /* Fill the square without distorting. Photos are rarely square, and letterboxing
+     every tile would waste most of a grid. */
+  object-fit: cover;
+  display: block;
+}
+.tiles.small .thumb { font-size: 20px; border-radius: 7px; }
+.tiles.large .thumb { font-size: 30px; }
+.tiles .nm {
+  font-family: var(--mono); line-height: 1.35;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.tiles.small .nm { font-size: 11px; }
+.tiles.large .nm { font-size: 12px; }
+.tiles .sub { font-size: 11px; color: var(--muted); }
+
+/* ── Shared ─────────────────────────────────────────────────────────────────── */
+
+.ic.audio { color: var(--audio); }
+.ic.video { color: var(--video); }
+.ic.photo { color: var(--photo); }
+.ic.doc   { color: var(--doc); }
+.ic.other, .ic.dir { color: var(--muted); }
+
+.offline { opacity: .5; }
+.badge {
+  font-size: 11px; padding: 1px 7px; border-radius: 999px;
+  border: 1px solid var(--line); color: var(--muted); white-space: nowrap;
+}
+
+.muted { color: var(--muted); font-size: 14px; }
+.muted.count { padding: 10px 4px 2px; }
+.small { font-size: 12.5px; }
+
+/* ── Settings ───────────────────────────────────────────────────────────────── */
+
+.sheet {
+  position: fixed; inset: 0; z-index: 50;
+  background: color-mix(in srgb, var(--ink) 34%, transparent);
+  display: grid; place-items: center; padding: 20px;
+}
+.sheet-inner {
+  box-shadow: var(--shadow);
+  width: 100%; max-width: 460px;
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: 14px; padding: 24px;
+  max-height: 86dvh; overflow-y: auto;
+}
+.sheet h2 { margin: 0 0 18px; font-size: 18px; }
+.setting { padding: 14px 0; border-top: 1px solid var(--line); }
+.setting:first-of-type { border-top: 0; padding-top: 0; }
+.setting > h3 { margin: 0 0 3px; font-size: 14px; font-weight: 600; }
+.setting > p { margin: 0 0 10px; font-size: 12.5px; color: var(--muted); }
+
+.palettes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.pal {
+  padding: 10px; border-radius: 9px; cursor: pointer;
+  border: 1px solid var(--line); background: var(--bg);
+  display: flex; flex-direction: column; gap: 7px; align-items: flex-start;
+}
+.pal[aria-pressed="true"] { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.pal .swatch { display: flex; gap: 3px; }
+.pal .swatch span { width: 15px; height: 15px; border-radius: 4px; border: 1px solid rgba(128,128,128,.25); }
+.pal .label { font-size: 11.5px; color: var(--ink); text-align: left; }
+
+/* ── Sources & footer ───────────────────────────────────────────────────────── */
+
+.sources { margin-top: 36px; }
+.sources h2 {
+  font-size: 12px; text-transform: uppercase; letter-spacing: 0.07em; color: var(--muted);
+}
+.source {
+  display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  padding: 12px 0; border-top: 1px solid var(--line);
+}
+button.compact {
+  padding: 6px 12px; font-size: 13px; cursor: pointer;
+  background: transparent; color: var(--muted);
+  border: 1px solid var(--line); border-radius: 7px;
+}
+button.compact:hover { color: var(--ink); }
+
+.footer {
+  display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  max-width: 1100px; width: 100%; margin: 0 auto;
+  padding: 12px 16px; border-top: 1px solid var(--line);
+  font-size: 12.5px; color: var(--muted);
+}
+.status { display: flex; gap: 8px; align-items: center; }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); flex: none; }
+.dot.bad { background: var(--danger); }
+
+.linklike {
+  padding: 4px 8px; background: none; border: 0; color: var(--muted);
+  font-size: 12.5px; cursor: pointer; text-decoration: underline;
+}
+.linklike:hover { color: var(--ink); }
+
+@media (max-width: 560px) {
+  .rows .meta.date { display: none; }
+  .rows li { grid-template-columns: 22px 1fr auto auto; }
+  .palettes { grid-template-columns: 1fr; }
+  .pal { flex-direction: row; align-items: center; gap: 10px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; animation: none !important; }
+}
+
+/* ── Playback ───────────────────────────────────────────────────────────────
+   A persistent bar rather than a modal: playback outlives whatever folder you
+   wander into, which is the point of a queue. */
+
+.row.playable, .tiles li.playable { cursor: pointer; }
+.rows li.nowplaying { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.rows li.nowplaying .nm { color: var(--accent); }
+.cols li.nowplaying, .tiles li.nowplaying .nm { color: var(--accent); }
+
+.player {
+  box-shadow: 0 -1px 0 var(--line), 0 -8px 24px rgba(0,0,0,.12);
+  position: sticky; bottom: 0; z-index: 20;
+  display: flex; align-items: center; gap: 16px;
+  padding: 10px 16px;
+  background: var(--surface);
+  border-top: 1px solid var(--line);
+}
+
+.p-controls { display: flex; gap: 6px; flex: none; }
+.p-btn {
+  padding: 7px 11px; min-width: 38px;
+  background: transparent; color: var(--muted);
+  border: 1px solid var(--line); border-radius: 8px;
+  cursor: pointer; line-height: 1; font-size: 12px;
+}
+.p-btn:hover:not(:disabled) { color: var(--ink); }
+.p-btn:disabled { opacity: .4; cursor: not-allowed; }
+.p-btn.primary {
+  background: var(--accent); color: var(--accent-ink); border-color: var(--accent);
+  font-size: 13px;
+}
+
+.p-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.p-title { display: flex; flex-direction: column; min-width: 0; }
+.p-name {
+  font-family: var(--mono); font-size: 13px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.p-where {
+  font-size: 11.5px; color: var(--muted);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+/* The same line, when it is a way back into the folder or playlist rather than
+   a label. Underlined on hover only: a permanent underline under every playing
+   track turns the quietest line on the bar into the loudest. */
+button.p-where {
+  background: none; border: 0; padding: 0; text-align: left;
+  font: inherit; font-size: 11.5px; cursor: pointer; max-width: 100%;
+}
+button.p-where:hover, button.p-where:focus-visible {
+  color: var(--accent); text-decoration: underline;
+}
+
+.p-scrub { display: flex; align-items: center; gap: 10px; }
+.p-time {
+  font-size: 11.5px; color: var(--muted);
+  font-variant-numeric: tabular-nums; min-width: 34px;
+}
+.p-time:last-of-type { text-align: right; }
+
+.p-range, .p-vol {
+  -webkit-appearance: none; appearance: none;
+  height: 4px; border-radius: 999px; background: var(--line); cursor: pointer;
+}
+.p-range { flex: 1; min-width: 0; }
+.p-vol { width: 84px; flex: none; }
+.p-range::-webkit-slider-thumb, .p-vol::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none;
+  width: 12px; height: 12px; border-radius: 50%;
+  background: var(--accent); border: 0; cursor: pointer;
+}
+.p-range::-moz-range-thumb, .p-vol::-moz-range-thumb {
+  width: 12px; height: 12px; border-radius: 50%;
+  background: var(--accent); border: 0; cursor: pointer;
+}
+
+.p-right { display: flex; align-items: center; gap: 10px; flex: none; }
+.p-count { font-size: 11.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+.p-error {
+  position: absolute; left: 16px; bottom: 100%;
+  padding: 6px 10px; margin-bottom: 6px; border-radius: 7px;
+  background: color-mix(in srgb, var(--danger) 16%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--danger) 40%, transparent);
+  font-size: 12px;
+}
+
+@media (max-width: 640px) {
+  /* The path is noise on a narrow bar. A way back into the playlist is not —
+     it is the only route to the rest of the list, and a phone is where that
+     matters most, so the button form survives where the label does not. */
+  span.p-where, .p-count, .p-vol { display: none; }
+  .player { gap: 10px; padding: 8px 12px; }
+}
+
+/* ── Viewer ─────────────────────────────────────────────────────────────────
+   Full-screen, because a photo or a film wants the whole screen and a document
+   wants a readable column. One shell for all three so navigation and the close
+   affordance behave identically. */
+
+.viewer {
+  position: fixed; inset: 0; z-index: 60;
+  display: flex; flex-direction: column;
+  background: color-mix(in srgb, var(--bg) 96%, black);
+}
+
+.v-bar {
+  display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  padding: 12px 16px; border-bottom: 1px solid var(--line);
+  background: var(--surface);
+}
+.v-title { display: flex; flex-direction: column; min-width: 0; }
+.v-name {
+  font-family: var(--mono); font-size: 13.5px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.v-meta { font-size: 11.5px; color: var(--muted); }
+.v-close {
+  flex: none; padding: 7px 12px;
+  background: transparent; color: var(--muted);
+  border: 1px solid var(--line); border-radius: 8px; cursor: pointer;
+}
+.v-close:hover { color: var(--ink); }
+
+.v-stage {
+  flex: 1; min-height: 0;
+  display: flex; align-items: center; gap: 8px; padding: 12px;
+}
+
+.v-nav {
+  flex: none; width: 44px; height: 64px;
+  background: transparent; color: var(--muted);
+  border: 1px solid var(--line); border-radius: 10px;
+  font-size: 24px; line-height: 1; cursor: pointer;
+}
+.v-nav:hover:not(:disabled) { color: var(--ink); background: var(--surface); }
+.v-nav:disabled { opacity: .3; cursor: not-allowed; }
+
+.v-content {
+  flex: 1; min-width: 0; height: 100%;
+  display: flex; align-items: center; justify-content: center;
+}
+
+.v-img, .v-video {
+  max-width: 100%; max-height: 100%;
+  object-fit: contain; border-radius: 8px;
+}
+.v-frame {
+  width: 100%; height: 100%;
+  border: 1px solid var(--line); border-radius: 8px; background: var(--surface);
+}
+.v-text {
+  width: 100%; max-width: 78ch; height: 100%; margin: 0;
+  overflow: auto; padding: 24px;
+  background: var(--surface); border: 1px solid var(--line); border-radius: 8px;
+  font-family: var(--mono); font-size: 13px; line-height: 1.6;
+  white-space: pre-wrap; word-break: break-word;
+}
+
+@media (max-width: 640px) {
+  .v-nav { width: 36px; height: 52px; font-size: 20px; }
+  .v-stage { padding: 8px; gap: 4px; }
+}
+
+/* Viewer actions and the no-preview fallback */
+.v-actions { display: flex; gap: 8px; flex: none; }
+.v-btn {
+  padding: 7px 12px;
+  background: transparent; color: var(--muted);
+  border: 1px solid var(--line); border-radius: 8px;
+  cursor: pointer; font-size: 13px;
+}
+.v-btn:hover { color: var(--ink); border-color: var(--muted); }
+
+.v-nopreview {
+  display: flex; flex-direction: column; align-items: center; gap: 10px;
+  padding: 40px; text-align: center;
+}
+.v-nopreview code {
+  background: var(--surface); padding: 1px 6px; border-radius: 4px;
+  font-size: 12.5px;
+}
+
+/* ── Zones and sending ──────────────────────────────────────────────────── */
+
+.sheet-inner.wide { max-width: 520px; }
+.sheet-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.sheet-head h2 { margin: 0; }
+
+.zone-card {
+  border: 1px solid var(--line); border-radius: 12px;
+  padding: 13px; margin-top: 12px;
+  background: var(--bg);
+  display: flex; flex-direction: column; gap: 8px;
+}
+.zone-card.live { border-color: color-mix(in srgb, var(--accent) 55%, var(--line)); }
+
+.zone-head { display: flex; align-items: center; gap: 9px; }
+.zone-name { font-weight: 600; flex: 1; }
+.zone-state { font-size: 12px; color: var(--muted); }
+.dot.live { background: var(--ok); }
+.dot.idle { background: var(--muted); opacity: .55; }
+.dot.off  { background: var(--muted); opacity: .3; }
+
+.zone-controls { display: flex; align-items: center; gap: 10px; }
+.zone-vol { flex: 1; }
+.vol-n { min-width: 26px; text-align: right; font-variant-numeric: tabular-nums; }
+button.compact.primary {
+  background: var(--accent); border-color: var(--accent);
+  color: var(--accent-ink); font-weight: 600;
+}
+button.compact:disabled { opacity: .5; cursor: not-allowed; }
+
+/* Send-to picker */
+.pick {
+  width: 100%; display: flex; align-items: center; gap: 12px;
+  padding: 11px; margin-top: 9px;
+  border: 1px solid var(--line); border-radius: 10px;
+  background: var(--bg); color: var(--ink);
+  cursor: pointer; text-align: left;
+}
+.pick:hover:not(:disabled) { border-color: var(--muted); }
+.pick:disabled { opacity: .45; cursor: not-allowed; }
+.pick-ic { width: 24px; text-align: center; color: var(--muted); flex: none; }
+.pick-text { min-width: 0; }
+.pick-text b { display: block; font-size: 14.5px; font-weight: 600; }
+.pick-text span { font-size: 12px; color: var(--muted); }
+
+.nm-clip { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--mono); }
+
+/* The per-row send button stays quiet until the row is hovered or focused,
+   so a long list is not a wall of icons. */
+.sendbtn {
+  background: transparent; border: 1px solid transparent; border-radius: 7px;
+  color: var(--muted); cursor: pointer; padding: 3px 7px; font-size: 13px;
+  opacity: 0;
+}
+.rows li:hover .sendbtn, .sendbtn:focus-visible { opacity: 1; border-color: var(--line); }
+.sendbtn:hover { color: var(--ink); }
+
+@media (hover: none) {
+  /* No hover on a touch screen, so it is always visible there. */
+  .sendbtn { opacity: 1; border-color: var(--line); }
+}
+
+.takeover {
+  margin-top: 12px; padding: 12px; border-radius: 10px;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 36%, transparent);
+  font-size: 13.5px;
+}
+.takeover p { margin: 0 0 10px; }
+
+/* ── People ─────────────────────────────────────────────────────────────── */
+
+.ticks { display: flex; flex-wrap: wrap; gap: 7px; margin: 4px 0 2px; }
+.tick {
+  padding: 7px 11px; font-size: 13px;
+  background: var(--bg); color: var(--muted);
+  border: 1px solid var(--line); border-radius: 8px; cursor: pointer;
+}
+.tick[aria-pressed="true"] {
+  border-color: var(--accent); color: var(--ink);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+.invite-row {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; padding: 9px 0; border-top: 1px solid var(--line);
+}
+.invite-row:first-of-type { border-top: 0; }
+
+.invite-link {
+  font-family: var(--mono); font-size: 12px;
+  padding: 10px 12px; border-radius: 8px;
+  background: var(--bg); border: 1px dashed var(--line);
+  /* Wraps rather than overflowing. An address ending in an ellipsis cannot be
+     typed, and on a phone these are read to be typed into something else. */
+  overflow-wrap: anywhere;
+}
+
+/* For the ones that must stay on one line to be read correctly — an address
+   with a port, where a wrap could be mistaken for a space. Drag to see the
+   rest; -webkit-overflow-scrolling keeps that gesture smooth on iOS. */
+.scroll-x {
+  overflow-x: auto; white-space: nowrap; overflow-wrap: normal;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* ── Audience: who a folder or room is for ──────────────────────────────────── */
+
+/* Stacked rather than inline, because these three are mutually exclusive and a
+   row of pills reads as a multi-choice — the same confusion the explicit-grant
+   model exists to avoid. */
+.audience { display: flex; flex-direction: column; gap: 6px; margin: 4px 0 8px; }
+.tick.wide {
+  display: flex; justify-content: space-between; align-items: baseline;
+  gap: 12px; text-align: left; width: 100%;
+}
+
+.invite-row.column { display: block; }
+.place-head {
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;
+}
+
+/* An undecided folder is not an error, but it is holding a decision, so it is
+   coloured to be found rather than to alarm. */
+.badge.warn {
+  /* One amber for every palette. It has to stay legible on all six themed
+     backgrounds and stay distinct from --accent, which already means "chosen" —
+     a palette-matched warning would read as a selection. */
+  border-color: color-mix(in srgb, #d08b26 55%, var(--line));
+  color: #d08b26;
+  margin-left: 7px;
+}
+
+/* ── File actions ───────────────────────────────────────────────────────────── */
+
+.actions { display: flex; flex-direction: column; gap: 8px; margin: 6px 0 12px; }
+.action {
+  display: flex; align-items: flex-start; gap: 12px; width: 100%;
+  padding: 12px 14px; text-align: left; cursor: pointer;
+  background: var(--bg); color: var(--ink);
+  border: 1px solid var(--line); border-radius: 10px;
+  font-size: 15px;
+}
+.action:hover:not(:disabled) { border-color: var(--accent); }
+.action:disabled { opacity: 0.45; cursor: default; }
+/* The label and its explanation stack; the icon stays on the baseline of the
+   first line rather than centring against both. */
+.action > span:last-child { display: flex; flex-direction: column; gap: 2px; }
+.action-ic { font-size: 17px; width: 20px; text-align: center; }
+
+.install { margin: 4px 0 2px; }
+.install summary { cursor: pointer; padding: 4px 0; }
+
+/* ── Signing in on a second device ──────────────────────────────────────────── */
+
+.code.big {
+  font-family: var(--mono); font-size: 34px; letter-spacing: 6px;
+  text-align: center; padding: 14px 10px; margin: 6px 0 2px;
+  color: var(--accent);
+  border: 1px dashed var(--line); border-radius: 10px; background: var(--bg);
+}
+.code-input {
+  font-family: var(--mono); font-size: 22px; letter-spacing: 4px; text-align: center;
+}
+/* A secondary route, not a second primary action: it should be findable without
+   competing with the passkey button above it. */
+.linkish {
+  background: none; border: 0; color: var(--muted);
+  text-decoration: underline; cursor: pointer;
+  font-size: 13px; margin-top: 12px; padding: 6px;
+}
+.linkish:hover { color: var(--ink); }
+
+.drive-share {
+  display: flex; flex-direction: column; gap: 8px;
+  padding: 12px; margin: 4px 0 10px;
+  border: 1px solid var(--line); border-radius: 10px; background: var(--bg);
+}
+
+/* Folders and rooms are different kinds of thing. Run together they read as one
+   list of interchangeable toggles, which is exactly the confusion to avoid on a
+   permissions screen. */
+.group-head {
+  font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em;
+  color: var(--muted); margin: 14px 0 6px;
+  padding-bottom: 5px; border-bottom: 1px solid var(--line);
+}
+
+/* ── Details view: metadata as columns ──────────────────────────────────────── */
+
+/* Seven cells: icon | name | title | artist | album | time | actions.
+   minmax(0,…) on every flexible one, so a long album name truncates instead of
+   pushing the row wider than the screen. */
+/* icon | name | title | artist | album | time | actions | modified.
+   Eight cells; anything fewer and the last one wraps to its own line, which is
+   what made every row double height. */
+.rows.details li {
+  grid-template-columns:
+    22px minmax(0, 2fr) minmax(0, 1.4fr) minmax(0, 1.1fr) minmax(0, 1.1fr) auto auto auto;
+}
+
+/* Above the breakpoint the columns carry the metadata, so the tag line under the
+   filename would be the same thing twice. */
+.rows.details .tags { display: none; }
+
+.rows .col {
+  font-size: 13px; color: var(--muted);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+.rows li.rowhead {
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 6px; margin-bottom: 2px;
+  position: sticky; top: 0; z-index: 2;
+  background: var(--bg);
+}
+.rows li.rowhead:hover { background: var(--bg); }
+
+.sorthead {
+  display: flex; align-items: center; gap: 4px;
+  background: none; border: 0; padding: 2px 0; cursor: pointer;
+  font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.07em;
+  color: var(--muted); text-align: left;
+}
+.sorthead:hover { color: var(--ink); }
+.sorthead.active { color: var(--ink); }
+.sorthead .arrow { font-size: 9px; }
+
+/* A phone has no room for five columns. The filename is the one that must never
+   be dropped, so the tags fold back under it and the rest go. */
+@media (max-width: 720px) {
+  .rows.details li {
+    grid-template-columns: 22px minmax(0, 1fr) auto auto;
+  }
+  .rows.details .meta.date { display: none; }
+  .rows.details .col { display: none; }
+  .rows li.rowhead { display: none; }
+  /* …and the tags come back under the filename, so the phone still shows what
+     the columns would have. */
+  .rows.details .tags { display: block; }
+}
+
+/* What is on in a room. The title carries the weight; the artist is context. */
+.now-playing { display: flex; flex-direction: column; gap: 1px; margin: 2px 0 4px; }
+.now-title {
+  font-size: 14.5px; font-weight: 600; color: var(--ink);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.now-artist { font-size: 12.5px; color: var(--muted); }
+
+/* Volume sits under the transport row, full width, so it cannot be squeezed out
+   of the card by the buttons beside it. */
+.zone-volume {
+  display: flex; align-items: center; gap: 10px;
+  margin-top: 8px; width: 100%; min-width: 0;
+}
+.zone-volume .zone-vol { flex: 1 1 auto; min-width: 0; }
+.vol-ic { font-size: 13px; opacity: .7; }
+.zone-controls { flex-wrap: wrap; }
+
+/* The standing answer to "is anything still on?", in the footer where it costs
+   no screen space and is visible from every view. */
+.rooms-status {
+  display: inline-flex; align-items: center; gap: 7px;
+  background: none; border: 0; cursor: pointer;
+  font-size: 12.5px; color: var(--muted); padding: 4px 8px;
+  border-radius: 6px;
+}
+.rooms-status:hover { color: var(--ink); background: var(--surface); }
+.rooms-status .dot.live { background: var(--accent); }
+
+/* The file a search asked to be shown. Fades after a couple of seconds: it is
+   there to catch the eye on arrival, not to stay marked. */
+.rows li.revealed,
+.tiles li.revealed {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 50%, transparent);
+  animation: reveal-fade 2s ease-out forwards;
+}
+@keyframes reveal-fade {
+  0%, 55% { background: color-mix(in srgb, var(--accent) 18%, transparent); }
+  100% { background: transparent; box-shadow: none; }
+}
+
+/* Conversion progress. Wider than the player's scrub bar because it is the only
+   thing on the screen and it may sit there for half an hour. */
+.bar.wide { width: min(420px, 80%); height: 6px; margin: 10px auto; }
+
+.zone-rename {
+  flex: 1; min-width: 0; font-size: 14.5px; font-weight: 600;
+  padding: 3px 7px; margin: 0;
+}
+.iconbtn.tiny { padding: 2px 7px; font-size: 12px; }
+
+/* Live conversion: the player, then a line explaining why there is no scrub bar
+   and how to move through it anyway. */
+.v-live { display: flex; flex-direction: column; gap: 10px; width: 100%; height: 100%; }
+.v-live-bar {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
+  gap: 12px; padding: 0 4px;
+}
+.v-jump { display: inline-flex; align-items: center; gap: 8px; }
+.jump { width: 90px; text-align: center; font-family: var(--mono); margin: 0; padding: 5px 8px; }
+
+/* ── Playlists ──────────────────────────────────────────────────────────────── */
+
+.playlist-row {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 2px;
+  width: 100%; text-align: left; cursor: pointer;
+  padding: 11px 13px; margin-bottom: 7px;
+  background: var(--bg); color: var(--ink);
+  border: 1px solid var(--line); border-radius: 10px;
+}
+.playlist-row:hover { border-color: var(--accent); }
+.pl-name { font-size: 15px; font-weight: 600; }
+.pl-title { margin: 0; }
+
+.pl-entries { list-style: none; margin: 10px 0 0; padding: 0; }
+.pl-entries li {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) auto auto;
+  align-items: center; gap: 10px;
+  padding: 7px 4px; border-bottom: 1px solid color-mix(in srgb, var(--line) 55%, transparent);
+}
+.pl-pos { color: var(--muted); font-size: 12px; text-align: right; }
+.pl-track { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.pl-play {
+  background: none; border: 0; padding: 0; cursor: pointer; text-align: left;
+  color: var(--ink); font-size: 14px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.pl-play:hover { color: var(--accent); }
+.pl-actions { display: flex; gap: 3px; align-items: center; }
+
+/* The drag handle. Wider than it looks: a grip that has to be hit precisely is
+   a grip that gets missed, and this is used with a thumb. */
+.pl-grip {
+  background: transparent; border: 1px solid transparent; border-radius: 7px;
+  color: var(--muted); font-size: 15px; line-height: 1;
+  padding: 6px 8px; cursor: grab;
+  touch-action: none;   /* or the browser scrolls the page instead of dragging */
+}
+.pl-grip:hover, .pl-grip:focus-visible { color: var(--fg); border-color: var(--line); }
+.pl-grip:active { cursor: grabbing; }
+
+/* The row being carried, so it is obvious which one moves. */
+.pl-entries li.held {
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  border-radius: 8px;
+}
+
+/* A line whose file could not be found. Dimmed rather than hidden: the whole
+   point of keeping it is that somebody can see what is gone. */
+/* A missing track is an ordinary row that happens to be greyed out. It used to
+   carry a tinted background and stack onto a second line, which made the thing
+   you have lost the loudest item on the page — the opposite of what a list of
+   what is *there* wants. The words "not found" carry it. */
+.pl-entries li.missing { opacity: 0.5; }
+.pl-entries li.missing .pl-track {
+  flex-direction: row; align-items: baseline; gap: 8px; min-width: 0;
+}
+.pl-entries li.missing .pl-track .nm-clip { flex: 0 1 auto; }
+
+.v-starting {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 8px; min-height: 240px; text-align: center;
+}
+.spinner {
+  width: 26px; height: 26px; border-radius: 50%;
+  border: 2px solid var(--line); border-top-color: var(--accent);
+  animation: spin 0.9s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Playlists grouped by what they are. Collapsed by default except your own —
+   forty-one imported lists above your two is a wall to scroll past. */
+.pl-section { margin-bottom: 6px; }
+.pl-section-head {
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  background: none; border: 0; cursor: pointer; padding: 9px 2px;
+  color: var(--ink); font-size: 13px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.06em;
+  border-bottom: 1px solid var(--line);
+}
+.pl-section-head:hover { color: var(--accent); }
+.pl-caret { color: var(--muted); font-size: 11px; }
+.pl-blurb { margin: 8px 2px 10px; }
+.pl-name { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+/* Actions sit last in the row, past the date: a control, not a fact about the
+   file. Between the length and the date it read as belonging to one of them. */
+.rows .meta.actions { min-width: 30px; text-align: right; }
+
+/* Columns view has room for the menu once the name is allowed to truncate. */
+.cols li { display: flex; align-items: center; gap: 8px; }
+.cols li .nm-clip { flex: 1; min-width: 0; }
+
+/* Tiles: the menu sits over the top-right corner of the artwork, appearing on
+   hover or focus so it does not clutter a wall of pictures. */
+.tiles li { position: relative; }
+.tile-actions {
+  position: absolute; top: 6px; right: 6px; z-index: 1;
+  background: color-mix(in srgb, var(--bg) 80%, transparent);
+  border: 1px solid var(--line); border-radius: 6px;
+  opacity: 0; transition: opacity 0.12s ease;
+}
+.tiles li:hover .tile-actions,
+.tile-actions:focus-visible { opacity: 1; }
+
+/* A tile gave no sign it was under the pointer, while rows and columns both did.
+   The same surface change, so hovering means one thing everywhere. */
+.tiles li:hover {
+  background: var(--surface);
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--line));
+}
+.tiles li { border: 1px solid transparent; border-radius: 10px; transition: background 0.12s ease; }
+
+/* ── Chrome that stays put ───────────────────────────────────────────────────
+   Search, breadcrumbs, view switch and the player were all scrolled away by a
+   long folder, so getting back meant scrolling to the top first. */
+.bar {
+  position: sticky; top: 0; z-index: 20;
+  background: var(--bg);
+}
+.toolbar {
+  position: sticky; top: 56px; z-index: 19;
+  background: var(--bg);
+}
+.rows li.rowhead { top: 104px; }   /* below both, not under them */
+
+.footer {
+  position: sticky; bottom: 0; z-index: 18;
+  background: var(--bg); border-top: 1px solid var(--line);
+}
+
+/* The parent-folder row spans the grid rather than sitting in a tile. */
+.tiles li.up.as-row {
+  grid-column: 1 / -1;
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 10px; min-height: 0;
+}
+.tiles li.up.as-row .thumb { display: none; }
+
+/* ── Long filenames on a phone ───────────────────────────────────────────────
+   A name is the one thing that must never be replaced by metadata, so it cannot
+   simply be cut. On a narrow screen it wraps to two lines and then ellipsises,
+   which shows the start and the extension — the two ends people read. */
+@media (max-width: 720px) {
+  /* The name wraps to two lines; whatever sits under it is not part of that
+     count. Clamping the whole cell meant a long filename used both lines and
+     hid the tags — the columns a phone shows instead of the desktop's. */
+  .rows .nm { display: flex; flex-direction: column; min-width: 0; }
+  .rows .nm-text, .cols li .nm-clip {
+    white-space: normal;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    word-break: break-word;
+  }
+  .tiles .nm {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    white-space: normal;
+    word-break: break-word;
+  }
+  /* Sticky chrome costs vertical space, which a phone has least of. */
+  .toolbar { top: 52px; }
+}
+
+/* A toggle that reads as on. Everything else in the bar is momentary. */
+.p-btn.on { color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); }
+
+/* ── The player, laid out in two rows ────────────────────────────────────────
+   Controls, title and counter compete for one line, and every button added —
+   shuffle was the last — takes width from the seek bar, which is the one control
+   that needs it. The bar now spans the full width underneath them, where its
+   length is a property of the window rather than of how many buttons there are. */
+.player { flex-wrap: wrap; row-gap: 8px; }
+.player .p-scrub {
+  order: 10;                 /* last, whatever the source order */
+  flex: 1 0 100%;            /* its own row, full width */
+  display: flex; align-items: center; gap: 10px;
+}
+.player .p-range { flex: 1; min-width: 0; }
+.p-body { flex: 1 1 200px; }
+
+@media (max-width: 720px) {
+  /* On a phone the counter is the least useful thing competing for the row. */
+  .player .p-count { display: none; }
+  .player { padding: 8px 10px; gap: 10px; }
+}
+
+/* A document drawn into the page. Scrolls as one continuous run of pages, which
+   is how a phone expects to read; each page keeps a visible edge so the break is
+   obvious. */
+.pdf { width: 100%; height: 100%; overflow: auto; }
+.pdf-pages { display: flex; flex-direction: column; gap: 12px; padding: 4px; }
+.pdf-page {
+  display: block; width: 100%; height: auto;
+  background: #fff; border-radius: 4px;
+  box-shadow: 0 1px 3px rgba(0,0,0,.25);
+}
+
+/* ── The top of the page stays at the top ────────────────────────────────────
+   The header and toolbar were each sticky against the viewport, but the page
+   they sit in has horizontal padding and its own scroll context, so they slid a
+   few pixels before catching. Making the pair one sticky block fixes the seam
+   between them as well as the drift. */
+.browser { position: relative; }
+.chrome {
+  position: sticky; top: 0; z-index: 20;
+  background: var(--bg);
+  /* Covers the page padding, so nothing scrolls through the gap at the sides. */
+  margin: 0 -16px; padding: 0 16px;
+  box-shadow: 0 1px 0 var(--line);
+}
+.chrome .bar, .chrome .toolbar { position: static; box-shadow: none; }
+.rows li.rowhead { top: 0; }
+
+/* ── A room's position, and moving it ────────────────────────────────────────
+ *
+ * The tower could always start and stop a room but never move through what it
+ * was playing, which is the control an hour-long video most needs from another
+ * room. */
+.zone-seek {
+  display: flex; align-items: center; gap: 10px; margin-top: 8px;
+}
+.zone-seek .time {
+  font-size: 11.5px; color: var(--muted);
+  font-variant-numeric: tabular-nums; min-width: 40px;
+}
+.zone-seek .time:last-child { text-align: right; }
+.zone-seek input[type="range"] {
+  flex: 1; min-width: 0; -webkit-appearance: none; appearance: none;
+  height: 20px; background: transparent; cursor: pointer;
+}
+.zone-seek input[type="range"]::-webkit-slider-runnable-track {
+  height: 5px; border-radius: 99px;
+  background: linear-gradient(
+    to right, var(--accent) var(--pct, 0%), var(--line) var(--pct, 0%)
+  );
+}
+.zone-seek input[type="range"]::-moz-range-track {
+  height: 5px; border-radius: 99px; background: var(--line);
+}
+.zone-seek input[type="range"]::-moz-range-progress {
+  height: 5px; border-radius: 99px; background: var(--accent);
+}
+/* Generous on purpose: this is dragged with a thumb. */
+.zone-seek input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none;
+  width: 15px; height: 15px; margin-top: -5px;
+  border-radius: 50%; background: var(--accent);
+  border: 2px solid var(--surface);
+}
+.zone-seek input[type="range"]::-moz-range-thumb {
+  width: 15px; height: 15px; border: 2px solid var(--surface);
+  border-radius: 50%; background: var(--accent);
+}
+
+/* ── A playlist entry that is playing ──────────────────────────────────────── */
+.pl-entries li.nowplaying { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.pl-entries li.nowplaying .pl-pos,
+.pl-entries li.nowplaying .pl-play { color: var(--accent); font-weight: 600; }
+
+/* ── What a room will play next ────────────────────────────────────────────── */
+.zone-queue { margin-top: 8px; }
+.q-list {
+  list-style: none; margin: 8px 0 0; padding: 0;
+  max-height: 260px; overflow-y: auto;   /* thirty-one rows is a scroll, not a page */
+  border: 1px solid var(--line); border-radius: 8px;
+}
+.q-list li + li { border-top: 1px solid var(--line); }
+.q-row {
+  display: flex; align-items: baseline; gap: 10px; width: 100%;
+  padding: 7px 10px; background: none; border: 0; text-align: left;
+  color: inherit; font: inherit; cursor: pointer;
+}
+.q-row:hover:not(:disabled) { background: color-mix(in srgb, var(--ink) 5%, transparent); }
+.q-row:disabled { cursor: default; }
+.q-pos {
+  min-width: 22px; text-align: right; font-size: 11.5px; color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.q-name { flex: 1; min-width: 0; font-size: 13px; }
+.q-artist { flex: 0 1 auto; }
+.q-list li.current { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.q-list li.current .q-pos, .q-list li.current .q-name { color: var(--accent); font-weight: 600; }
+
+/* ── Where a search looks ─────────────────────────────────────────────────────
+ *
+ * The same segmented control as the view switcher, deliberately: one toggle
+ * whose label changed read as a caption rather than a control, and went unseen.
+ * The folder name is clipped rather than allowed to push the row wide — a
+ * Hebrew folder path is long and the phone is narrow. */
+/* ── The search row ───────────────────────────────────────────────────────────
+ *
+ * The box, where it looks, and what it found — one row, because they are one
+ * thought. The box used to live in the brand row, a long way from both of the
+ * things that describe it. */
+.searchrow {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 0 0; min-width: 0;
+}
+.searchrow .searchbox-wrap { flex: 1 1 auto; min-width: 0; position: relative; display: flex; }
+.searchrow .searchbox { flex: 1 1 auto; min-width: 0; padding-right: 38px; }
+
+/* The cross the browser only shows on focus, shown whenever there is text.
+   Hiding the native one so there are never two. */
+.searchbox::-webkit-search-cancel-button { display: none; }
+.searchclear {
+  position: absolute; right: 4px; top: 50%; transform: translateY(-50%);
+  width: 30px; height: 30px; padding: 0; line-height: 1;
+  display: grid; place-items: center;
+  background: transparent; border: 0; border-radius: 7px;
+  color: var(--muted); font-size: 13px; cursor: pointer;
+}
+.searchclear:hover { color: var(--ink); background: color-mix(in srgb, var(--ink) 7%, transparent); }
+.nowrap { white-space: nowrap; }
+.bar-spacer { flex: 1; }
+
+/* Where the search looks. One control with two states, so its label is the
+   answer and pressing it is the other one. */
+.scope {
+  display: inline-flex; align-items: center; gap: 6px;
+  /* Room for a folder name. The count moved down to the row below precisely so
+     this one does not have to be truncated to "Spani". */
+  flex: 0 1 auto; min-width: 0; max-width: 52%;
+  padding: 9px 12px; font-size: 13px; cursor: pointer;
+  background: transparent; color: var(--muted);
+  border: 1px solid var(--line); border-radius: 8px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.scope:hover { color: var(--ink); }
+.scope.here {
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--line));
+  color: var(--ink);
+}
+.scope-ic { font-size: 12px; opacity: .8; }
+
+/* A print failure belongs where the thing being printed is, not in a corner. */
+.v-print-note { margin: 0 16px 8px; }
+
+/* ── Casting ─────────────────────────────────────────────────────────────────
+ *
+ * Greyed rather than hidden when the format is wrong: a missing button raises
+ * "why can I not cast this?", while a dim one that explains itself answers it. */
+.v-btn.cast { display: inline-grid; place-items: center; padding: 6px 10px; }
+.v-btn.cast.off { opacity: .4; }
+.v-btn.cast.off:hover { opacity: .6; }
+
+/* ── Folders on this computer ───────────────────────────────────────────────
+ *
+ * Listed rather than typed: the server reaches only what is mounted into it,
+ * so offering a free-text path would mostly offer a way to name folders that
+ * do not exist from where it is standing. */
+.local-folders { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--line); }
+.local-folders h3 { margin: 0 0 8px; font-size: 14px; }
+.folder-list { list-style: none; margin: 8px 0; padding: 0; }
+.folder-list li {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 0; border-bottom: 1px solid var(--line);
+}
+.folder-list li:last-child { border-bottom: 0; }
+.folder-name { flex: 1; min-width: 0; font-family: var(--mono); font-size: 13px; }
+.local-folders .invite-link { display: block; margin: 8px 0; }
+
+/* ── Looking inside a file nothing can preview ──────────────────────────────
+ *
+ * Two views of the same bytes: text for a file whose extension is unfamiliar,
+ * hex for one that is not text at all. The body scrolls inside itself — a hex
+ * dump is wider than a phone and longer than a page, and neither should push
+ * the viewer around it sideways. */
+.raw {
+  display: flex; flex-direction: column; gap: 10px;
+  width: 100%; max-width: 1000px; margin: 0 auto; padding: 12px 16px 20px;
+  min-height: 0;
+}
+.raw-bar {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+}
+.raw-bar .seg { flex: none; }
+.raw-bar .zone-controls { margin-left: auto; }
+
+.raw-body {
+  margin: 0; padding: 14px 16px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 1.55;
+  overflow: auto;
+  max-height: 62vh;
+  tab-size: 4;
+}
+/* Text wraps, because prose in a narrow column is the point. A dump does not:
+   its columns only line up while every row is the same width. */
+.raw-body.text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.raw-body.hex  { white-space: pre; font-variant-numeric: tabular-nums; }
+
+@media (max-width: 720px) {
+  .raw-body { font-size: 11px; max-height: 55vh; }
+  .raw-bar .zone-controls { margin-left: 0; }
+}
+
+/* ── Browsing this computer for a folder ────────────────────────────────── */
+.browse-crumbs {
+  flex-wrap: nowrap; overflow-x: auto; padding-bottom: 4px;
+  -webkit-overflow-scrolling: touch;
+}
+.browse-crumbs .crumb { white-space: nowrap; }
+.browse-here {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 8px 0;
+}
+.folder-open {
+  display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0;
+  background: none; border: 0; padding: 0; cursor: pointer;
+  color: inherit; font: inherit; text-align: left;
+}
+.folder-open:hover .folder-name { color: var(--accent); }
+.folder-ic { color: var(--muted); font-size: 11px; }

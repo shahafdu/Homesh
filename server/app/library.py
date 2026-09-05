@@ -1,0 +1,727 @@
+"""Browsing, searching and source management.
+
+Everything here reads the *catalog*, not the source. That is deliberate: browsing and
+search keep working with the RAID powered off, which is the whole availability
+argument (ARCHITECTURE.md §3.3).
+"""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+from pathlib import Path
+from uuid import UUID
+
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
+from pydantic import BaseModel, Field
+from sqlalchemy import text
+
+from .access import can_read, library_scope, visible
+from .config import get_settings
+from .db import get_engine
+from .metadata import extract_for_source
+from .scanner import scan_source
+from .security import CurrentUser, require_user
+from .sources.local import LocalConnector
+
+log = logging.getLogger("homesh.library")
+router = APIRouter(prefix="/api", tags=["library"])
+
+
+def register_sources() -> None:
+    """Upsert every configured source at startup.
+
+    Idempotent, so restarts, added roots and newly shared Drive folders all do
+    the right thing.
+    """
+    _register_local()
+    _register_drive()
+
+
+def _register_local() -> None:
+    settings = get_settings()
+    roots = settings.parsed_media_roots
+    if not roots:
+        log.info("no MEDIA_ROOTS configured — nothing local to index yet")
+        return
+
+    with get_engine().begin() as conn:
+        for name, root in roots:
+            prefix = f"/local/{name.lower()}"
+            conn.execute(
+                text(
+                    """
+                    INSERT INTO sources (kind, name, mount_prefix)
+                    VALUES ('local', :name, :prefix)
+                    ON CONFLICT (mount_prefix) DO UPDATE SET name = EXCLUDED.name
+                    """
+                ),
+                {"name": name, "prefix": prefix},
+            )
+            reachable = LocalConnector(root).available
+            log.info("source %s -> %s (%s)", prefix, root,
+                     "reachable" if reachable else "NOT REACHABLE")
+
+
+def _slug(name: str) -> str:
+    """A stable, URL-safe mount name.
+
+    Folder names here are frequently not Latin — Hebrew, in this house — so a
+    naive ASCII slug would collapse several folders to the same empty string.
+    Non-ASCII names keep their characters; only path separators are replaced.
+    """
+    cleaned = name.strip().replace("/", "-").replace("\\", "-")
+    return "-".join(cleaned.split()).lower() or "folder"
+
+
+def _register_drive() -> None:
+    """Register each Drive folder shared with the service account.
+
+    Discovery rather than configuration: share a folder in Drive and it appears
+    here on the next restart, with nothing to edit.
+    """
+    from pathlib import Path
+
+    from .sources.gdrive import DriveError, shared_folders
+
+    key = Path(get_settings().gdrive_key_file)
+    if not key.is_file():
+        log.info("no Drive key at %s — Drive not configured", key)
+        return
+
+    try:
+        folders = shared_folders(key)
+    except DriveError as exc:
+        log.warning("could not list Drive folders: %s", exc)
+        return
+
+    if not folders:
+        log.info("Drive key present but no folders are shared with it yet")
+        return
+
+    with get_engine().begin() as conn:
+        for folder_id, name in folders:
+            prefix = f"/drive/{_slug(name)}"
+            conn.execute(
+                text(
+                    """
+                    INSERT INTO sources (kind, name, mount_prefix, remote_id)
+                    VALUES ('gdrive', :name, :prefix, :rid)
+                    ON CONFLICT (mount_prefix) DO UPDATE
+                    SET name = EXCLUDED.name, remote_id = EXCLUDED.remote_id
+                    """
+                ),
+                {"name": name, "prefix": prefix, "rid": folder_id},
+            )
+            log.info("source %s -> Drive folder %r", prefix, name)
+
+
+# ── Folders on this computer ────────────────────────────────────────────────
+#
+# A Drive folder is added by sharing it with the server's account: there is
+# nothing to type and nothing to browse. A folder on this machine is the
+# opposite, and until now there was no way to add one at all — MEDIA_ROOTS is an
+# environment variable, which is not an interface.
+#
+# The awkward truth this is built around: the server runs in a container and can
+# only see what has been mounted into it. Offering a box to type any path would
+# be a lie — most of what somebody typed would not exist from in here. So it
+# offers what is actually visible, and says plainly how to make more visible
+# when that is what is needed.
+
+# Where the host's media folder is mounted. Fixed in docker-compose.yml, which
+# is what makes it something the app can rely on rather than guess at.
+MEDIA_MOUNT = Path("/media/library")
+
+# What the app may browse. A wider, read-only view of the machine, so a folder
+# can be *chosen* rather than typed into a configuration file — which is what
+# "there is no way to add a local folder" actually meant.
+#
+# Mounted is not indexed. Nothing under here is read beyond listing folder names
+# until somebody picks one, and picking one is admin-only.
+BROWSE_ROOT = Path("/browse")
+
+# Folders nobody is looking for, skipped so the useful ones are visible. Windows
+# fills a home directory with these, and a list of forty entries where three
+# matter is a list nobody reads to the end.
+NOISE = {
+    "appdata", "application data", "cookies", "local settings", "nethood",
+    "printhood", "recent", "sendto", "start menu", "templates", "searches",
+    "$recycle.bin", "system volume information", "node_modules", "onedrivetemp",
+    "crossdevice", "links", "favorites", "contacts", "saved games", "3d objects",
+    "intelgraphicsprofiles",
+}
+
+
+def _worth_offering(folder: Path) -> bool:
+    """Whether a folder is one somebody might keep media in."""
+    return not folder.name.startswith(".") and folder.name.lower() not in NOISE
+
+
+def _looks_like_the_sample(root: Path) -> bool:
+    """The example folder that ships with the repository, mounted when nothing
+    else is.
+
+    Worth telling apart: somebody offered Music, Photos and Videos should know
+    whether those are examples or their own library.
+
+    By a marker file rather than by inference. The first version of this guessed
+    from the folder names and a file count, and was wrong immediately — the
+    fixtures had grown to nearly two hundred files and no longer looked like a
+    sample, so the interface would have offered them as somebody's music.
+    """
+    return (root / ".homesh-sample").is_file()
+
+
+@router.get("/sources/local/browse")
+async def browse_local(
+    at: str = Query("", description="Folder to look inside, relative to the browse root"),
+    user: CurrentUser = Depends(require_user),
+) -> dict:
+    """Look inside a folder on this computer.
+
+    The interface that was missing. Listing the top of one mounted folder was
+    not browsing: the folder somebody wants is three levels down inside their own
+    documents, and there was no way to get there — which is why "add a local
+    folder" still meant editing a file.
+
+    Counts the files directly inside rather than everything beneath. A subtree
+    count means walking the subtree, and walking a home directory to draw one
+    page of folder names is minutes of disk for a number nobody asked for.
+    """
+    if not user.is_admin:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "admin only")
+
+    def look() -> dict:
+        if not BROWSE_ROOT.is_dir():
+            return {"available": False, "at": "", "crumbs": [], "folders": [], "files": 0}
+
+        root = BROWSE_ROOT.resolve()
+        # Resolved, then confined — the order matters, and a symlink pointing out
+        # of the mount is exactly why.
+        here = (root / at).resolve() if at else root
+        if not here.is_dir() or not here.is_relative_to(root):
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "no such folder")
+
+        with get_engine().connect() as conn:
+            taken = {
+                r[0]
+                for r in conn.execute(
+                    text("SELECT remote_id FROM sources WHERE kind = 'local'")
+                ).all()
+                if r[0]
+            }
+
+        folders, files = [], 0
+        try:
+            for child in sorted(here.iterdir(), key=lambda c: c.name.lower()):
+                try:
+                    if child.is_dir():
+                        if _worth_offering(child):
+                            folders.append(
+                                {
+                                    "name": child.name,
+                                    "path": str(child.relative_to(root)),
+                                    "added": str(child) in taken,
+                                }
+                            )
+                    elif child.is_file():
+                        files += 1
+                except OSError:
+                    # One entry the server may not stat is not a reason to fail
+                    # the whole listing.
+                    continue
+        except PermissionError:
+            raise HTTPException(
+                status.HTTP_403_FORBIDDEN,
+                "this computer will not let the server read that folder",
+            ) from None
+
+        relative = here.relative_to(root)
+        crumbs, walked = [], Path()
+        for part in relative.parts:
+            walked = walked / part
+            crumbs.append({"name": part, "path": str(walked)})
+
+        return {
+            "available": True,
+            "at": "" if str(relative) == "." else str(relative),
+            "crumbs": crumbs,
+            "folders": folders,
+            "files": files,
+            "added": str(here) in taken,
+            "sample": _looks_like_the_sample(root),
+        }
+
+    return await asyncio.to_thread(look)
+
+
+class LocalFolder(BaseModel):
+    """A folder to index, named relative to the browse root."""
+
+    path: str = Field(min_length=1, max_length=1000)
+
+
+@router.post("/sources/local", status_code=status.HTTP_201_CREATED)
+async def add_local_folder(
+    body: LocalFolder, user: CurrentUser = Depends(require_user)
+) -> dict:
+    """Index a folder on this computer.
+
+    Named rather than pathed: the caller picks from what the server offered, so
+    there is no path to get wrong and nothing outside the mount can be named.
+    """
+    if not user.is_admin:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "admin only")
+
+    # Resolved first, then confined — the order matters. A path that resolves
+    # outside the mount, by symlink or by dots, is refused whatever it looked
+    # like before resolution.
+    root = (BROWSE_ROOT / body.path).resolve()
+    if not root.is_dir() or not root.is_relative_to(BROWSE_ROOT.resolve()):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "no such folder")
+
+    prefix = f"/local/{root.name.lower().replace(' ', '-')}"
+    with get_engine().begin() as conn:
+        clash = conn.execute(
+            text("SELECT remote_id FROM sources WHERE mount_prefix = :p"), {"p": prefix}
+        ).scalar_one_or_none()
+        if clash is not None and clash != str(root):
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                f"a different folder is already indexed as {prefix}",
+            )
+
+        # Audience left undecided, which reads as admins-only. A folder added
+        # this afternoon must not become playable by the whole household before
+        # anybody has said it should be.
+        conn.execute(
+            text(
+                """
+                INSERT INTO sources (kind, name, mount_prefix, remote_id)
+                VALUES ('local', :name, :prefix, :root)
+                ON CONFLICT (mount_prefix)
+                DO UPDATE SET name = EXCLUDED.name, remote_id = EXCLUDED.remote_id
+                """
+            ),
+            {"name": root.name, "prefix": prefix, "root": str(root)},
+        )
+
+    forget_connectors()
+    log.info("added a local folder: %s", prefix)
+    return {"name": root.name, "mount_prefix": prefix}
+
+
+@router.post("/sources/discover", status_code=status.HTTP_202_ACCEPTED)
+async def discover_sources(user: CurrentUser = Depends(require_user)) -> dict:
+    """Look for folders that have been shared with this server since it started.
+
+    Sharing a folder with the Homesh account is how a folder is added — there is
+    no upload, and nothing to point at a path. But discovery only ran at startup,
+    so a folder shared this afternoon stayed invisible until the next restart,
+    with nothing in the interface to say so or to hurry it along.
+    """
+    if not user.is_admin:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "admin only")
+
+    before = _source_names()
+    await asyncio.to_thread(register_sources)
+    after = _source_names()
+
+    added = sorted(after - before)
+    log.info("discovery found %d new source(s)", len(added))
+    return {"added": added, "total": len(after)}
+
+
+def _source_names() -> set[str]:
+    with get_engine().connect() as conn:
+        return {r[0] for r in conn.execute(text("SELECT mount_prefix FROM sources")).all()}
+
+
+@router.get("/sources")
+async def list_sources(_: CurrentUser = Depends(require_user)) -> list[dict]:
+    with get_engine().connect() as conn:
+        rows = conn.execute(
+            text(
+                """
+                SELECT s.id, s.kind::text, s.name, s.mount_prefix, s.last_seen_at,
+                       count(r.id) FILTER (WHERE r.available) AS files,
+                       s.scan_state, s.scan_seen, s.scan_added, s.scan_error,
+                       s.scan_started_at
+                FROM sources s
+                LEFT JOIN replicas r ON r.source_id = s.id
+                GROUP BY s.id
+                ORDER BY s.mount_prefix
+                """
+            )
+        ).all()
+
+    return [
+        {
+            "id": str(r[0]),
+            "kind": r[1],
+            "name": r[2],
+            "mount_prefix": r[3],
+            "last_seen_at": r[4].isoformat() if r[4] else None,
+            "files": r[5],
+            # Never scanned is a different state from scanned-and-empty, and the
+            # two looked identical before — which is how a folder sat at zero
+            # files without anybody noticing it had simply never run.
+            "scan": {
+                "state": r[6],
+                "seen": r[7],
+                "added": r[8],
+                "error": r[9],
+                "started_at": r[10].isoformat() if r[10] else None,
+            },
+        }
+        for r in rows
+    ]
+
+
+@router.get("/browse")
+async def browse(
+    path: str = Query("", description="Virtual path, e.g. /local/raid/Music"),
+    user: CurrentUser = Depends(require_user),
+) -> dict:
+    """List one level of the unified namespace.
+
+    At the root this returns the mounted sources; deeper it returns real directories
+    and files, filename first (§2, principles 1 and 2).
+    """
+    path = "/" + path.strip("/")
+    rules = library_scope(user.id)
+
+    with get_engine().connect() as conn:
+        sources = conn.execute(
+            text("SELECT id, name, mount_prefix FROM sources ORDER BY mount_prefix")
+        ).all()
+
+        if path == "/":
+            return {
+                "path": "/",
+                "parent": None,
+                # A source the person cannot reach into is not listed at all.
+                # Absent rather than greyed out: there is nothing to be done
+                # about it, so showing it would only invite the question.
+                "dirs": [
+                    {"name": s[1], "path": s[2], "source": str(s[0])}
+                    for s in sources
+                    if visible(s[2], rules)
+                ],
+                "files": [],
+            }
+
+        match = next((s for s in sources if path == s[2] or path.startswith(s[2] + "/")), None)
+        if match is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "no source mounted at that path")
+
+        if not visible(path, rules):
+            # 404 rather than 403: a folder outside your scope should not be
+            # confirmed to exist.
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "no source mounted at that path")
+
+        source_id, _name, prefix = match
+        rel = path[len(prefix) :].strip("/")
+
+        # Immediate child directories, derived from stored paths.
+        dirs = conn.execute(
+            text(
+                """
+                SELECT child FROM (
+                    SELECT DISTINCT
+                        CASE
+                            WHEN :rel = '' THEN split_part(dir_path, '/', 1)
+                            ELSE split_part(
+                                substring(dir_path FROM char_length(:rel) + 2), '/', 1
+                            )
+                        END AS child
+                    FROM replicas
+                    WHERE source_id = :sid
+                      AND (:rel = '' OR dir_path = :rel OR dir_path LIKE :rel || '/%')
+                      AND dir_path <> :rel
+                ) t
+                WHERE child <> ''
+                ORDER BY child COLLATE natsort
+                """
+            ),
+            {"sid": str(source_id), "rel": rel},
+        ).all()
+
+        files = conn.execute(
+            text(
+                """
+                SELECT r.filename, r.ext, r.mtime, r.available,
+                       i.id, i.kind::text, i.size_bytes, i.duration_ms,
+                       md.meta
+                FROM replicas r
+                JOIN items i ON i.id = r.item_id
+                LEFT JOIN LATERAL (
+                    -- One value per key, resolving conflicts by origin. A tag the
+                    -- user set beats the file's own, which beats a lookup, which
+                    -- beats a model's guess — the precedence principle #1 exists
+                    -- to make visible.
+                    SELECT jsonb_object_agg(key, value) AS meta
+                    FROM (
+                        SELECT DISTINCT ON (m.key) m.key, m.value
+                        FROM item_metadata m
+                        WHERE m.item_id = i.id
+                          AND m.key IN ('title', 'artist', 'album', 'albumartist')
+                        ORDER BY m.key,
+                                 CASE m.origin
+                                     WHEN 'user' THEN 0
+                                     WHEN 'file' THEN 1
+                                     WHEN 'musicbrainz' THEN 2
+                                     ELSE 3
+                                 END
+                    ) best
+                ) md ON TRUE
+                WHERE r.source_id = :sid AND r.dir_path = :rel
+                ORDER BY r.filename COLLATE natsort
+                """
+            ),
+            {"sid": str(source_id), "rel": rel},
+        ).all()
+
+    # Up from a source root goes to the namespace root, not to a phantom "/local"
+    # that nothing is mounted at.
+    parent = "/" if path == prefix else (path.rsplit("/", 1)[0] or "/")
+    # Files are only listed where the folder itself is readable; a folder merely
+    # on the way to an allowed one shows its subfolders and nothing else.
+    readable_here = can_read(path, rules)
+    return {
+        "path": path,
+        "parent": parent,
+        "dirs": [
+            {"name": d[0], "path": f"{path}/{d[0]}"}
+            for d in dirs
+            if visible(f"{path}/{d[0]}", rules)
+        ],
+        "files": [] if not readable_here else [
+            {
+                "item_id": str(f[4]),
+                # The filename is the primary label, always. Metadata may add to it,
+                # never replace it (§2, principle 1).
+                "filename": f[0],
+                "ext": f[1],
+                "kind": f[5],
+                "size": f[6],
+                "duration_ms": f[7],
+                # Additive only: the filename above is never replaced by these.
+                "meta": f[8] or {},
+                "mtime": f[2].isoformat() if f[2] else None,
+                "available": f[3],
+            }
+            for f in files
+        ],
+    }
+
+
+@router.get("/search")
+async def search(
+    q: str = Query(min_length=1, max_length=200),
+    limit: int = Query(50, ge=1, le=200),
+    under: str | None = Query(
+        None, description="Restrict to this folder and everything below it"
+    ),
+    user: CurrentUser = Depends(require_user),
+) -> list[dict]:
+    """Filename search, typo-tolerant via trigram similarity.
+
+    `under` narrows it to one folder and its descendants. Searching the whole
+    library is the right default — you usually do not know where a thing is —
+    but once you are standing in a folder of 1,500 tracks, "everywhere" is the
+    wrong answer to "which of these is the live one".
+
+    Semantic search over content arrives in phase 6; this is the literal-filename
+    search that Plex never gave us.
+    """
+    # The mount prefix is part of the browsing path but not of dir_path, so a
+    # prefix match has to be built from both halves the same way a listing is.
+    scope_prefix = (under or "").rstrip("/")
+    with get_engine().connect() as conn:
+        rows = conn.execute(
+            text(
+                """
+                SELECT r.filename, r.dir_path, s.mount_prefix, r.available,
+                       i.id, i.kind::text, i.size_bytes,
+                       -- word_similarity scores the best-matching *substring*, so a
+                       -- typo'd query still ranks against a long filename. Plain
+                       -- similarity() compares whole strings and misses these.
+                       greatest(
+                           word_similarity(:q, r.filename),
+                           word_similarity(:q, r.dir_path)
+                       ) AS score,
+                       (r.filename ILIKE '%' || :q || '%') AS name_hit
+                FROM replicas r
+                JOIN items i   ON i.id = r.item_id
+                JOIN sources s ON s.id = r.source_id
+                -- Folder names are searchable too: "wall" should find the contents of
+                -- "Pink Floyd/The Wall" even though no filename contains it (§2).
+                WHERE (
+                       r.filename ILIKE '%' || :q || '%'
+                    OR r.dir_path ILIKE '%' || :q || '%'
+                    -- 0.3 measured against this corpus: genuine typos score 0.33-0.71
+                    -- ("trck"->track2 = 0.40, "beech"->beach = 0.33), unrelated pairs
+                    -- top out at 0.20. Retune if the corpus character changes.
+                    OR word_similarity(:q, r.filename) > 0.3
+                    OR word_similarity(:q, r.dir_path) > 0.3
+                  )
+                  AND (
+                       :under = ''
+                    OR s.mount_prefix || CASE WHEN r.dir_path = '' THEN ''
+                                              ELSE '/' || r.dir_path END = :under
+                    OR s.mount_prefix || CASE WHEN r.dir_path = '' THEN ''
+                                              ELSE '/' || r.dir_path END
+                       LIKE :under || '/%'
+                  )
+                ORDER BY name_hit DESC, score DESC, r.filename COLLATE natsort
+                LIMIT :lim
+                """
+            ),
+            {"q": q, "lim": limit, "under": scope_prefix},
+        ).all()
+
+    # Filtered after the query rather than inside it: a result someone cannot
+    # open must not appear, or search becomes a way to learn what exists.
+    rules = library_scope(user.id)
+    return [
+        {
+            "item_id": str(r[4]),
+            "filename": r[0],
+            "path": f"{r[2]}/{r[1]}".rstrip("/"),
+            "kind": r[5],
+            "size": r[6],
+            "available": r[3],
+        }
+        for r in rows
+        if can_read(f"{r[2]}/{r[1]}".rstrip("/"), rules)
+    ]
+
+
+@router.post("/sources/{source_id}/scan", status_code=status.HTTP_202_ACCEPTED)
+async def trigger_scan(
+    source_id: UUID,
+    background: BackgroundTasks,
+    user: CurrentUser = Depends(require_user),
+) -> dict:
+    if not user.is_admin:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "admin only")
+
+    with get_engine().connect() as conn:
+        row = conn.execute(
+            text("SELECT id, config_encrypted FROM sources WHERE id = :id"),
+            {"id": str(source_id)},
+        ).first()
+    if row is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "no such source")
+
+    connector = connector_for(source_id)
+    if connector is None:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "source has no configured root")
+
+    background.add_task(_scan_then_extract, source_id, connector)
+    return {"started": True, "source_id": str(source_id)}
+
+
+def _scan_then_extract(source_id: UUID, connector) -> None:
+    """Index first, read tags second.
+
+    Scanning only touches directory entries, so the folder view is usable almost
+    immediately. Reading tags opens every file, which is far slower — running it
+    after means a large library is browsable long before it is fully described.
+    """
+    scan_source(source_id, connector)
+    # Folders may have moved during a scan, so anything remembered about where
+    # things are is now a guess.
+    forget_connectors()
+
+    # Tag extraction reads bytes, which over a network is slow — hence the two
+    # passes. It is no longer skipped for remote sources, though: doing so left
+    # nine thousand Drive files with no artist, album or title at all, which is
+    # most of the library. Only the tag header is fetched, so the cost is
+    # kilobytes per file rather than the file.
+    extract_for_source(source_id, connector)
+
+    # Lengths for anything catalogued before they could be derived. Converges:
+    # only rows still missing one are read.
+    from .metadata import backfill_durations
+
+    backfill_durations(source_id, connector)
+
+
+# Connectors are kept rather than rebuilt. A Drive connector remembers which
+# folder ids it has already resolved, and that memory is the difference between
+# a one-second read and a seven-second one: built fresh, it has to walk from the
+# root of the drive, listing every folder on the way, before it can ask for a
+# single byte. A browser makes several range requests to play one song.
+_connectors: dict[UUID, object] = {}
+
+
+def forget_connectors() -> None:
+    """Drop the cache — after a scan, when the tree may have changed."""
+    _connectors.clear()
+
+
+def connector_for(source_id: UUID):
+    """The connector for a source, reused if one has already been built."""
+    existing = _connectors.get(source_id)
+    if existing is not None:
+        return existing
+
+    built = _build_connector(source_id)
+    if built is not None:
+        _connectors[source_id] = built
+    return built
+
+
+def _build_connector(source_id: UUID):
+    """Build the right connector for a source, whatever kind it is."""
+    from pathlib import Path
+
+    from .sources.gdrive import GoogleDriveConnector
+
+    with get_engine().connect() as conn:
+        row = conn.execute(
+            text("SELECT kind::text, mount_prefix, remote_id FROM sources WHERE id = :id"),
+            {"id": str(source_id)},
+        ).first()
+    if row is None:
+        return None
+
+    kind, prefix, remote_id = row
+    if kind == "gdrive":
+        if not remote_id:
+            return None
+        return GoogleDriveConnector(remote_id, Path(get_settings().gdrive_key_file))
+
+    root = _root_for_source(source_id)
+    return LocalConnector(root) if root else None
+
+
+def _root_for_source(source_id: UUID) -> str | None:
+    """Resolve a source's on-disk root from configuration.
+
+    Roots come from the environment rather than the database for now: they are
+    deployment facts, and keeping them out of the DB avoids a stored path that
+    silently stops matching the container's mounts.
+    """
+    settings = get_settings()
+    with get_engine().connect() as conn:
+        prefix = conn.execute(
+            text("SELECT mount_prefix FROM sources WHERE id = :id"), {"id": str(source_id)}
+        ).scalar_one_or_none()
+
+    for name, root in settings.parsed_media_roots:
+        if f"/local/{name.lower()}" == prefix:
+            return root
+
+    # Added through the interface rather than the environment. The path the
+    # server can reach it by is stored with the source, because for a folder on
+    # this machine the path *is* the provider's handle for it.
+    with get_engine().connect() as conn:
+        stored = conn.execute(
+            text("SELECT remote_id FROM sources WHERE id = :id AND kind = 'local'"),
+            {"id": str(source_id)},
+        ).scalar_one_or_none()
+    return stored or None

@@ -1,0 +1,373 @@
+import { useCallback, useEffect, useRef, useState } from "react";
+import { api } from "./api";
+import type { FileEntry } from "./library";
+
+export interface Track {
+  item_id: string;
+  filename: string;
+  /** Where it lives. Shown under the title, because the folder is often the album. */
+  path: string;
+  /** From the catalog, so the bar has a length before a byte has arrived.
+   *
+   *  Waiting for the media element to report one means the seek bar is dead for
+   *  the second or two a track takes to reach us from Drive — exactly when
+   *  somebody wanting the middle of a song reaches for it. */
+  duration_ms?: number | null;
+}
+
+/** Where the playing queue came from, so the player bar can go back to it.
+ *
+ * Without this, starting a playlist meant losing sight of it: the queue plays
+ * on, but there is no way to see the list you are inside or choose a different
+ * track from it. The player bar is the only thing on screen that knows anything
+ * is playing at all, so it is where the way back belongs.
+ */
+export interface QueueOrigin {
+  kind: "folder" | "playlist";
+  /** A playlist id, or a folder path. */
+  id: string;
+  label: string;
+}
+
+export interface PlayerState {
+  queue: Track[];
+  origin: QueueOrigin | null;
+  index: number;
+  playing: boolean;
+  position: number;
+  duration: number;
+  volume: number;
+  /** Set when playback fails for a reason worth telling the user about. */
+  error: string | null;
+}
+
+const INITIAL: PlayerState = {
+  queue: [],
+  origin: null,
+  index: -1,
+  playing: false,
+  position: 0,
+  duration: 0,
+  volume: 1,
+  error: null,
+};
+
+async function signedUrl(itemId: string): Promise<string> {
+  const { url } = await api.get<{ url: string; expires_in: number }>(
+    `/api/items/${itemId}/url`,
+  );
+  return url;
+}
+
+export function usePlayer() {
+  const [state, setState] = useState<PlayerState>(INITIAL);
+  /** Bumped by every load, so an overtaken one cannot report its own outcome. */
+  const generation = useRef(0);
+  // Play in a shuffled order. Kept beside the queue rather than shuffling the
+  // queue itself, so turning it off restores the album order rather than
+  // leaving a permanently jumbled list.
+  const [shuffle, setShuffle] = useState(false);
+  // Read inside callbacks that were created before the setting changed.
+  const shuffleRef = useRef(shuffle);
+  shuffleRef.current = shuffle;
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  // Kept in a ref as well as state so the media element's event handlers, which
+  // close over their first render, can still see the current queue.
+  const stateRef = useRef(state);
+  stateRef.current = state;
+
+  if (audioRef.current === null && typeof Audio !== "undefined") {
+    audioRef.current = new Audio();
+    audioRef.current.preload = "metadata";
+    // Needed for the element to be allowed to play at all on iOS, and for the
+    // lock-screen controls to attach to it.
+    audioRef.current.setAttribute("playsinline", "");
+  }
+
+  // Phones only let an <audio> element play if a gesture started it, and they
+  // judge that by whether play() was called *synchronously* inside the handler.
+  // Ours cannot be: the signed URL has to be fetched first, and by the time it
+  // arrives the gesture has expired — so playback was silently refused on every
+  // phone while working perfectly on a desktop, where the rule does not apply.
+  //
+  // The fix is to spend one real gesture unlocking the element. After a single
+  // play() inside a genuine touch, the phone treats it as user-initiated for the
+  // rest of the page's life.
+  const unlocked = useRef(false);
+  useEffect(() => {
+    const unlock = () => {
+      const audio = audioRef.current;
+      if (!audio || unlocked.current) return;
+      unlocked.current = true;
+      audio.play().then(
+        () => audio.pause(),
+        () => {
+          // Refused before anything was loaded, which is expected and harmless;
+          // the element is activated either way.
+        },
+      );
+    };
+
+    // Once, on the first touch anywhere. Capture, so a handler that stops
+    // propagation cannot cost us the only gesture we need.
+    const opts = { once: true, capture: true } as const;
+    document.addEventListener("pointerdown", unlock, opts);
+    document.addEventListener("keydown", unlock, opts);
+    return () => {
+      document.removeEventListener("pointerdown", unlock, opts);
+      document.removeEventListener("keydown", unlock, opts);
+    };
+  }, []);
+
+  // One renewal attempt per track. Without this, a genuinely broken file would
+  // loop forever between the error handler and a fresh URL.
+  const renewedFor = useRef<string | null>(null);
+
+  /** Start playing, giving the browser a second chance before complaining.
+   *
+   * A phone rejects the first play() often enough that one attempt is not
+   * evidence of anything. The retry costs a few hundred milliseconds and
+   * removes the error message that used to appear on every first tap.
+   */
+  const start = async (audio: HTMLAudioElement, mine: number): Promise<void> => {
+    try {
+      await audio.play();
+    } catch (first) {
+      if (first instanceof Error && first.name !== "NotAllowedError" &&
+          first.name !== "AbortError") {
+        throw first;
+      }
+      await new Promise((resolve) => window.setTimeout(resolve, 250));
+      // Somebody pressed next during the wait. Retrying here would call play()
+      // on a source this attempt knows nothing about, racing the load that
+      // replaced it — which is how pressing next twice stopped the music.
+      if (generation.current !== mine) return;
+      await audio.play();
+    }
+    if (generation.current !== mine) return;
+    setState((s) => ({ ...s, playing: true, error: null }));
+  };
+
+  const loadTrack = useCallback(async (index: number, resumeAt = 0) => {
+    const audio = audioRef.current;
+    const track = stateRef.current.queue[index];
+    if (!audio || !track) return;
+
+    // Every load supersedes the one before it. Without this, a load that has
+    // been overtaken still reports its own outcome — and since replacing src
+    // rejects the pending play() with AbortError, pressing next reliably wrote
+    // "not playing" over a track that had just started.
+    generation.current += 1;
+    const mine = generation.current;
+
+    // Move the cursor first. Setting it only on success made the UI lie about
+    // which track was selected whenever loading failed.
+    setState((s) => ({
+      ...s,
+      index,
+      position: resumeAt,
+      duration: 0,
+      playing: false,
+      error: null,
+    }));
+    stateRef.current = { ...stateRef.current, index };
+    renewedFor.current = null;
+
+    // The catalog's length, until the element reports its own. The bar is then
+    // usable immediately rather than after the first bytes arrive.
+    if (track.duration_ms) {
+      setState((s) => ({ ...s, duration: track.duration_ms! / 1000 }));
+    }
+
+    try {
+      const url = await signedUrl(track.item_id);
+      // Minting a URL is a round trip, and next can be pressed during it.
+      if (generation.current !== mine) return;
+      audio.src = url;
+      if (resumeAt > 0) audio.currentTime = resumeAt;
+      await start(audio, mine);
+    } catch (e) {
+      if (generation.current !== mine) return;
+      // Only after a real failure. A first tap on a phone routinely rejects for
+      // reasons that disappear on the retry — the element was not yet unlocked,
+      // or the source changed while play() was in flight — and reporting those
+      // meant every first tap said "could not play" over a song that then
+      // played perfectly on the second.
+      if (e instanceof Error && (e.name === "NotAllowedError" || e.name === "AbortError")) {
+        setState((s) => ({ ...s, playing: false }));
+      } else {
+        setState((s) => ({ ...s, error: `Could not play ${track.filename}` }));
+      }
+    }
+  }, []);
+
+  // A failure that has been overtaken by success is noise. The message stayed
+  // on screen over a playing track, which reads as the app not knowing what it
+  // is doing — and on a phone the first attempt fails often enough for that to
+  // be the normal case rather than the exception.
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    const clear = () => setState((s) => (s.error ? { ...s, error: null } : s));
+    audio.addEventListener("playing", clear);
+    return () => audio.removeEventListener("playing", clear);
+  }, []);
+
+  const play = useCallback(
+    (files: FileEntry[], startIndex: number, folderPath: string,
+     origin?: QueueOrigin | null) => {
+      // Queue the whole folder's audio, so playing one track behaves like an album
+      // rather than a single file.
+      const audioFiles = files.filter((f) => f.kind === "audio" && f.available);
+      const clicked = files[startIndex];
+      const queue: Track[] = audioFiles.map((f) => ({
+        item_id: f.item_id,
+        filename: f.filename,
+        path: folderPath,
+        duration_ms: f.duration_ms,
+      }));
+      const index = Math.max(0, queue.findIndex((t) => t.item_id === clicked.item_id));
+
+      const from =
+        origin ??
+        (folderPath
+          ? { kind: "folder" as const, id: folderPath, label: folderPath.split("/").pop() ?? "" }
+          : null);
+
+      setState((s) => ({ ...s, queue, index, origin: from, error: null }));
+      stateRef.current = { ...stateRef.current, queue, index };
+      void loadTrack(index);
+    },
+    [loadTrack],
+  );
+
+  const toggle = useCallback(() => {
+    const audio = audioRef.current;
+    if (!audio || stateRef.current.index < 0) return;
+    if (audio.paused) {
+      void audio.play();
+      setState((s) => ({ ...s, playing: true }));
+    } else {
+      audio.pause();
+      setState((s) => ({ ...s, playing: false }));
+    }
+  }, []);
+
+  const skip = useCallback(
+    (delta: number) => {
+      const { index, queue } = stateRef.current;
+
+      if (shuffleRef.current && queue.length > 1) {
+        // Any track but this one. Deliberately not a shuffled copy of the queue:
+        // that has to be regenerated whenever the queue changes, and gets it
+        // wrong when a folder is added to mid-listen.
+        let next = index;
+        while (next === index) next = Math.floor(Math.random() * queue.length);
+        void loadTrack(next);
+        return;
+      }
+
+      if (queue.length === 0) return;
+      // Next on the last track starts the list again — it did nothing before,
+      // and the button sat greyed out, which reads as broken. A list that has
+      // finished is exactly when somebody reaches for next.
+      //
+      // Previous on the first restarts it rather than jumping to the end:
+      // nobody presses previous hoping to be sent to the far end of a list.
+      const next = index + delta < 0 ? 0 : (index + delta) % queue.length;
+      void loadTrack(next);
+    },
+    [loadTrack],
+  );
+
+  const seek = useCallback((seconds: number) => {
+    const audio = audioRef.current;
+    if (audio) audio.currentTime = seconds;
+  }, []);
+
+  const setVolume = useCallback((v: number) => {
+    const audio = audioRef.current;
+    if (audio) audio.volume = v;
+    setState((s) => ({ ...s, volume: v }));
+  }, []);
+
+  const stop = useCallback(() => {
+    const audio = audioRef.current;
+    if (audio) {
+      audio.pause();
+      audio.removeAttribute("src");
+      audio.load();
+    }
+    setState(INITIAL);
+  }, []);
+
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio) return;
+
+    const onTime = () => setState((s) => ({ ...s, position: audio.currentTime }));
+    const onMeta = () => setState((s) => ({ ...s, duration: audio.duration || 0 }));
+    const onEnd = () => {
+      const { index, queue } = stateRef.current;
+      if (index + 1 < queue.length) void loadTrack(index + 1);
+      else setState((s) => ({ ...s, playing: false, position: 0 }));
+    };
+
+    const onError = async () => {
+      const { index, queue, position } = stateRef.current;
+      if (index < 0 || !queue[index]) return;
+      const track = queue[index];
+
+      // The element's error code separates the two very different causes.
+      // NETWORK means the fetch failed, which for us usually means the signed URL
+      // expired mid-track — recoverable. DECODE and SRC_NOT_SUPPORTED mean the
+      // file itself is unplayable, and re-fetching it would loop forever.
+      const code = audio.error?.code;
+      const recoverable =
+        code === MediaError.MEDIA_ERR_NETWORK && renewedFor.current !== track.item_id;
+
+      if (recoverable) {
+        renewedFor.current = track.item_id;
+        try {
+          audio.src = await signedUrl(track.item_id);
+          audio.currentTime = position;
+          await audio.play();
+          return;
+        } catch {
+          /* fall through to skipping */
+        }
+      }
+
+      // Unplayable. Move on rather than stalling the queue on one bad file.
+      if (index + 1 < queue.length) {
+        setState((s) => ({ ...s, error: `Skipped ${track.filename} — cannot play it` }));
+        void loadTrack(index + 1);
+      } else {
+        setState((s) => ({ ...s, playing: false, error: `Cannot play ${track.filename}` }));
+      }
+    };
+
+    audio.addEventListener("timeupdate", onTime);
+    audio.addEventListener("loadedmetadata", onMeta);
+    audio.addEventListener("ended", onEnd);
+    audio.addEventListener("error", onError);
+    return () => {
+      audio.removeEventListener("timeupdate", onTime);
+      audio.removeEventListener("loadedmetadata", onMeta);
+      audio.removeEventListener("ended", onEnd);
+      audio.removeEventListener("error", onError);
+    };
+  }, [loadTrack]);
+
+  const current = state.index >= 0 ? state.queue[state.index] : null;
+  return { state, current, play, toggle, skip, seek, setVolume, stop,
+           shuffle, setShuffle };
+}
+
+export function formatTime(seconds: number): string {
+  if (!isFinite(seconds) || seconds < 0) return "0:00";
+  const m = Math.floor(seconds / 60);
+  const s = Math.floor(seconds % 60);
+  return `${m}:${s.toString().padStart(2, "0")}`;
+}

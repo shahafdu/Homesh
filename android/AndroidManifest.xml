@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.homesh.tv"
+    android:versionCode="12"
+    android:versionName="0.5.7">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- Offering its own update. Android still shows its installer prompt; what
+         this removes is walking to each screen and typing a URL with a remote. -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+
+    <!-- A set-top box has no touchscreen. Without saying so the app is filtered
+         out of the store listing and, on some launchers, out of the drawer. -->
+    <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
+
+    <!-- Declared but not required: the boxes in this house are Android TV, yet
+         the same APK should still install on a tablet used as a spare screen. -->
+    <uses-feature android:name="android.software.leanback" android:required="false" />
+
+    <application
+        android:allowBackup="false"
+        android:banner="@drawable/banner"
+        android:icon="@drawable/ic_launcher"
+        android:label="@string/app_name"
+        android:networkSecurityConfig="@xml/network_security_config"
+        android:supportsRtl="true"
+        android:theme="@style/AppTheme">
+
+        <activity
+            android:name=".MainActivity"
+            android:configChanges="orientation|screenSize|keyboardHidden|navigation|uiMode"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:screenOrientation="landscape">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <!-- Both categories on purpose: LEANBACK_LAUNCHER puts it on the
+                     Android TV home row, and plain LAUNCHER covers the boxes
+                     that ship a phone-style launcher instead, where a
+                     leanback-only entry is invisible. -->
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!-- Passes the downloaded APK to the system installer as content, which
+             is the only form Android accepts for a package. Not exported: the
+             installer is granted access per-URI by the intent that starts it. -->
+        <provider
+            android:name=".UpdateProvider"
+            android:authorities="com.homesh.tv.updates"
+            android:exported="false"
+            android:grantUriPermissions="true" />
+
+        <activity
+            android:name=".SetupActivity"
+            android:configChanges="orientation|screenSize|keyboardHidden|navigation|uiMode"
+            android:exported="false"
+            android:screenOrientation="landscape" />
+    </application>
+</manifest>

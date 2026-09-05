@@ -1,0 +1,197 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  privacy:
+    name: No private data in tracked files
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Scan for LAN addresses, serials and device UUIDs
+        run: |
+          # This repository is public and describes a real house. Addresses,
+          # device serials and UUIDs belong in .env, never in a commit.
+          # RFC 5737 documentation ranges (192.0.2.x, 198.51.100.x, 203.0.113.x)
+          # are deliberately allowed — they can never be a real device.
+          fail=0
+
+          if git grep -nIE '(10|192\.168|172\.(1[6-9]|2[0-9]|3[01]))\.[0-9]{1,3}\.[0-9]{1,3}' -- . ; then
+            echo "::error::Private network address found in a tracked file."
+            echo "Use an RFC 5737 documentation address (192.0.2.x) in examples."
+            fail=1
+          fi
+
+          # Denon serials look like three letters then digits; device UUIDs are
+          # the SSDP USN form.
+          if git grep -nIE 'uuid:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}' -- . ; then
+            echo "::error::Device UUID found in a tracked file."
+            fail=1
+          fi
+
+          if [ "$fail" = "0" ]; then echo "clean"; fi
+          exit $fail
+
+  server:
+    name: Server — lint & schema
+    runs-on: ubuntu-latest
+    services:
+      db:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: homesh
+          POSTGRES_PASSWORD: homesh
+          POSTGRES_DB: homesh_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U homesh -d homesh_test"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install
+        working-directory: server
+        run: pip install -e ".[dev]"
+
+      - name: Lint
+        working-directory: server
+        run: ruff check app tests
+
+      - name: Apply migrations against a real Postgres
+        working-directory: server
+        env:
+          DATABASE_URL: postgresql+psycopg://homesh:homesh@localhost:5432/homesh_test
+        run: python -c "from app.db import run_migrations; print('applied:', run_migrations())"
+
+      - name: Migrations are idempotent
+        working-directory: server
+        env:
+          DATABASE_URL: postgresql+psycopg://homesh:homesh@localhost:5432/homesh_test
+        run: |
+          python - <<'PY'
+          from app.db import run_migrations
+          again = run_migrations()
+          assert again == [], f"re-running migrations was not a no-op: {again}"
+          print("idempotent")
+          PY
+
+      - name: Tests
+        working-directory: server
+        env:
+          DATABASE_URL: postgresql+psycopg://homesh:homesh@localhost:5432/homesh_test
+          # MASTER_KEY and SECRET_KEY are deliberately not set here. conftest.py
+          # supplies valid 32-byte defaults via setdefault, and duplicating them
+          # meant one copy could drift — which it did: the value here decoded to
+          # 33 bytes and failed validation.
+        run: pytest tests -q
+
+  web:
+    name: Web — typecheck & build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install
+        working-directory: web
+        run: npm install
+      - name: Build (runs tsc)
+        working-directory: web
+        run: npm run build
+
+  tv:
+    name: Android TV — build APK
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      # The runner already carries the Android SDK, so nothing is downloaded.
+      # The build uses aapt2/javac/d8/apksigner directly — no Gradle, no AGP,
+      # and no third-party Android dependencies to resolve.
+      - name: Build
+        run: bash tools/build-tv-apk.sh
+        env:
+          # A throwaway key per run. The APK from CI is for testing; the copy
+          # installed on a real box is signed by the key on the machine that
+          # built it, which is what keeps upgrades working there.
+          HOMESH_TV_KEYSTORE: ${{ runner.temp }}/ci-signing.jks
+      - name: Check what it declares
+        run: |
+          BT=$(ls -1d "$ANDROID_HOME"/build-tools/*/ | sort -V | tail -1)
+          "${BT}aapt2" dump badging build/homesh-tv.apk > badging.txt
+          cat badging.txt
+          # The launcher entry is the whole point of shipping a native shell;
+          # losing it would leave an APK that installs and cannot be opened.
+          grep -q "leanback-launchable-activity" badging.txt
+          grep -q "application-label:'Homesh'" badging.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: homesh-tv-apk
+          path: build/homesh-tv.apk
+          if-no-files-found: error
+
+  image:
+    name: Image — multi-arch build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - name: Build for amd64 and arm64
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: server/Dockerfile
+          # Proves the Pi / Oracle Ampere target keeps working (ARCHITECTURE.md §3.4).
+          platforms: linux/amd64,linux/arm64
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  codeql:
+    name: CodeQL
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [python, javascript-typescript, java-kotlin]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        if: matrix.language == 'java-kotlin'
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: github/codeql-action/init@v3
+        with:
+          # `languages`, plural. The singular key is silently ignored, which
+          # made every leg of this matrix analyse everything it could detect —
+          # harmless until the repository gained a language that needs building,
+          # at which point both legs failed on it.
+          languages: ${{ matrix.language }}
+      # CodeQL learns Java by watching it compile, so the real build runs here
+      # rather than leaving autobuild to guess at a project with no Gradle file.
+      - name: Build the TV app
+        if: matrix.language == 'java-kotlin'
+        run: bash tools/build-tv-apk.sh
+        env:
+          HOMESH_TV_KEYSTORE: ${{ runner.temp }}/codeql-signing.jks
+      - uses: github/codeql-action/analyze@v3

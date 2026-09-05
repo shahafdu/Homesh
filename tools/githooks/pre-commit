@@ -1,0 +1,31 @@
+#!/bin/sh
+#
+# Refuse to commit a private address or a device id.
+#
+# This repository is public and describes a real house. The check already exists
+# in CI and in the test runner, and it has still been reached three times — each
+# time by editing a file *after* running the tests, which is the ordinary order
+# of things. A check that runs when you remember to run it is not a check.
+#
+# Only staged content is examined, so an address that lives in .env or in a
+# working file nobody is committing is none of its business.
+
+leaks=$(git diff --cached -U0 --diff-filter=ACM \
+        | grep -E '^\+' | grep -v '^+++' \
+        | grep -nE '(10|192\.168|172\.(1[6-9]|2[0-9]|3[01]))\.[0-9]{1,3}\.[0-9]{1,3}')
+
+ids=$(git diff --cached -U0 --diff-filter=ACM \
+      | grep -E '^\+' | grep -v '^+++' \
+      | grep -nE 'uuid:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}')
+
+if [ -n "$leaks" ] || [ -n "$ids" ]; then
+  echo
+  echo "REFUSING: this commit adds a private address or a device id."
+  [ -n "$leaks" ] && echo "$leaks"
+  [ -n "$ids" ] && echo "$ids"
+  echo
+  echo "Use an RFC 5737 documentation address (192.0.2.x, 198.51.100.x), or"
+  echo "write it as a placeholder. Real addresses belong in .env, which is not"
+  echo "tracked."
+  exit 1
+fi
