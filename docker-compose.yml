@@ -43,11 +43,10 @@ services:
       # Your media, mounted READ-ONLY. The server indexes and streams; it has no
       # business writing to your library.
       - ${MEDIA_HOST_PATH:-./sample-media}:/media/library:ro
-      # Somewhere to browse from, so folders can be chosen in the app instead of
-      # typed into a file. Read-only, and nothing here is indexed until somebody
-      # picks it — the mount is what the server *may* look at, not what it does.
-      # Narrow it by setting BROWSE_ROOT to a folder rather than a whole drive.
-      - ${BROWSE_ROOT:-./sample-media}:/browse:ro
+      # Folders picked with tools/add-folder.ps1 are mounted read-only under
+      # /library by docker-compose.override.yml, which that script maintains.
+      # Nothing here enumerates the machine: the server sees the folders it has
+      # been given and no others.
       # The Drive credential, mounted read-only. Kept out of the image so it is
       # never baked into a layer that could be pushed somewhere.
       - ./.secrets:/run/secrets:ro

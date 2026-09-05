@@ -2,14 +2,10 @@
 
 from __future__ import annotations
 
-import uuid
-
 import pytest
 from sqlalchemy import text
 
-from app.main import app
 from app.scanner import scan_source
-from app.security import CurrentUser, require_user
 from app.sources.local import LocalConnector
 
 
@@ -169,112 +165,96 @@ class TestSearchInOneFolder:
 
 
 class TestAddingAFolderFromThisComputer:
-    """Browsing this computer for a folder to index.
+    """A folder picked on the PC arrives as a mount, and is found here.
 
-    A Drive folder arrives by being shared with the server's account. A folder
-    on this machine needed the opposite and had nothing: MEDIA_ROOTS is an
-    environment variable, and the first attempt listed the top of one mounted
-    folder — which is not browsing either. The folder somebody wants is three
-    levels down inside their own documents.
+    It works this way round because the obvious way cannot exist. A browser
+    never tells a page a real path — a file picker hands over names and bytes,
+    the File System Access API hands over a handle, and "D:\Media" is withheld
+    by every browser on purpose. The first attempt worked around that by having
+    the server list the machine and offer folders to click through, which was
+    the wrong shape of answer: a media server has no business enumerating
+    somebody's disk to be told one path.
 
-    Mounted is not indexed: what can be browsed is a read-only view, and nothing
-    under it is read beyond folder names until a folder is picked.
+    So tools/add-folder.ps1 opens the ordinary Windows picker, mounts what was
+    chosen read-only under /library, and restarts. All that is left here is to
+    notice it, the same way a Drive folder shared with the server is noticed.
     """
 
-    def _storage(self, monkeypatch, tmp_path):
+    def _mounted(self, monkeypatch, tmp_path, *names):
         from app import library
 
-        (tmp_path / "Videos" / "Holidays").mkdir(parents=True)
-        (tmp_path / "Videos" / "Holidays" / "one.mp4").write_bytes(b"x")
-        (tmp_path / "Videos" / "loose.mp4").write_bytes(b"x")
-        (tmp_path / "AppData").mkdir()        # noise
-        (tmp_path / ".config").mkdir()        # hidden
-        monkeypatch.setattr(library, "BROWSE_ROOT", tmp_path)
+        for name in names:
+            (tmp_path / name).mkdir(parents=True)
+        monkeypatch.setattr(library, "LIBRARY_MOUNTS", tmp_path)
         return tmp_path
 
-    def test_it_browses_from_the_top(self, client, monkeypatch, tmp_path):
-        self._storage(monkeypatch, tmp_path)
+    def test_a_mounted_folder_becomes_a_source(self, db, monkeypatch, tmp_path):
+        root = self._mounted(monkeypatch, tmp_path, "holidays")
 
-        body = client.get("/api/sources/local/browse").json()
-        assert body["available"] is True
-        assert [f["name"] for f in body["folders"]] == ["Videos"], (
-            "AppData and dot-folders are noise, not offerings"
-        )
+        from app.library import _register_mounted
 
-    def test_it_descends(self, client, monkeypatch, tmp_path):
-        self._storage(monkeypatch, tmp_path)
-
-        body = client.get("/api/sources/local/browse", params={"at": "Videos"}).json()
-        assert [f["name"] for f in body["folders"]] == ["Holidays"]
-        # Files directly inside, which is how you know you have arrived.
-        assert body["files"] == 1
-        assert [c["name"] for c in body["crumbs"]] == ["Videos"]
-
-    def test_a_folder_deep_inside_can_be_added(self, client, db, monkeypatch, tmp_path):
-        """The whole point: the folder somebody wants is not at the top."""
-        root = self._storage(monkeypatch, tmp_path)
-
-        r = client.post("/api/sources/local", json={"path": "Videos/Holidays"})
-        assert r.status_code == 201, r.text
-        assert r.json()["mount_prefix"] == "/local/holidays"
+        _register_mounted()
 
         with db.connect() as conn:
-            kind, stored = conn.execute(
-                text("SELECT kind::text, remote_id FROM sources WHERE mount_prefix = :p"),
+            kind, name, stored = conn.execute(
+                text(
+                    "SELECT kind::text, name, remote_id FROM sources "
+                    "WHERE mount_prefix = :p"
+                ),
                 {"p": "/local/holidays"},
             ).one()
-        assert kind == "local"
-        # The path is kept with the source: for a folder on this machine the
-        # path is the provider's handle for it, and a scan has nothing to open
-        # without it.
-        assert stored == str((root / "Videos" / "Holidays").resolve())
+        assert (kind, name) == ("local", "holidays")
+        # The path is kept with the source: for a folder on this machine it is
+        # the provider's handle for it, and a scan has nothing to open without.
+        assert stored == str(root / "holidays")
 
-    def test_it_shows_which_are_already_added(self, client, monkeypatch, tmp_path):
-        self._storage(monkeypatch, tmp_path)
-        client.post("/api/sources/local", json={"path": "Videos/Holidays"})
+    def test_registering_twice_does_not_duplicate(self, db, monkeypatch, tmp_path):
+        """Every restart runs this. A restart must not add the library again."""
+        self._mounted(monkeypatch, tmp_path, "music")
 
-        body = client.get("/api/sources/local/browse", params={"at": "Videos"}).json()
-        assert body["folders"][0]["added"] is True
+        from app.library import _register_mounted
 
-    def test_a_path_that_climbs_out_is_refused(self, client, monkeypatch, tmp_path):
-        """Confinement checked after resolution, not before — the project rule."""
-        self._storage(monkeypatch, tmp_path)
+        _register_mounted()
+        _register_mounted()
 
-        for climb in ("..", "../..", "Videos/../../elsewhere", "/etc"):
-            assert client.post(
-                "/api/sources/local", json={"path": climb}
-            ).status_code == 404, climb
-            assert client.get(
-                "/api/sources/local/browse", params={"at": climb}
-            ).status_code == 404, climb
+        with db.connect() as conn:
+            count = conn.execute(
+                text("SELECT count(*) FROM sources WHERE mount_prefix = :p"),
+                {"p": "/local/music"},
+            ).scalar()
+        assert count == 1
 
-    def test_a_symlink_out_is_refused(self, client, monkeypatch, tmp_path):
-        """Which is the whole reason confinement comes after resolution."""
-        root = self._storage(monkeypatch, tmp_path)
-        outside = tmp_path.parent / "not-mine"
-        outside.mkdir(exist_ok=True)
-        try:
-            (root / "Escape").symlink_to(outside, target_is_directory=True)
-        except (OSError, NotImplementedError):
-            pytest.skip("this platform will not make symlinks without privileges")
+    def test_files_beside_the_folders_are_ignored(self, db, monkeypatch, tmp_path):
+        """Only directories are mounts. Anything else is somebody's mistake."""
+        self._mounted(monkeypatch, tmp_path, "videos")
+        (tmp_path / "stray.txt").write_bytes(b"x")
+        (tmp_path / ".hidden").mkdir()
 
-        assert client.post("/api/sources/local", json={"path": "Escape"}).status_code == 404
-        assert client.get(
-            "/api/sources/local/browse", params={"at": "Escape"}
-        ).status_code == 404
+        from app.library import _register_mounted
 
-    def test_only_an_administrator_may_browse_or_add(self, client, monkeypatch, tmp_path):
-        """Browsing names folders on somebody's computer. That is not for everyone."""
-        self._storage(monkeypatch, tmp_path)
+        _register_mounted()
 
-        ordinary = CurrentUser(
-            id=uuid.uuid4(), handle="guest", display_name="Guest", is_admin=False
-        )
-        app.dependency_overrides[require_user] = lambda: ordinary
-        try:
-            assert client.get("/api/sources/local/browse").status_code == 403
-            assert client.post(
-                "/api/sources/local", json={"path": "Videos"}
-            ).status_code == 403
-        finally:
-            app.dependency_overrides.pop(require_user, None)
+        with db.connect() as conn:
+            names = {
+                r[0]
+                for r in conn.execute(
+                    text("SELECT name FROM sources WHERE kind = 'local'")
+                )
+            }
+        assert "stray.txt" not in names and ".hidden" not in names
+        assert "videos" in names
+
+    def test_nothing_mounted_is_not_an_error(self, monkeypatch, tmp_path):
+        """The ordinary state of a fresh install, and of every CI run."""
+        from app import library
+
+        monkeypatch.setattr(library, "LIBRARY_MOUNTS", tmp_path / "absent")
+        library._register_mounted()  # must not raise
+
+    def test_the_server_has_no_endpoint_that_lists_this_machine(self, client):
+        """The complaint that caused this design, kept from coming back.
+
+        Nothing the server exposes should enumerate the folders on the host.
+        """
+        assert client.get("/api/sources/local/browse").status_code == 404
+        assert client.post("/api/sources/local", json={"path": "Videos"}).status_code == 404

@@ -13,7 +13,6 @@ from pathlib import Path
 from uuid import UUID
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
-from pydantic import BaseModel, Field
 from sqlalchemy import text
 
 from .access import can_read, library_scope, visible
@@ -38,11 +37,48 @@ def register_sources() -> None:
     _register_drive()
 
 
+# Folders picked on the PC and mounted here, one directory each.
+#
+# A browser cannot hand a server a path — it deliberately hides them, so a file
+# picker in the web app returns names and bytes and never "D:\Media". That is
+# why this arrives the other way round: the folder is chosen on the machine
+# itself, with the ordinary Windows picker, and mounted read-only. The server
+# then finds it here, exactly as it finds a Drive folder that has been shared
+# with it — nothing to type, and no reason for it to go looking through
+# anybody's disk.
+LIBRARY_MOUNTS = Path("/library")
+
+
+def _register_mounted() -> None:
+    """Register each folder mounted under /library."""
+    if not LIBRARY_MOUNTS.is_dir():
+        return
+
+    with get_engine().begin() as conn:
+        for folder in sorted(LIBRARY_MOUNTS.iterdir()):
+            if not folder.is_dir() or folder.name.startswith("."):
+                continue
+            prefix = f"/local/{folder.name.lower()}"
+            conn.execute(
+                text(
+                    """
+                    INSERT INTO sources (kind, name, mount_prefix, remote_id)
+                    VALUES ('local', :name, :prefix, :root)
+                    ON CONFLICT (mount_prefix)
+                    DO UPDATE SET name = EXCLUDED.name, remote_id = EXCLUDED.remote_id
+                    """
+                ),
+                {"name": folder.name, "prefix": prefix, "root": str(folder)},
+            )
+            log.info("source %s -> %s", prefix, folder)
+
+
 def _register_local() -> None:
+    _register_mounted()
+
     settings = get_settings()
     roots = settings.parsed_media_roots
     if not roots:
-        log.info("no MEDIA_ROOTS configured — nothing local to index yet")
         return
 
     with get_engine().begin() as conn:
@@ -114,202 +150,6 @@ def _register_drive() -> None:
                 {"name": name, "prefix": prefix, "rid": folder_id},
             )
             log.info("source %s -> Drive folder %r", prefix, name)
-
-
-# ── Folders on this computer ────────────────────────────────────────────────
-#
-# A Drive folder is added by sharing it with the server's account: there is
-# nothing to type and nothing to browse. A folder on this machine is the
-# opposite, and until now there was no way to add one at all — MEDIA_ROOTS is an
-# environment variable, which is not an interface.
-#
-# The awkward truth this is built around: the server runs in a container and can
-# only see what has been mounted into it. Offering a box to type any path would
-# be a lie — most of what somebody typed would not exist from in here. So it
-# offers what is actually visible, and says plainly how to make more visible
-# when that is what is needed.
-
-# Where the host's media folder is mounted. Fixed in docker-compose.yml, which
-# is what makes it something the app can rely on rather than guess at.
-MEDIA_MOUNT = Path("/media/library")
-
-# What the app may browse. A wider, read-only view of the machine, so a folder
-# can be *chosen* rather than typed into a configuration file — which is what
-# "there is no way to add a local folder" actually meant.
-#
-# Mounted is not indexed. Nothing under here is read beyond listing folder names
-# until somebody picks one, and picking one is admin-only.
-BROWSE_ROOT = Path("/browse")
-
-# Folders nobody is looking for, skipped so the useful ones are visible. Windows
-# fills a home directory with these, and a list of forty entries where three
-# matter is a list nobody reads to the end.
-NOISE = {
-    "appdata", "application data", "cookies", "local settings", "nethood",
-    "printhood", "recent", "sendto", "start menu", "templates", "searches",
-    "$recycle.bin", "system volume information", "node_modules", "onedrivetemp",
-    "crossdevice", "links", "favorites", "contacts", "saved games", "3d objects",
-    "intelgraphicsprofiles",
-}
-
-
-def _worth_offering(folder: Path) -> bool:
-    """Whether a folder is one somebody might keep media in."""
-    return not folder.name.startswith(".") and folder.name.lower() not in NOISE
-
-
-def _looks_like_the_sample(root: Path) -> bool:
-    """The example folder that ships with the repository, mounted when nothing
-    else is.
-
-    Worth telling apart: somebody offered Music, Photos and Videos should know
-    whether those are examples or their own library.
-
-    By a marker file rather than by inference. The first version of this guessed
-    from the folder names and a file count, and was wrong immediately — the
-    fixtures had grown to nearly two hundred files and no longer looked like a
-    sample, so the interface would have offered them as somebody's music.
-    """
-    return (root / ".homesh-sample").is_file()
-
-
-@router.get("/sources/local/browse")
-async def browse_local(
-    at: str = Query("", description="Folder to look inside, relative to the browse root"),
-    user: CurrentUser = Depends(require_user),
-) -> dict:
-    """Look inside a folder on this computer.
-
-    The interface that was missing. Listing the top of one mounted folder was
-    not browsing: the folder somebody wants is three levels down inside their own
-    documents, and there was no way to get there — which is why "add a local
-    folder" still meant editing a file.
-
-    Counts the files directly inside rather than everything beneath. A subtree
-    count means walking the subtree, and walking a home directory to draw one
-    page of folder names is minutes of disk for a number nobody asked for.
-    """
-    if not user.is_admin:
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "admin only")
-
-    def look() -> dict:
-        if not BROWSE_ROOT.is_dir():
-            return {"available": False, "at": "", "crumbs": [], "folders": [], "files": 0}
-
-        root = BROWSE_ROOT.resolve()
-        # Resolved, then confined — the order matters, and a symlink pointing out
-        # of the mount is exactly why.
-        here = (root / at).resolve() if at else root
-        if not here.is_dir() or not here.is_relative_to(root):
-            raise HTTPException(status.HTTP_404_NOT_FOUND, "no such folder")
-
-        with get_engine().connect() as conn:
-            taken = {
-                r[0]
-                for r in conn.execute(
-                    text("SELECT remote_id FROM sources WHERE kind = 'local'")
-                ).all()
-                if r[0]
-            }
-
-        folders, files = [], 0
-        try:
-            for child in sorted(here.iterdir(), key=lambda c: c.name.lower()):
-                try:
-                    if child.is_dir():
-                        if _worth_offering(child):
-                            folders.append(
-                                {
-                                    "name": child.name,
-                                    "path": str(child.relative_to(root)),
-                                    "added": str(child) in taken,
-                                }
-                            )
-                    elif child.is_file():
-                        files += 1
-                except OSError:
-                    # One entry the server may not stat is not a reason to fail
-                    # the whole listing.
-                    continue
-        except PermissionError:
-            raise HTTPException(
-                status.HTTP_403_FORBIDDEN,
-                "this computer will not let the server read that folder",
-            ) from None
-
-        relative = here.relative_to(root)
-        crumbs, walked = [], Path()
-        for part in relative.parts:
-            walked = walked / part
-            crumbs.append({"name": part, "path": str(walked)})
-
-        return {
-            "available": True,
-            "at": "" if str(relative) == "." else str(relative),
-            "crumbs": crumbs,
-            "folders": folders,
-            "files": files,
-            "added": str(here) in taken,
-            "sample": _looks_like_the_sample(root),
-        }
-
-    return await asyncio.to_thread(look)
-
-
-class LocalFolder(BaseModel):
-    """A folder to index, named relative to the browse root."""
-
-    path: str = Field(min_length=1, max_length=1000)
-
-
-@router.post("/sources/local", status_code=status.HTTP_201_CREATED)
-async def add_local_folder(
-    body: LocalFolder, user: CurrentUser = Depends(require_user)
-) -> dict:
-    """Index a folder on this computer.
-
-    Named rather than pathed: the caller picks from what the server offered, so
-    there is no path to get wrong and nothing outside the mount can be named.
-    """
-    if not user.is_admin:
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "admin only")
-
-    # Resolved first, then confined — the order matters. A path that resolves
-    # outside the mount, by symlink or by dots, is refused whatever it looked
-    # like before resolution.
-    root = (BROWSE_ROOT / body.path).resolve()
-    if not root.is_dir() or not root.is_relative_to(BROWSE_ROOT.resolve()):
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "no such folder")
-
-    prefix = f"/local/{root.name.lower().replace(' ', '-')}"
-    with get_engine().begin() as conn:
-        clash = conn.execute(
-            text("SELECT remote_id FROM sources WHERE mount_prefix = :p"), {"p": prefix}
-        ).scalar_one_or_none()
-        if clash is not None and clash != str(root):
-            raise HTTPException(
-                status.HTTP_409_CONFLICT,
-                f"a different folder is already indexed as {prefix}",
-            )
-
-        # Audience left undecided, which reads as admins-only. A folder added
-        # this afternoon must not become playable by the whole household before
-        # anybody has said it should be.
-        conn.execute(
-            text(
-                """
-                INSERT INTO sources (kind, name, mount_prefix, remote_id)
-                VALUES ('local', :name, :prefix, :root)
-                ON CONFLICT (mount_prefix)
-                DO UPDATE SET name = EXCLUDED.name, remote_id = EXCLUDED.remote_id
-                """
-            ),
-            {"name": root.name, "prefix": prefix, "root": str(root)},
-        )
-
-    forget_connectors()
-    log.info("added a local folder: %s", prefix)
-    return {"name": root.name, "mount_prefix": prefix}
 
 
 @router.post("/sources/discover", status_code=status.HTTP_202_ACCEPTED)

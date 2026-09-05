@@ -143,32 +143,6 @@ export const documentUrl = (itemId: string) => `/api/documents/${itemId}`;
 
 export const scanSource = (id: string) => api.post(`/api/sources/${id}/scan`);
 
-/** A folder on this computer, as offered for browsing. */
-export interface BrowsableFolder {
-  name: string;
-  /** Relative to the browse root — what the server wants back. */
-  path: string;
-  added: boolean;
-}
-
-export interface Browsing {
-  /** Whether anything on this computer is available to browse at all. */
-  available: boolean;
-  at: string;
-  crumbs: { name: string; path: string }[];
-  folders: BrowsableFolder[];
-  /** Files directly in this folder, which is how you know you have arrived. */
-  files: number;
-  added?: boolean;
-  sample?: boolean;
-}
-
-export const browseLocal = (at = "") =>
-  api.get<Browsing>(`/api/sources/local/browse?at=${encodeURIComponent(at)}`);
-
-export const addLocalFolder = (path: string) =>
-  api.post<{ name: string; mount_prefix: string }>("/api/sources/local", { path });
-
 /** Look for folders shared with this server since it started.
  *
  * Sharing a folder with the Homesh account is how a folder is added — there is
