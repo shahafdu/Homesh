@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    The Android TV home row banner, 320x180 as the launcher expects.
+
+    A vector rather than a PNG so the artwork is readable, reviewable text in a
+    public repository and scales to whatever density a box reports.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="320dp"
+    android:height="180dp"
+    android:viewportWidth="320"
+    android:viewportHeight="180">
+
+    <path
+        android:fillColor="#14100c"
+        android:pathData="M0,0h320v180h-320z" />
+
+    <!-- A roof over a mesh: the two halves of the name. -->
+    <path
+        android:pathData="M96,92 L136,58 L176,92"
+        android:strokeColor="#e0a458"
+        android:strokeWidth="5"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+    <path
+        android:pathData="M106,92 L106,128 L166,128 L166,92"
+        android:strokeColor="#e0a458"
+        android:strokeWidth="5"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+
+    <!-- Nodes, linked: several screens, one house. -->
+    <path
+        android:pathData="M204,72 L232,96 L204,120 M232,96 L204,72 M232,96 L204,120"
+        android:strokeColor="#8a7a64"
+        android:strokeWidth="3"
+        android:strokeLineCap="round" />
+    <path
+        android:fillColor="#e0a458"
+        android:pathData="M204,66m-7,0a7,7 0,1 1,14 0a7,7 0,1 1,-14 0" />
+    <path
+        android:fillColor="#e0a458"
+        android:pathData="M204,126m-7,0a7,7 0,1 1,14 0a7,7 0,1 1,-14 0" />
+    <path
+        android:fillColor="#e0a458"
+        android:pathData="M236,96m-7,0a7,7 0,1 1,14 0a7,7 0,1 1,-14 0" />
+</vector>

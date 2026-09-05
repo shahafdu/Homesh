@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The same roof mark as the banner, square and without the mesh, which is
+     unreadable at icon size. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <path
+        android:fillColor="#14100c"
+        android:pathData="M0,0h108v108h-108z" />
+    <path
+        android:pathData="M28,54 L54,32 L80,54"
+        android:strokeColor="#e0a458"
+        android:strokeWidth="7"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+    <path
+        android:pathData="M36,54 L36,78 L72,78 L72,54"
+        android:strokeColor="#e0a458"
+        android:strokeWidth="7"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+</vector>

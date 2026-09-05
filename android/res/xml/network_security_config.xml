@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    The server is reached over plain HTTP on the house network, so cleartext has
+    to be permitted: Android blocks it by default from API 28 onwards.
+
+    It cannot be narrowed to a specific host here. The address is DHCP-assigned
+    and differs per install, which is the same reason it is not in the source.
+    Confidentiality on the wire comes from the network the box is on; when the
+    server gains TLS this file is what should be tightened first.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true" />
+</network-security-config>

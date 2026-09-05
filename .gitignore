@@ -1,0 +1,56 @@
+# Secrets — never commit. Device UUIDs, serials and OAuth tokens live here.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets/
+.secrets/
+*.token
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Node
+node_modules/
+dist/
+.vite/
+*.tsbuildinfo
+
+# Local runtime state
+data/
+media-cache/
+thumbnails/
+*.sqlite
+*.db
+
+# Probe output (contains device serials)
+tools/*-probe.txt
+denon-probe.txt
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Local test fixture
+sample-media/
+
+# Python build artefacts
+*.egg-info/
+
+# Local deployment notes — describes a real house, never committed
+.local/
+
+# Android build output. The signing keystore lives in .local/ (already ignored)
+# — it is generated per machine and must never be published.
+build/
+*.jks
+*.keystore
