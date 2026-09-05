@@ -378,6 +378,27 @@ async def tv_apk() -> Response:
 
 _STATIC = Path(__file__).resolve().parent.parent / "static"
 
+# How long the browser may keep each thing.
+#
+# The page that names the others must always be checked. It carries the
+# content-hashed filename of the current build, so a stale copy points a phone
+# at an old bundle and the app it shows is however old that copy is — which is
+# indistinguishable, from the sofa, from a feature never having been built.
+# Without a Cache-Control header browsers apply a heuristic of their own, and on
+# a phone that can be hours.
+#
+# Everything under /assets carries a hash in its name, so it can be kept
+# forever: a changed file is a different name and is fetched because it has
+# never been seen.
+_SHELL_CACHING = {"Cache-Control": "no-cache"}
+_ASSET_CACHING = {"Cache-Control": "public, max-age=31536000, immutable"}
+
+
+def _caching_for(path: str) -> dict[str, str]:
+    """Forever for a hashed asset, always revalidate for anything else."""
+    return _ASSET_CACHING if path.startswith("assets/") else _SHELL_CACHING
+
+
 if _STATIC.is_dir():
 
     @app.get("/{path:path}", include_in_schema=False)
@@ -392,16 +413,16 @@ if _STATIC.is_dir():
         candidate = (_STATIC / path).resolve()
         # Reject traversal: the resolved path must stay inside the static root.
         if path and candidate.is_file() and candidate.is_relative_to(_STATIC):
-            return FileResponse(candidate)
+            return FileResponse(candidate, headers=_caching_for(path))
 
         # The TV is a second interface to the same system, served from the same
         # origin so it shares cookies and the WebSocket host.
         if path == "tv" or path.startswith("tv/"):
             tv = _STATIC / "tv.html"
             if tv.is_file():
-                return FileResponse(tv)
+                return FileResponse(tv, headers=_SHELL_CACHING)
 
-        return FileResponse(_STATIC / "index.html")
+        return FileResponse(_STATIC / "index.html", headers=_SHELL_CACHING)
 
 else:
     log.warning("no built client at %s — run the web dev server on :5173", _STATIC)
