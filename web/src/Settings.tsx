@@ -1,15 +1,11 @@
 import { useLockScroll } from "./useLockScroll";
-import { ApiError } from "./api";
 import { useCallback, useEffect, useState } from "react";
 import { addPasskey, listPasskeys, passkeysSupported, removePasskey, type Passkey } from "./auth";
 import {
-  addLocalFolder,
-  browseLocal,
   discoverSources,
   formatDate,
   listSources,
   scanSource,
-  type Browsing,
   type Source,
 } from "./library";
 import { PALETTES, type Appearance, type Palette, type Prefs } from "./prefs";
@@ -174,137 +170,41 @@ function Sources() {
       </button>
       {found && <p className="muted small">{found}</p>}
 
-      <LocalFolders onAdded={refresh} />
+      <LocalFolders />
     </div>
   );
 }
 
-/** Browsing this computer for a folder to index.
+/** How a folder on this PC gets into the library.
  *
- * A Drive folder arrives by being shared with the server's account. A folder on
- * this machine needed the opposite and had nothing: MEDIA_ROOTS is an
- * environment variable, and the first attempt at fixing that listed the top of
- * one mounted folder — which is not browsing either. The folder somebody wants
- * is three levels down inside their own documents.
+ * Not a browser. The first attempt at this listed the machine and let you click
+ * through it, which was the wrong shape of answer: a media server should not be
+ * enumerating somebody's disk to be told one path. It did that because a web
+ * page cannot do the obvious thing — no browser will tell a page a real path,
+ * so a picker in here returns names and bytes and never "D:\Media".
  *
- * What can be browsed is what has been mounted, read-only, and mounting is not
- * indexing: nothing is read beyond folder names until a folder is picked.
+ * So the picking happens on the PC, where Windows already has the dialog, and
+ * this only says so. Everything below is the same on a phone, which is the
+ * point of putting it here rather than in a readme nobody is holding.
  */
-function LocalFolders(props: { onAdded: () => void }) {
-  const [view, setView] = useState<Browsing | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [note, setNote] = useState<string | null>(null);
-
-  const go = useCallback(async (at: string) => {
-    setBusy(true);
-    setNote(null);
-    try {
-      setView(await browseLocal(at));
-    } catch (e) {
-      setNote(e instanceof ApiError ? e.message : String(e));
-    } finally {
-      setBusy(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    void go("");
-  }, [go]);
-
-  if (!view) return null;
-
+function LocalFolders() {
   return (
     <div className="local-folders">
       <h3>Folders on this computer</h3>
-
-      {!view.available && (
-        <p className="muted small">
-          Nothing on this computer is available to the server. Set{" "}
-          <code>BROWSE_ROOT</code> in <code>.env</code> to a folder to browse
-          from, and restart.
-        </p>
-      )}
-
-      {view.available && (
-        <>
-          {/* Where you are, and every step back to the top. On a phone the path
-              can be longer than the screen, so it scrolls rather than wrapping
-              into three lines of breadcrumbs. */}
-          <nav className="crumbs browse-crumbs">
-            <button className="crumb" onClick={() => void go("")}>
-              This computer
-            </button>
-            {view.crumbs.map((crumb) => (
-              <span key={crumb.path}>
-                <span className="sep">/</span>
-                <button className="crumb" onClick={() => void go(crumb.path)}>
-                  {crumb.name}
-                </button>
-              </span>
-            ))}
-          </nav>
-
-          {view.at && (
-            <div className="browse-here">
-              <span className="muted small">
-                {view.files} file{view.files === 1 ? "" : "s"} in this folder
-              </span>
-              {view.added ? (
-                <span className="badge">added</span>
-              ) : (
-                <button
-                  className="compact primary"
-                  disabled={busy}
-                  onClick={async () => {
-                    setBusy(true);
-                    setNote(null);
-                    try {
-                      const added = await addLocalFolder(view.at);
-                      setNote(`Added ${added.name}. Scan it to index what is in it.`);
-                      await go(view.at);
-                      props.onAdded();
-                    } catch (e) {
-                      setNote(e instanceof ApiError ? e.message : String(e));
-                    } finally {
-                      setBusy(false);
-                    }
-                  }}
-                >
-                  Add this folder
-                </button>
-              )}
-            </div>
-          )}
-
-          {view.folders.length > 0 ? (
-            <ul className="folder-list">
-              {view.folders.map((folder) => (
-                <li key={folder.path}>
-                  <button className="folder-open" onClick={() => void go(folder.path)}>
-                    <span className="folder-ic" aria-hidden="true">▸</span>
-                    <span className="folder-name nm-clip">{folder.name}</span>
-                  </button>
-                  {folder.added && <span className="badge">added</span>}
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="muted small">
-              No folders in here{view.files > 0 ? ` — just ${view.files} file(s)` : ""}.
-            </p>
-          )}
-
-          {view.sample && (
-            <p className="muted small">
-              <b>These are the example folders</b> that ship with Homesh, not
-              your library. Point <code>BROWSE_ROOT</code> at your own storage to
-              browse it.
-            </p>
-          )}
-        </>
-      )}
-
-      {note && <p className="muted small">{note}</p>}
+      <p className="muted small">
+        On the PC that runs Homesh, open PowerShell in the Homesh folder and
+        run:
+      </p>
+      <pre className="cmd">.	oolsdd-folder.ps1</pre>
+      <p className="muted small">
+        Windows asks which folder. Whatever you choose is added read-only and
+        appears above; press <b>Look for new folders</b> to index it.
+      </p>
+      <p className="muted small">
+        <code>-List</code> shows what has been added,{" "}
+        <code>-Remove &lt;name&gt;</code> takes one out again. Removing a folder
+        never touches the files in it.
+      </p>
     </div>
   );
 }

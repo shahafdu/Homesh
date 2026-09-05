@@ -18,6 +18,20 @@ ids=$(git diff --cached -U0 --diff-filter=ACM \
       | grep -E '^\+' | grep -v '^+++' \
       | grep -nE 'uuid:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}')
 
+# Files that exist to describe this machine. Ignored, so reaching here means
+# somebody forced one in.
+private=$(git diff --cached --name-only --diff-filter=ACM           | grep -xE 'docker-compose\.override\.yml|\.local/.*')
+
+if [ -n "$private" ]; then
+  echo
+  echo "REFUSING: this commit adds a file that describes this machine."
+  echo "$private"
+  echo
+  echo "These are ignored for a reason. If you meant to change how the file is"
+  echo "generated, change the generator, not the output."
+  exit 1
+fi
+
 if [ -n "$leaks" ] || [ -n "$ids" ]; then
   echo
   echo "REFUSING: this commit adds a private address or a device id."

@@ -153,7 +153,36 @@ Both are stored on your account, not in the browser, so you set them once.
 
 ---
 
-## 7. Keeping the catalog current
+## 7. Adding a folder of your own
+
+On the PC that runs Homesh, open PowerShell in the Homesh folder and run:
+
+```powershell
+.\tools\add-folder.ps1
+```
+
+Windows asks which folder. Whatever you choose is mounted **read-only**, the server
+restarts, and the folder appears as a source. Press **Look for new folders** in
+Settings to index what is in it.
+
+| | |
+|---|---|
+| `.\tools\add-folder.ps1 -List` | what has been added |
+| `.\tools\add-folder.ps1 -Remove music` | take one out again |
+| `.\tools\add-folder.ps1 -Path D:\Music` | skip the dialog |
+
+Removing a folder never touches the files in it. Its entries stay in the catalog,
+marked offline, until you remove the source in Settings.
+
+**Why it is not a button in the app.** A browser never tells a web page a real path:
+a file picker hands over names and bytes, and `D:\Media` is withheld on purpose. So
+either the folder is chosen on the machine that has it, or the server has to list your
+disk for you to click through — and a media server has no business enumerating
+somebody's storage to be told one path.
+
+---
+
+## 8. Keeping the catalog current
 
 Scanning is manual for now: go to the root screen and press **Rescan** next to a source.
 A rescan never creates duplicates, and files that have disappeared are marked *offline*
@@ -163,7 +192,7 @@ rather than deleted — so the catalog still remembers they exist and where.
 
 ---
 
-## 8. Troubleshooting
+## 9. Troubleshooting
 
 **"This file is on a source that is currently offline"**
 The catalog knows the file but the machine holding it isn't reachable. Expected when the
@@ -186,7 +215,7 @@ Press **Rescan**. Check the folder is actually mounted:
 
 ---
 
-## 9. Playing things
+## 10. Playing things
 
 **Music.** Click a track and the whole folder queues, so playing one file behaves like
 an album. The player bar stays put as you browse elsewhere. It has play/pause,
@@ -199,7 +228,7 @@ than stalling on it.
 items of the same kind in that folder, Escape closes. Video is *direct play* — the
 original file, decoded by your browser, with nothing re-encoded in between.
 
-## 10. Not built yet
+## 11. Not built yet
 
 - Google Drive and Google Photos
 - Casting to a TV or the Denon receiver; multi-room zones

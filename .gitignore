@@ -54,3 +54,7 @@ sample-media/
 build/
 *.jks
 *.keystore
+
+# Folders picked with tools/add-folder.ps1. Names real paths on a real machine,
+# which is exactly the kind of thing this repository must not publish.
+docker-compose.override.yml

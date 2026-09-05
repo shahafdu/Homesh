@@ -17,7 +17,7 @@ The list to work from. Everything else can proceed without you.
 
 | | What | Why it matters |
 |---|---|---|
-| ⏳ | **Add a folder of your own media** | Settings → *Folders on this computer* browses your storage. `BROWSE_ROOT` in `.env` sets where browsing starts — currently your user folder — and narrowing it narrows what the server may ever look at |
+| ⏳ | **Add a folder of your own media** | On the PC: `.\tools\add-folder.ps1`. Windows asks which folder; it is mounted read-only, the server restarts, and the folder appears. Then Settings → *Look for new folders* to index it. `-List` and `-Remove <name>` manage what has been added |
 
 ---
 

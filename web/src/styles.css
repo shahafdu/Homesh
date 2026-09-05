@@ -1324,12 +1324,6 @@ button.compact:disabled { opacity: .5; cursor: not-allowed; }
  * do not exist from where it is standing. */
 .local-folders { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--line); }
 .local-folders h3 { margin: 0 0 8px; font-size: 14px; }
-.folder-list { list-style: none; margin: 8px 0; padding: 0; }
-.folder-list li {
-  display: flex; align-items: center; gap: 10px;
-  padding: 8px 0; border-bottom: 1px solid var(--line);
-}
-.folder-list li:last-child { border-bottom: 0; }
 .folder-name { flex: 1; min-width: 0; font-family: var(--mono); font-size: 13px; }
 .local-folders .invite-link { display: block; margin: 8px 0; }
 
@@ -1372,20 +1366,15 @@ button.compact:disabled { opacity: .5; cursor: not-allowed; }
   .raw-bar .zone-controls { margin-left: 0; }
 }
 
-/* ── Browsing this computer for a folder ────────────────────────────────── */
-.browse-crumbs {
-  flex-wrap: nowrap; overflow-x: auto; padding-bottom: 4px;
+/* ── Adding a folder from this computer ─────────────────────────────────── */
+
+/* The command to run, shown as something to copy rather than to read. Scrolls
+   rather than wrapping: a broken command line is one somebody pastes wrong. */
+.cmd {
+  margin: 8px 0; padding: 10px 12px;
+  background: var(--surface); border: 1px solid var(--line); border-radius: 8px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 13px; color: var(--text);
+  overflow-x: auto; white-space: pre;
   -webkit-overflow-scrolling: touch;
 }
-.browse-crumbs .crumb { white-space: nowrap; }
-.browse-here {
-  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
-  padding: 8px 0;
-}
-.folder-open {
-  display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0;
-  background: none; border: 0; padding: 0; cursor: pointer;
-  color: inherit; font: inherit; text-align: left;
-}
-.folder-open:hover .folder-name { color: var(--accent); }
-.folder-ic { color: var(--muted); font-size: 11px; }
