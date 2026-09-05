@@ -7,7 +7,7 @@ to reconstruct the state of a large, half-finished system from memory.
 🔴 known broken · ⬜ not started · ⏳ waiting on Shahaf
 
 Last updated: 5 September 2026 · 364 tests · 18 migrations · CI green
-(verified with `tools/verify-ci.ps1`, not assumed)
+(verified with `tools/verify-ci.ps1`, not assumed) · repository recreated clean
 
 ---
 
@@ -17,7 +17,6 @@ The list to work from. Everything else can proceed without you.
 
 | | What | Why it matters |
 |---|---|---|
-| ⏳ | **Ask GitHub to purge one orphaned commit** | A real LAN address reached this public repository and the history has been rewritten — the branch is clean. But GitHub keeps a force-pushed commit reachable by its full SHA until it garbage-collects, and that one still holds the address. Only GitHub Support can remove it: support.github.com, quote the repository and commit `b1fcf4e`. The address is non-routable, so the exposure is small — but it is your rule and it was broken |
 | ⏳ | **Add a folder of your own media** | Settings → *Folders on this computer* browses your storage. `BROWSE_ROOT` in `.env` sets where browsing starts — currently your user folder — and narrowing it narrows what the server may ever look at |
 
 ---
