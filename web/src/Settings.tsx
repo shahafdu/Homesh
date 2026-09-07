@@ -1,13 +1,7 @@
 import { useLockScroll } from "./useLockScroll";
 import { useCallback, useEffect, useState } from "react";
 import { addPasskey, listPasskeys, passkeysSupported, removePasskey, type Passkey } from "./auth";
-import {
-  discoverSources,
-  formatDate,
-  listSources,
-  scanSource,
-  type Source,
-} from "./library";
+import { formatDate } from "./library";
 import { PALETTES, type Appearance, type Palette, type Prefs } from "./prefs";
 
 const APPEARANCES: { id: Appearance; label: string }[] = [
@@ -19,7 +13,6 @@ const APPEARANCES: { id: Appearance; label: string }[] = [
 export default function Settings(props: {
   prefs: Prefs;
   onChange: (patch: Partial<Prefs>) => void;
-  isAdmin: boolean;
   onLinkDevice: () => void;
   onClose: () => void;
 }) {
@@ -78,8 +71,6 @@ export default function Settings(props: {
           </div>
         </div>
 
-        {props.isAdmin && <Sources />}
-
         <div className="group">
           <label>This account</label>
           <Passkeys />
@@ -102,162 +93,6 @@ export default function Settings(props: {
   );
 }
 
-
-/** Where the library comes from, and what it is doing.
- *
- * Here rather than in the folder view: the root already lists these as folders
- * to open, and repeating them underneath as a panel to administer showed the
- * same things twice over. Browsing and maintaining are different jobs.
- */
-function Sources() {
-  const [sources, setSources] = useState<Source[]>([]);
-  const [looking, setLooking] = useState(false);
-  const [found, setFound] = useState<string | null>(null);
-
-  const refresh = useCallback(() => {
-    listSources().then(setSources).catch(() => undefined);
-  }, []);
-
-  useEffect(() => {
-    refresh();
-  }, [refresh]);
-
-  // While anything is scanning, keep asking. A Drive folder takes minutes, and a
-  // count that only moves when you happen to reload is not progress.
-  const scanning = sources.some((s) => s.scan?.state === "running");
-  useEffect(() => {
-    if (!scanning) return;
-    const poll = window.setInterval(refresh, 2000);
-    return () => window.clearInterval(poll);
-  }, [scanning, refresh]);
-
-  return (
-    <div className="group">
-      <label>Library sources</label>
-      <SourceList
-        sources={sources}
-        isAdmin
-        onScan={async (id) => {
-          await scanSource(id);
-          refresh();
-        }}
-      />
-
-      {/* How a folder is added: share it with the Homesh account in Drive, then
-          ask here. There is nothing to upload and no path to type. */}
-      <button
-        className="compact"
-        disabled={looking}
-        onClick={async () => {
-          setLooking(true);
-          setFound(null);
-          try {
-            const result = await discoverSources();
-            setFound(
-              result.added.length
-                ? `Added ${result.added.join(", ")}`
-                : "Nothing new — share a folder with the Homesh account in Drive first.",
-            );
-          } catch (e) {
-            setFound(e instanceof Error ? e.message : String(e));
-          } finally {
-            setLooking(false);
-            refresh();
-          }
-        }}
-      >
-        {looking ? "Looking…" : "Look for new folders"}
-      </button>
-      {found && <p className="muted small">{found}</p>}
-
-      <LocalFolders />
-    </div>
-  );
-}
-
-/** How a folder on this PC gets into the library.
- *
- * Not a browser. The first attempt at this listed the machine and let you click
- * through it, which was the wrong shape of answer: a media server should not be
- * enumerating somebody's disk to be told one path. It did that because a web
- * page cannot do the obvious thing — no browser will tell a page a real path,
- * so a picker in here returns names and bytes and never "D:\Media".
- *
- * So the picking happens on the PC, where Windows already has the dialog, and
- * this only says so. Everything below is the same on a phone, which is the
- * point of putting it here rather than in a readme nobody is holding.
- */
-function LocalFolders() {
-  return (
-    <div className="local-folders">
-      <h3>Folders on this computer</h3>
-      <p className="muted small">
-        On the PC that runs Homesh, open PowerShell in the Homesh folder and
-        run:
-      </p>
-      <pre className="cmd">.	oolsdd-folder.ps1</pre>
-      <p className="muted small">
-        Windows asks which folder. Whatever you choose is added read-only and
-        appears above; press <b>Look for new folders</b> to index it.
-      </p>
-      <p className="muted small">
-        <code>-List</code> shows what has been added,{" "}
-        <code>-Remove &lt;name&gt;</code> takes one out again. Removing a folder
-        never touches the files in it.
-      </p>
-    </div>
-  );
-}
-
-/** One line saying what this source is doing, or last did.
- *
- * "Never scanned" is called out because it is the state that hid a folder
- * sitting at zero files: indistinguishable, until now, from a folder that was
- * genuinely empty.
- */
-function describeScan(s: Source): string {
-  const scan = s.scan;
-  const files = `${s.files.toLocaleString()} files`;
-
-  if (scan?.state === "running") {
-    return scan.seen > 0
-      ? `Scanning — ${scan.seen.toLocaleString()} found so far`
-      : "Scanning — starting…";
-  }
-  if (scan?.state === "failed") return `${files} · scan failed: ${scan.error ?? "unknown"}`;
-  if (!scan?.state) return `${files} · never scanned`;
-  return s.last_seen_at ? `${files} · scanned ${formatDate(s.last_seen_at)}` : files;
-}
-
-function SourceList(props: {
-  sources: Source[];
-  isAdmin: boolean;
-  onScan: (id: string) => void;
-}) {
-  if (props.sources.length === 0) return null;
-  return (
-    <div className="sources">
-      <h2>Sources</h2>
-      {props.sources.map((s) => (
-        <div key={s.id} className="source">
-          <div>
-            <strong>{s.name}</strong> <span className="muted">{s.mount_prefix}</span>
-            <div className="muted small">{describeScan(s)}</div>
-          </div>
-          {props.isAdmin && (
-            <button
-              className="compact"
-              disabled={s.scan?.state === "running"}
-              onClick={() => props.onScan(s.id)}
-            >
-              {s.scan?.state === "running" ? "Scanning…" : "Rescan"}
-            </button>
-          )}
-        </div>
-      ))}
-    </div>
-  );
-}
 
 /** The devices that can sign in as you.
  *

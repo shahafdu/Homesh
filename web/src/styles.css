@@ -437,13 +437,11 @@ input[type="text"], input:not([type]), input[type="search"] {
 
 /* ── Sources & footer ───────────────────────────────────────────────────────── */
 
-.sources { margin-top: 36px; }
-.sources h2 {
-  font-size: 12px; text-transform: uppercase; letter-spacing: 0.07em; color: var(--muted);
-}
-.source {
+/* What a source is doing, and the button to make it do it again. On one row
+   with the scan line so a long folder name above can have the width. */
+.source-foot {
   display: flex; align-items: center; justify-content: space-between; gap: 16px;
-  padding: 12px 0; border-top: 1px solid var(--line);
+  flex-wrap: wrap; margin-top: 8px;
 }
 button.compact {
   padding: 6px 12px; font-size: 13px; cursor: pointer;
@@ -1317,15 +1315,15 @@ button.compact:disabled { opacity: .5; cursor: not-allowed; }
 .v-btn.cast.off { opacity: .4; }
 .v-btn.cast.off:hover { opacity: .6; }
 
-/* ── Folders on this computer ───────────────────────────────────────────────
+/* ── Adding a folder ──────────────────────────────────────────────────────
  *
- * Listed rather than typed: the server reaches only what is mounted into it,
- * so offering a free-text path would mostly offer a way to name folders that
- * do not exist from where it is standing. */
-.local-folders { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--line); }
-.local-folders h3 { margin: 0 0 8px; font-size: 14px; }
-.folder-name { flex: 1; min-width: 0; font-family: var(--mono); font-size: 13px; }
-.local-folders .invite-link { display: block; margin: 8px 0; }
+ * Instructions, not a control. No browser hands a page a real path, so the
+ * folder is picked on the PC with the ordinary Windows dialog and this only
+ * says how. Written out in the app because whoever needs it is usually
+ * holding a phone, not sitting at the machine. */
+.add-folder { margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--line); }
+.add-folder h3 { margin: 16px 0 8px; font-size: 14px; }
+.add-folder h3:first-child { margin-top: 0; }
 
 /* ── Looking inside a file nothing can preview ──────────────────────────────
  *

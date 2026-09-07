@@ -4,6 +4,7 @@ import { claimDeviceLink, login, logout, passkeysSupported, register } from "./a
 import Browser from "./Browser";
 import Player from "./Player";
 import Settings from "./Settings";
+import Sources from "./Sources";
 import FileActions from "./FileActions";
 import LinkDevice from "./LinkDevice";
 import People from "./People";
@@ -21,6 +22,7 @@ export default function App() {
   const [health, setHealth] = useState<Health | null>(null);
   const [prefs, setPrefs] = useState<Prefs>(DEFAULT_PREFS);
   const [showSettings, setShowSettings] = useState(false);
+  const [showSources, setShowSources] = useState(false);
   const player = usePlayer();
   const rooms = useRoomActivity();
   const [viewing, setViewing] = useState<{ files: FileEntry[]; index: number } | null>(null);
@@ -118,6 +120,7 @@ export default function App() {
           view={prefs.view}
           onViewChange={(view) => void changePrefs({ view })}
           onOpenSettings={() => setShowSettings(true)}
+          onOpenSources={state.user.is_admin ? () => setShowSources(true) : undefined}
           onOpenZones={() => setShowZones(true)}
           onOpenPlaylists={() => setShowPlaylists(true)}
           onOpenPeople={state.user.is_admin ? () => setShowPeople(true) : undefined}
@@ -149,6 +152,7 @@ export default function App() {
         )}
 
         {showZones && <Zones onClose={() => setShowZones(false)} />}
+        {showSources && <Sources onClose={() => setShowSources(false)} />}
         {showPeople && <People onClose={() => setShowPeople(false)} />}
 
         {showPlaylists && (
@@ -208,7 +212,6 @@ export default function App() {
 
         {showSettings && (
           <Settings
-            isAdmin={state.user.is_admin}
             prefs={prefs}
             onChange={(patch) => void changePrefs(patch)}
             onLinkDevice={() => {
