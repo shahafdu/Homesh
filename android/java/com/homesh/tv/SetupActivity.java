@@ -69,8 +69,17 @@ public class SetupActivity extends Activity {
         field.setTextColor(Color.WHITE);
         field.setHintTextColor(Color.parseColor("#6d6152"));
         field.setTextSize(20);
-        field.setGravity(Gravity.CENTER);
+        // Left-aligned, which is the only way a single line longer than the box
+        // behaves. Centred, the field keeps the middle of the text in view no
+        // matter where the cursor is: moving to either end scrolls the caret out
+        // of sight and the text does not follow, so you cannot see what you are
+        // editing. A tailnet name is long enough to hit this every time.
+        field.setGravity(Gravity.CENTER_VERTICAL | Gravity.START);
         field.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
+        // Wide on a television, and never wider than the phone it is on. The
+        // fixed 420dp was chosen for a screen across the room and is broader
+        // than a phone in portrait, so the box ran off both edges.
+        field.setMaxWidth(dp(420));
         String existing = Prefs.server(this);
         if (existing != null) {
             field.setText(existing);
@@ -86,8 +95,8 @@ public class SetupActivity extends Activity {
         status.setGravity(Gravity.CENTER);
         status.setPadding(0, dp(16), 0, 0);
 
-        LinearLayout.LayoutParams wide = new LinearLayout.LayoutParams(dp(420),
-                ViewGroup.LayoutParams.WRAP_CONTENT);
+        LinearLayout.LayoutParams wide = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         root.addView(title);
         root.addView(hint);
         root.addView(field, wide);

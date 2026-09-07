@@ -158,6 +158,13 @@ jobs:
           grep -q "launchable-activity" phone-badging.txt
           grep -q "package: name='com.homesh.phone'" phone-badging.txt
 
+      # These are downloaded from a public release page, so whatever is
+      # compiled into them is published. The check that was meant to establish
+      # that by hand ran `strings`, which was not installed on the machine it
+      # ran on: it printed nothing and was read as proof. This one fails loudly.
+      - name: No private data in the APKs
+        run: python tools/scan-apk.py build/homesh-tv.apk build/homesh-phone.apk
+
       - uses: actions/upload-artifact@v4
         with:
           name: homesh-apks
