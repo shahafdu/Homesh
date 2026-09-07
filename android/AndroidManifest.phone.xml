@@ -2,15 +2,20 @@
 <!--
     Homesh Connect — the phone's way in.
 
-    Deliberately not the interface. The interface is the web app, which the
-    browser already runs well and where the passkey lives. This exists for the
-    one thing a web page cannot do: when the server cannot be reached because
-    Android has stopped Tailscale, open Tailscale.
+    It shows Homesh in a Custom Tab: the real browser engine, rendered inside
+    this app. Not a WebView, which has no WebAuthn and its own cookie jar, so
+    the passkey and the signed-in session would both be missing exactly where
+    somebody had committed to using it.
+
+    What the app adds over a bookmark is the part a web page cannot do. When
+    the server is unreachable because Android has stopped Tailscale to save
+    battery, it says so and opens Tailscale — and the page that could not load
+    is in no position to do either.
 -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.homesh.phone"
-    android:versionCode="4"
-    android:versionName="1.0.3">
+    android:versionCode="6"
+    android:versionName="1.1.0">
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
@@ -23,6 +28,12 @@
         <intent>
             <action android:name="android.intent.action.VIEW" />
             <data android:scheme="https" />
+        </intent>
+        <!-- Which browsers can host a Custom Tab. Without this the service
+             lookup returns null for every one of them and Homesh opens as a
+             separate browser task instead of inside this app. -->
+        <intent>
+            <action android:name="android.support.customtabs.action.CustomTabsService" />
         </intent>
     </queries>
 
