@@ -1,6 +1,15 @@
 import { useCallback, useEffect, useState } from "react";
 import { useLockScroll } from "./useLockScroll";
-import { discoverSources, formatDate, listSources, scanSource, type Source } from "./library";
+import {
+  addLocalFolder,
+  browseLocal,
+  discoverSources,
+  formatDate,
+  listSources,
+  scanSource,
+  type Browsing,
+  type Source,
+} from "./library";
 
 /** Where the library comes from, and what each source is doing.
  *
@@ -109,7 +118,7 @@ export default function Sources(props: { onClose: () => void }) {
           </div>
         ))}
 
-        <AddAFolder />
+        <AddAFolder onAdded={refresh} />
 
         <button className="compact" style={{ marginTop: 18 }} onClick={props.onClose}>
           Done
@@ -119,42 +128,148 @@ export default function Sources(props: { onClose: () => void }) {
   );
 }
 
-/** How a folder on this PC gets into the library.
+/** Browsing this machine for a folder to add.
  *
- * Not a browser. The first attempt listed the machine and let you click through
- * it, which was the wrong shape of answer: a media server should not be
- * enumerating somebody's disk to be told one path. It did that because a web
- * page cannot do the obvious thing — no browser will tell a page a real path,
- * so a picker in here would return names and bytes and never "D:\Media".
+ * The drives are mounted read-only and the server lists them, which is what
+ * every other media server does and the only design that works from a phone: no
+ * browser will hand a web page a real path, so a file picker here returns names
+ * and bytes and never "D:\Media".
  *
- * So the picking happens on the PC, where Windows already has the dialog, and
- * this only says so. It is written out here rather than left to a readme
- * because the person who needs it is usually holding a phone.
+ * The first version of this refused to list the host at all and told people to
+ * run a script on the PC instead. That is purity at the expense of the person
+ * using it — no help whatsoever to somebody holding a phone in another room —
+ * and it was rightly rejected. Read-only mounts, admin-only, and nothing read
+ * beyond folder names until a folder is picked is where the safety actually
+ * lives.
  */
-function AddAFolder() {
+function AddAFolder(props: { onAdded: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [view, setView] = useState<Browsing | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
+
+  const go = useCallback(async (at: string) => {
+    setBusy(true);
+    setNote(null);
+    try {
+      setView(await browseLocal(at));
+    } catch (e) {
+      setNote(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (open && !view) void go("");
+  }, [open, view, go]);
+
+  if (!open) {
+    return (
+      <div className="add-folder">
+        <button className="compact primary" onClick={() => setOpen(true)}>
+          ＋ Add a folder from this computer
+        </button>
+        <p className="muted small">
+          Or share a folder with the Homesh account in Google Drive as{" "}
+          <b>Editor</b>, then press <b>Look for new folders</b>.
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div className="add-folder">
-      <h3>Add a folder from this computer</h3>
-      <p className="muted small">
-        On the PC that runs Homesh, open PowerShell in the Homesh folder and run:
-      </p>
-      <pre className="cmd">.\tools\add-folder.ps1</pre>
-      <p className="muted small">
-        Windows asks which folder. Whatever you choose is added read-only and
-        appears above; press <b>Look for new folders</b> to index it.
-      </p>
-      <p className="muted small">
-        <code>-List</code> shows what has been added, and{" "}
-        <code>-Remove &lt;name&gt;</code> takes one out again — which never
-        touches the files in it.
-      </p>
+      <div className="sheet-head">
+        <h3>Choose a folder</h3>
+        <button className="compact" onClick={() => setOpen(false)}>
+          Cancel
+        </button>
+      </div>
 
-      <h3>Add a folder from Google Drive</h3>
-      <p className="muted small">
-        Share it with the Homesh account as <b>Editor</b>, then press{" "}
-        <b>Look for new folders</b>. There is nothing to upload and no path to
-        type.
-      </p>
+      {note && <p className="error">{note}</p>}
+
+      {view && (
+        <>
+          {/* Where you are, and every step back. On a phone this is longer than
+              the screen, so it scrolls rather than wrapping into three lines. */}
+          <nav className="crumbs browse-crumbs">
+            <button className="crumb" onClick={() => void go("")}>
+              This computer
+            </button>
+            {view.crumbs.map((crumb) => (
+              <span key={crumb.path}>
+                <span className="sep">/</span>
+                <button className="crumb" onClick={() => void go(crumb.path)}>
+                  {crumb.name}
+                </button>
+              </span>
+            ))}
+          </nav>
+
+          {view.at && (
+            <div className="browse-here">
+              <span className="muted small">
+                {view.files} file{view.files === 1 ? "" : "s"} in this folder
+              </span>
+              {view.added ? (
+                <span className="badge">already added</span>
+              ) : (
+                <button
+                  className="compact primary"
+                  disabled={busy}
+                  onClick={async () => {
+                    setBusy(true);
+                    setNote(null);
+                    try {
+                      const added = await addLocalFolder(view.at);
+                      setNote(`Added ${added.name}. Rescan it to index what is in it.`);
+                      setOpen(false);
+                      setView(null);
+                      props.onAdded();
+                    } catch (e) {
+                      setNote(e instanceof Error ? e.message : String(e));
+                    } finally {
+                      setBusy(false);
+                    }
+                  }}
+                >
+                  Add this folder
+                </button>
+              )}
+            </div>
+          )}
+
+          {view.unmounted && (
+            <p className="error">
+              Docker has not attached this drive, so it looks empty from in
+              here. On the PC, run <code>.\tools\mount-drives.ps1</code> — it
+              attaches removable drives, which Windows never does by itself,
+              and restarts the server. Needed again after a reboot.
+            </p>
+          )}
+
+          {view.folders.length > 0 ? (
+            <ul className="folder-list">
+              {view.folders.map((folder) => (
+                <li key={folder.path}>
+                  <button className="folder-open" onClick={() => void go(folder.path)}>
+                    <span className="folder-ic" aria-hidden="true">▸</span>
+                    <span className="folder-name nm-clip">{folder.name}</span>
+                  </button>
+                  {folder.added && <span className="badge">added</span>}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="muted small">
+              No folders in here{view.files > 0 ? ` — just ${view.files} file(s)` : ""}.
+            </p>
+          )}
+        </>
+      )}
+
+      {!view && busy && <p className="muted">Reading…</p>}
     </div>
   );
 }

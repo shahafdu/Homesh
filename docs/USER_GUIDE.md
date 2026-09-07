@@ -155,30 +155,45 @@ Both are stored on your account, not in the browser, so you set them once.
 
 ## 7. Adding a folder of your own
 
-On the PC that runs Homesh, open PowerShell in the Homesh folder and run:
+**Sources** (the ◫ button in the toolbar) → **Add a folder from this computer**.
+Browse to the folder you want and press **Add this folder**. Then **Rescan** it to
+index what is in it.
+
+That is the whole thing — it works from a phone, and nothing restarts, because the
+drives are already mounted and adding a folder only records where to look.
+
+### From Google Drive
+
+Share the folder with the Homesh account as **Editor** — not Viewer, which cannot
+grant the access the server needs — then press **Look for new folders**.
+
+### If a drive shows up empty
+
+Run this on the PC:
 
 ```powershell
-.\tools\add-folder.ps1
+.\tools\mount-drives.ps1
 ```
 
-Windows asks which folder. Whatever you choose is mounted **read-only**, the server
-restarts, and the folder appears as a source. Press **Look for new folders** in
-Settings to index what is in it.
+Windows never attaches a **removable drive** to Docker's virtual machine — only
+fixed disks are mounted, and only when it starts. An external USB disk therefore
+appears inside the server as an empty folder rather than as an error, which reads
+as "the drive is empty" and sends you off to check the wrong thing. The script
+attaches it and restarts the server.
 
-| | |
-|---|---|
-| `.\tools\add-folder.ps1 -List` | what has been added |
-| `.\tools\add-folder.ps1 -Remove music` | take one out again |
-| `.\tools\add-folder.ps1 -Path D:\Music` | skip the dialog |
+It has to be run again after a reboot, because the virtual machine is rebuilt
+each time. An internal drive needs it only once.
 
-Removing a folder never touches the files in it. Its entries stay in the catalog,
-marked offline, until you remove the source in Settings.
+### Why the server can see your disks at all
 
-**Why it is not a button in the app.** A browser never tells a web page a real path:
-a file picker hands over names and bytes, and `D:\Media` is withheld on purpose. So
-either the folder is chosen on the machine that has it, or the server has to list your
-disk for you to click through — and a media server has no business enumerating
-somebody's storage to be told one path.
+It is mounted **read-only**, it can reach nothing outside those mounts, and only an
+administrator can list them. Mounting is not indexing: nothing is read beyond folder
+names until you pick a folder, and then only that folder. For comparison, a media
+server installed natively on Windows runs with your account's full read *and write*
+access to the same drives.
+
+To narrow it further, set `BROWSE_C` in `.env` to a single directory instead of
+`C:/` — that then becomes all the server can ever see.
 
 ---
 

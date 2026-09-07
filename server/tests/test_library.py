@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import uuid
+
 import pytest
 from sqlalchemy import text
 
+from app.main import app
 from app.scanner import scan_source
+from app.security import CurrentUser, require_user
 from app.sources.local import LocalConnector
 
 
@@ -164,97 +168,190 @@ class TestSearchInOneFolder:
         assert not any(p in one for p in elsewhere)
 
 
-class TestAddingAFolderFromThisComputer:
-    """A folder picked on the PC arrives as a mount, and is found here.
 
-    It works this way round because the obvious way cannot exist. A browser
-    never tells a page a real path — a file picker hands over names and bytes,
-    the File System Access API hands over a handle, and "D:\Media" is withheld
-    by every browser on purpose. The first attempt worked around that by having
-    the server list the machine and offer folders to click through, which was
-    the wrong shape of answer: a media server has no business enumerating
-    somebody's disk to be told one path.
 
-    So tools/add-folder.ps1 opens the ordinary Windows picker, mounts what was
-    chosen read-only under /library, and restarts. All that is left here is to
-    notice it, the same way a Drive folder shared with the server is noticed.
+class TestBrowsingThisMachineForAFolder:
+    """Picking a folder in the app, which is how every other media server does it.
+
+    The drives are mounted read-only and the server lists them. A browser will
+    not hand a web page a real path -- a file picker returns names and bytes and
+    never "D:\Media" -- so the alternatives are typing a path from memory or
+    running a script on the PC, and neither is any use to somebody holding a
+    phone in another room.
+
+    Safety is in the mounts being read-only, the listing being admin-only, and
+    nothing being read beyond folder names until a folder is picked.
     """
 
-    def _mounted(self, monkeypatch, tmp_path, *names):
+    def _drives(self, monkeypatch, tmp_path):
         from app import library
 
-        for name in names:
-            (tmp_path / name).mkdir(parents=True)
-        monkeypatch.setattr(library, "LIBRARY_MOUNTS", tmp_path)
+        (tmp_path / "c" / "Users" / "Shahaf" / "Music").mkdir(parents=True)
+        (tmp_path / "c" / "Users" / "Shahaf" / "Music" / "one.mp3").write_bytes(b"x")
+        (tmp_path / "c" / "Windows").mkdir()          # noise
+        (tmp_path / "c" / "$Recycle.Bin").mkdir()     # noise
+        (tmp_path / "c" / ".hidden").mkdir()          # hidden
+        (tmp_path / "d").mkdir()
+        monkeypatch.setattr(library, "HOST_FS", tmp_path)
         return tmp_path
 
-    def test_a_mounted_folder_becomes_a_source(self, db, monkeypatch, tmp_path):
-        root = self._mounted(monkeypatch, tmp_path, "holidays")
+    def test_the_top_is_the_drives(self, client, monkeypatch, tmp_path):
+        self._drives(monkeypatch, tmp_path)
 
-        from app.library import _register_mounted
+        body = client.get("/api/sources/local/browse").json()
+        assert body["available"] is True
+        # Shown as somebody would write them, not as the mount points they are:
+        # "C:" is what a person is looking for and "c" is a puzzle.
+        assert [f["name"] for f in body["folders"]] == ["C:", "D:"]
 
-        _register_mounted()
+    def test_it_descends_and_hides_what_nobody_wants(self, client, monkeypatch, tmp_path):
+        self._drives(monkeypatch, tmp_path)
+
+        body = client.get("/api/sources/local/browse", params={"at": "c"}).json()
+        assert [f["name"] for f in body["folders"]] == ["Users"], (
+            "Windows, $Recycle.Bin and dot-folders are noise, not offerings"
+        )
+        assert [c["name"] for c in body["crumbs"]] == ["C:"]
+
+    def test_a_folder_deep_inside_can_be_added(self, client, db, monkeypatch, tmp_path):
+        """The whole point: the folder somebody wants is not at the top."""
+        root = self._drives(monkeypatch, tmp_path)
+
+        here = "c/Users/Shahaf/Music"
+        body = client.get("/api/sources/local/browse", params={"at": here}).json()
+        assert body["files"] == 1, "how you know you have arrived"
+
+        r = client.post("/api/sources/local", json={"path": here})
+        assert r.status_code == 201, r.text
+        assert r.json()["mount_prefix"] == "/local/music"
 
         with db.connect() as conn:
-            kind, name, stored = conn.execute(
-                text(
-                    "SELECT kind::text, name, remote_id FROM sources "
-                    "WHERE mount_prefix = :p"
-                ),
-                {"p": "/local/holidays"},
+            kind, stored = conn.execute(
+                text("SELECT kind::text, remote_id FROM sources WHERE mount_prefix = :p"),
+                {"p": "/local/music"},
             ).one()
-        assert (kind, name) == ("local", "holidays")
+        assert kind == "local"
         # The path is kept with the source: for a folder on this machine it is
         # the provider's handle for it, and a scan has nothing to open without.
-        assert stored == str(root / "holidays")
+        assert stored == str((root / "c" / "Users" / "Shahaf" / "Music").resolve())
 
-    def test_registering_twice_does_not_duplicate(self, db, monkeypatch, tmp_path):
-        """Every restart runs this. A restart must not add the library again."""
-        self._mounted(monkeypatch, tmp_path, "music")
+    def test_it_shows_which_are_already_added(self, client, monkeypatch, tmp_path):
+        self._drives(monkeypatch, tmp_path)
+        client.post("/api/sources/local", json={"path": "c/Users/Shahaf/Music"})
 
-        from app.library import _register_mounted
+        body = client.get(
+            "/api/sources/local/browse", params={"at": "c/Users/Shahaf"}
+        ).json()
+        assert body["folders"][0]["added"] is True
 
-        _register_mounted()
-        _register_mounted()
+    def test_two_folders_of_the_same_name_do_not_collide(self, client, db, monkeypatch, tmp_path):
+        """Music on two drives is ordinary; the second must not replace the first."""
+        root = self._drives(monkeypatch, tmp_path)
+        (root / "d" / "Music").mkdir()
+
+        first = client.post("/api/sources/local", json={"path": "c/Users/Shahaf/Music"})
+        second = client.post("/api/sources/local", json={"path": "d/Music"})
+        assert first.json()["mount_prefix"] == "/local/music"
+        assert second.json()["mount_prefix"] == "/local/music-2"
+
+        with db.connect() as conn:
+            roots = {
+                r[0]
+                for r in conn.execute(
+                    text("SELECT remote_id FROM sources WHERE kind = 'local'")
+                )
+            }
+        assert len(roots) == 2, "both folders kept their own path"
+
+    def test_adding_the_same_folder_twice_is_not_a_duplicate(
+        self, client, db, monkeypatch, tmp_path
+    ):
+        self._drives(monkeypatch, tmp_path)
+
+        client.post("/api/sources/local", json={"path": "c/Users/Shahaf/Music"})
+        client.post("/api/sources/local", json={"path": "c/Users/Shahaf/Music"})
 
         with db.connect() as conn:
             count = conn.execute(
-                text("SELECT count(*) FROM sources WHERE mount_prefix = :p"),
-                {"p": "/local/music"},
+                text("SELECT count(*) FROM sources WHERE kind = 'local'")
             ).scalar()
         assert count == 1
 
-    def test_files_beside_the_folders_are_ignored(self, db, monkeypatch, tmp_path):
-        """Only directories are mounts. Anything else is somebody's mistake."""
-        self._mounted(monkeypatch, tmp_path, "videos")
-        (tmp_path / "stray.txt").write_bytes(b"x")
-        (tmp_path / ".hidden").mkdir()
+    def test_the_whole_machine_is_not_a_folder(self, client, monkeypatch, tmp_path):
+        """Indexing every drive at once is never what somebody meant to press."""
+        self._drives(monkeypatch, tmp_path)
+        assert client.post("/api/sources/local", json={"path": ""}).status_code == 422
+        assert client.post("/api/sources/local", json={"path": "/"}).status_code == 400
 
-        from app.library import _register_mounted
+    def test_a_path_that_climbs_out_is_refused(self, client, monkeypatch, tmp_path):
+        """Confinement checked after resolution, not before — the project rule."""
+        self._drives(monkeypatch, tmp_path)
 
-        _register_mounted()
+        for climb in ("..", "../..", "c/../../elsewhere", "/etc"):
+            assert client.post(
+                "/api/sources/local", json={"path": climb}
+            ).status_code in (400, 404), climb
+            assert client.get(
+                "/api/sources/local/browse", params={"at": climb}
+            ).status_code == 404, climb
 
-        with db.connect() as conn:
-            names = {
-                r[0]
-                for r in conn.execute(
-                    text("SELECT name FROM sources WHERE kind = 'local'")
-                )
-            }
-        assert "stray.txt" not in names and ".hidden" not in names
-        assert "videos" in names
+    def test_a_symlink_out_is_refused(self, client, monkeypatch, tmp_path):
+        """Which is the whole reason confinement comes after resolution."""
+        root = self._drives(monkeypatch, tmp_path)
+        outside = tmp_path.parent / "not-mine"
+        outside.mkdir(exist_ok=True)
+        try:
+            (root / "c" / "Escape").symlink_to(outside, target_is_directory=True)
+        except (OSError, NotImplementedError):
+            pytest.skip("this platform will not make symlinks without privileges")
 
-    def test_nothing_mounted_is_not_an_error(self, monkeypatch, tmp_path):
-        """The ordinary state of a fresh install, and of every CI run."""
+        assert client.post(
+            "/api/sources/local", json={"path": "c/Escape"}
+        ).status_code == 404
+        assert client.get(
+            "/api/sources/local/browse", params={"at": "c/Escape"}
+        ).status_code == 404
+
+    def test_only_an_administrator_may_browse_or_add(self, client, monkeypatch, tmp_path):
+        """Listing names the folders on somebody's computer. Not for everyone."""
+        self._drives(monkeypatch, tmp_path)
+
+        ordinary = CurrentUser(
+            id=uuid.uuid4(), handle="guest", display_name="Guest", is_admin=False
+        )
+        app.dependency_overrides[require_user] = lambda: ordinary
+        try:
+            assert client.get("/api/sources/local/browse").status_code == 403
+            assert client.post(
+                "/api/sources/local", json={"path": "c"}
+            ).status_code == 403
+        finally:
+            app.dependency_overrides.pop(require_user, None)
+
+    def test_nothing_mounted_says_so_rather_than_crashing(self, client, monkeypatch, tmp_path):
+        """A Linux host, or Docker without the drive shared. Not an exception."""
         from app import library
 
-        monkeypatch.setattr(library, "LIBRARY_MOUNTS", tmp_path / "absent")
-        library._register_mounted()  # must not raise
+        monkeypatch.setattr(library, "HOST_FS", tmp_path / "absent")
+        assert client.get("/api/sources/local/browse").status_code == 503
 
-    def test_the_server_has_no_endpoint_that_lists_this_machine(self, client):
-        """The complaint that caused this design, kept from coming back.
+    def test_a_drive_docker_did_not_attach_says_so(self, client, monkeypatch, tmp_path):
+        """An empty drive and an unattached one look identical, and are not.
 
-        Nothing the server exposes should enumerate the folders on the host.
+        Docker attaches the host's drives when it starts, so a disk that was
+        powered off then — which the RAID here is, by design — appears as an
+        empty directory. Reporting "no folders in here" for a disk full of
+        music sends somebody to debug the wrong thing.
         """
-        assert client.get("/api/sources/local/browse").status_code == 404
-        assert client.post("/api/sources/local", json={"path": "Videos"}).status_code == 404
+        self._drives(monkeypatch, tmp_path)
+
+        empty_drive = client.get("/api/sources/local/browse", params={"at": "d"}).json()
+        assert empty_drive["unmounted"] is True
+
+        # A folder that is genuinely empty, deeper in, is just empty — the
+        # distinction only means anything at the top, where a drive would be.
+        (tmp_path / "c" / "Users" / "Shahaf" / "Empty").mkdir()
+        deeper = client.get(
+            "/api/sources/local/browse", params={"at": "c/Users/Shahaf/Empty"}
+        ).json()
+        assert deeper["unmounted"] is False

@@ -17,7 +17,7 @@ The list to work from. Everything else can proceed without you.
 
 | | What | Why it matters |
 |---|---|---|
-| ⏳ | **Add a folder of your own media** | On the PC: `.\tools\add-folder.ps1`. Windows asks which folder; it is mounted read-only, the server restarts, and the folder appears. Then Settings → *Look for new folders* to index it. `-List` and `-Remove <name>` manage what has been added |
+| ✅ | **Add a folder of your own media** | In the app: **Sources** (the ◫ button) → *Add a folder from this computer*, then browse and pick one. No restart — the drives are mounted read-only, so adding a folder is only a record. Your E: drive is attached and browsable (19 folders, including music and my youtubes). It is USB, which Windows never attaches to Docker by itself, so run `.\tools\mount-drives.ps1` again after a reboot |
 
 ---
 

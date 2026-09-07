@@ -46,10 +46,9 @@ work was described as finished, and the red job was the one guarding what must
 never leave this repository.
 
 ```powershell
-.	ools
-un-tests.ps1        # suite, and the private-data scan first
+.\tools\run-tests.ps1        # suite, and the private-data scan first
 git push origin main
-.	oolserify-ci.ps1        # blocks until CI completes; non-zero if red
+.\tools\verify-ci.ps1        # blocks until CI completes; non-zero if red
 ```
 
 `verify-ci.ps1` names every job and exits non-zero when any failed, so it can be
@@ -240,7 +239,8 @@ web/src/          App, Browser, Settings, api, auth, library, prefs, styles.css
 android/          TV shell — Manifest, java/com/homesh/tv/{MainActivity,SetupActivity,
                   Prefs,ServerAddress}, res/, test/ServerAddressTest.java
 tools/            probe-denon.ps1, configure-network.ps1, run-tests.ps1,
-                  build-tv-apk.sh, add-folder.ps1, verify-ci.ps1, githooks/
+                  build-tv-apk.sh, mount-drives.ps1, verify-ci.ps1,
+                  scan-apk.py, githooks/
 docs/             ARCHITECTURE.md, USER_GUIDE.md, TV_APP.md
 ```
 
@@ -299,13 +299,23 @@ TOKEN=$(printf "protocol=https\nhost=github.com\n\n" | git credential fill | gre
 - No media URL is guessable or long-lived
 - No inbound ports at home; agents dial out
 - Path confinement checked *after* symlink resolution
-- **The server never enumerates the host.** A folder is added by being mounted
-  read-only (`tools/add-folder.ps1` on the PC opens the ordinary Windows
-  picker), and the server registers what it finds under `/library`. It has no
-  endpoint that lists the machine's directories. The first attempt did have
-  one, and it was the wrong shape of answer: a browser will not hand a web page
-  a real path, so a picker in the app is impossible, but the fix for that is to
-  pick on the machine — not to walk somebody's disk for them
+- **A folder is chosen by browsing this machine, in the app.** The drives are
+  mounted read-only at `/hostfs`, and Sources → *Add a folder from this
+  computer* walks them. Admin-only, and mounting is not indexing: nothing is
+  read beyond folder names until a folder is picked, and then only that folder.
+  Adding one is a database row, not a redeploy — the drive is already mounted.
+
+  I got this wrong twice and the second time is the lesson. First the server
+  listed one mounted folder automatically on page load, which Shahaf objected
+  to as scanning his PC unbidden. I over-corrected into a rule that the server
+  must never list the host at all, and replaced the interface with a PowerShell
+  script. That was purity applied to somebody else's product: every comparable
+  media server browses the host, a script is no use to somebody holding a phone
+  in another room, and a natively-installed media server has full read *and
+  write* access to the same drives this has read-only. **The safety is in the
+  mounts being read-only, the listing being admin-only, and the confinement
+  check — not in refusing to answer.** What he objected to was enumerating
+  without being asked; the fix was a button, not a prohibition
 - **No secure-context-only browser APIs.** Screens reach the server over plain
   http at a LAN address, which is not a secure context: `crypto.randomUUID`,
   `navigator.clipboard` and friends are undefined there. They work on the
