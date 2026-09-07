@@ -3,7 +3,7 @@
     <string name="app_name">Homesh</string>
 
     <string name="setup_title">Where is Homesh?</string>
-    <string name="setup_hint">Type the address shown in Settings on your phone. The http:// and the port are filled in for you.</string>
+    <string name="setup_hint">Type the address shown in Settings on your phone. A house address needs no http:// or port; a tailnet name ending .ts.net is understood as it stands.</string>
     <string name="setup_placeholder">homesh.local</string>
     <string name="setup_connect">Connect</string>
     <string name="setup_checking">Looking for it…</string>

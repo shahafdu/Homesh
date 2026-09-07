@@ -19,6 +19,31 @@ public class ServerAddressTest {
         eq("http://box.lan:8080", "http://box.lan:8080", "a complete URL is unchanged");
         eq("https://homesh.example:443", "https://homesh.example:443", "https survives");
 
+        // HTTPS means 443. Appending the http default to it built an address
+        // nothing has ever answered on, and the app reported that back as
+        // though the server were down — from outside the house, where it is
+        // the only address that works and the least convenient place to be
+        // told a lie about it.
+        eq("https://homesh.example", "https://homesh.example", "https gets no port appended");
+        eq("https://box.lan/media", "https://box.lan/media", "nor when there is a path");
+
+        // A tailnet name is HTTPS on 443 whether or not the scheme was typed,
+        // because Tailscale terminates TLS for the name and nothing listens for
+        // plain http there.
+        eq("homesh-x.tailnet.ts.net", "https://homesh-x.tailnet.ts.net", "a tailnet name implies https");
+        eq("homesh-x.tailnet.ts.net/", "https://homesh-x.tailnet.ts.net", "trailing slash and all");
+        eq("http://homesh-x.tailnet.ts.net", "http://homesh-x.tailnet.ts.net:8080",
+                "but an explicit http is still obeyed");
+
+        // The pages this app sends people to, pasted back in. Reaching the
+        // download page is how somebody gets the app, so its address is the one
+        // in their clipboard when the app first asks where the server is.
+        eq("https://homesh-x.tailnet.ts.net/phone", "https://homesh-x.tailnet.ts.net",
+                "the phone download page is not the server");
+        eq("192.0.2.5/apk", "http://192.0.2.5:8080", "nor the TV download page");
+        eq("192.0.2.5/tv", "http://192.0.2.5:8080", "nor the television interface");
+        eq("192.0.2.5/PHONE", "http://192.0.2.5:8080", "however it was capitalised");
+
         // Sloppiness that should not become a black screen.
         eq("  192.0.2.5  ", "http://192.0.2.5:8080", "surrounding space is ignored");
         eq("box.lan/", "http://box.lan:8080", "a trailing slash is dropped");
