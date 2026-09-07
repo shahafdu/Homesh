@@ -1322,31 +1322,8 @@ button.compact:disabled { opacity: .5; cursor: not-allowed; }
  * says how. Written out in the app because whoever needs it is usually
  * holding a phone, not sitting at the machine. */
 .add-folder { margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--line); }
-.add-folder h3 { margin: 0; font-size: 15px; }
-
-.browse-crumbs {
-  flex-wrap: nowrap; overflow-x: auto; padding-bottom: 4px;
-  -webkit-overflow-scrolling: touch;
-}
-.browse-crumbs .crumb { white-space: nowrap; }
-.browse-here {
-  display: flex; align-items: center; justify-content: space-between; gap: 10px;
-  flex-wrap: wrap; padding: 10px 0;
-}
-.folder-list { list-style: none; margin: 8px 0; padding: 0; }
-.folder-list li {
-  display: flex; align-items: center; gap: 10px;
-  padding: 10px 0; border-bottom: 1px solid var(--line);
-}
-.folder-list li:last-child { border-bottom: 0; }
-.folder-open {
-  display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0;
-  background: none; border: 0; padding: 0; cursor: pointer;
-  color: inherit; font: inherit; text-align: left;
-}
-.folder-open:hover .folder-name { color: var(--accent); }
-.folder-ic { color: var(--muted); font-size: 11px; }
-.folder-name { flex: 1; min-width: 0; font-size: 14px; }
+.add-folder h3 { margin: 18px 0 6px; font-size: 14px; }
+.add-folder h3:first-child { margin-top: 0; }
 
 /* ── Looking inside a file nothing can preview ──────────────────────────────
  *

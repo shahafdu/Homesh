@@ -17,7 +17,7 @@ The list to work from. Everything else can proceed without you.
 
 | | What | Why it matters |
 |---|---|---|
-| ✅ | **Add a folder of your own media** | In the app: **Sources** (the ◫ button) → *Add a folder from this computer*, then browse and pick one. No restart — the drives are mounted read-only, so adding a folder is only a record. Your E: drive is attached and browsable (19 folders, including music and my youtubes). It is USB, which Windows never attaches to Docker by itself, so run `.\tools\mount-drives.ps1` again after a reboot |
+| ✅ | **Add a folder of your own media** | On the PC, double-click **Add a folder to Homesh**. Windows asks which folder; it is granted read-only and appears under Sources. `E:\music` is granted and indexing. The server reaches that folder and nothing else on the machine — verified: `/hostfs` is gone, and a write into the mount is refused |
 
 ---
 

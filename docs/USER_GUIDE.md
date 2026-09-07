@@ -155,45 +155,43 @@ Both are stored on your account, not in the browser, so you set them once.
 
 ## 7. Adding a folder of your own
 
-**Sources** (the ◫ button in the toolbar) → **Add a folder from this computer**.
-Browse to the folder you want and press **Add this folder**. Then **Rescan** it to
-index what is in it.
+On the PC that runs Homesh, double-click **Add a folder to Homesh** in the Homesh
+folder. Windows asks which folder. That folder is given to the server read-only
+and appears under **Sources**; press **Rescan** to index it.
 
-That is the whole thing — it works from a phone, and nothing restarts, because the
-drives are already mounted and adding a folder only records where to look.
+That is the whole thing, and it is the same shape as sharing a folder in Drive:
+you grant it where it lives, once.
+
+### What the server can see
+
+**Only the folders you have given it.** Not the drive they are on, not your user
+folder, nothing else on the machine — and read-only, so it cannot alter even
+those. Anything you have not granted is unreachable rather than merely unlisted.
+
+To check, or to withdraw one:
+
+```powershell
+.\tools\grant-folder.ps1 -List
+.\tools\grant-folder.ps1 -Revoke music
+```
+
+Revoking never touches the files. Remove the source in **Sources** to clear it
+from the catalog as well.
 
 ### From Google Drive
 
 Share the folder with the Homesh account as **Editor** — not Viewer, which cannot
 grant the access the server needs — then press **Look for new folders**.
 
-### If a drive shows up empty
+### A folder on an external drive
 
-Run this on the PC:
+Handled automatically, but worth knowing why it needs handling. Windows attaches
+only fixed disks to Docker's virtual machine, and only when it starts, so a folder
+on a USB drive would otherwise mount as an empty directory rather than as an error.
+The script detects a removable drive and attaches the granted folder itself.
 
-```powershell
-.\tools\mount-drives.ps1
-```
-
-Windows never attaches a **removable drive** to Docker's virtual machine — only
-fixed disks are mounted, and only when it starts. An external USB disk therefore
-appears inside the server as an empty folder rather than as an error, which reads
-as "the drive is empty" and sends you off to check the wrong thing. The script
-attaches it and restarts the server.
-
-It has to be run again after a reboot, because the virtual machine is rebuilt
-each time. An internal drive needs it only once.
-
-### Why the server can see your disks at all
-
-It is mounted **read-only**, it can reach nothing outside those mounts, and only an
-administrator can list them. Mounting is not indexing: nothing is read beyond folder
-names until you pick a folder, and then only that folder. For comparison, a media
-server installed natively on Windows runs with your account's full read *and write*
-access to the same drives.
-
-To narrow it further, set `BROWSE_C` in `.env` to a single directory instead of
-`C:/` — that then becomes all the server can ever see.
+The virtual machine is rebuilt when Docker restarts, so after a reboot run **Add a
+folder to Homesh** again on that folder — it re-attaches it.
 
 ---
 

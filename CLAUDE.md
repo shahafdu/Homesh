@@ -98,7 +98,7 @@ routinely breaks another, and the tracker is what makes that visible.
 | 8 · Optional transcode | ⬜ | May never be needed — see §3.2 of ARCHITECTURE |
 | 9 · Public release | ⬜ | Docs, screenshots, name decision |
 
-**Tests: 362 passing. Migrations: 018. Lint: clean. CI green.**
+**Tests: 365 passing. Migrations: 018. Lint: clean. CI green.**
 
 ### AI design decisions — agreed, not yet built
 
@@ -239,7 +239,7 @@ web/src/          App, Browser, Settings, api, auth, library, prefs, styles.css
 android/          TV shell — Manifest, java/com/homesh/tv/{MainActivity,SetupActivity,
                   Prefs,ServerAddress}, res/, test/ServerAddressTest.java
 tools/            probe-denon.ps1, configure-network.ps1, run-tests.ps1,
-                  build-tv-apk.sh, mount-drives.ps1, verify-ci.ps1,
+                  build-tv-apk.sh, grant-folder.ps1, verify-ci.ps1,
                   scan-apk.py, githooks/
 docs/             ARCHITECTURE.md, USER_GUIDE.md, TV_APP.md
 ```
@@ -299,23 +299,21 @@ TOKEN=$(printf "protocol=https\nhost=github.com\n\n" | git credential fill | gre
 - No media URL is guessable or long-lived
 - No inbound ports at home; agents dial out
 - Path confinement checked *after* symlink resolution
-- **A folder is chosen by browsing this machine, in the app.** The drives are
-  mounted read-only at `/hostfs`, and Sources → *Add a folder from this
-  computer* walks them. Admin-only, and mounting is not indexing: nothing is
-  read beyond folder names until a folder is picked, and then only that folder.
-  Adding one is a database row, not a redeploy — the drive is already mounted.
+- **The server reaches only the folders it has been granted.** Each is mounted
+  read-only under `/library` by *Add a folder to Homesh* on the PC, which opens
+  the ordinary Windows picker. There is no endpoint that lists the host and none
+  that takes a path. What was not granted is unreachable, not merely unlisted.
 
-  I got this wrong twice and the second time is the lesson. First the server
-  listed one mounted folder automatically on page load, which Shahaf objected
-  to as scanning his PC unbidden. I over-corrected into a rule that the server
-  must never list the host at all, and replaced the interface with a PowerShell
-  script. That was purity applied to somebody else's product: every comparable
-  media server browses the host, a script is no use to somebody holding a phone
-  in another room, and a natively-installed media server has full read *and
-  write* access to the same drives this has read-only. **The safety is in the
-  mounts being read-only, the listing being admin-only, and the confinement
-  check — not in refusing to answer.** What he objected to was enumerating
-  without being asked; the fix was a button, not a prohibition
+  Three attempts to get here, and the third is the one to keep. First the app
+  listed a mounted folder automatically, which Shahaf objected to as scanning
+  his PC unbidden. I over-corrected into "never list the host" and shipped a
+  PowerShell chore. Told to build a browser like every other media server, I
+  mounted whole drives — and that was wrong too, for the reason he gave: adding
+  a folder is a **one-time act performed at the machine**, exactly like sharing
+  a folder in Drive, so buying the convenience of doing it from a phone costs
+  permanent read access to the entire disk. The grant is the feature; the
+  picker is only how you name it. Make granting pleasant — a double-click, not
+  a terminal — and do not widen scope to make it convenient
 - **No secure-context-only browser APIs.** Screens reach the server over plain
   http at a LAN address, which is not a secure context: `crypto.randomUUID`,
   `navigator.clipboard` and friends are undefined there. They work on the
