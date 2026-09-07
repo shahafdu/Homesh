@@ -3,6 +3,8 @@ package com.homesh.tv;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.content.pm.PackageManager;
+import android.content.pm.ResolveInfo;
 import android.graphics.Color;
 import android.net.Uri;
 import android.os.Bundle;
@@ -35,10 +37,25 @@ import android.app.Activity;
  * It checks whether the server can be reached, offers the one action that fixes
  * it when it cannot, and then hands off to the browser.
  *
- * <p><b>The browser, deliberately, not a WebView.</b> Sign-in here is a passkey,
- * and WebAuthn does not work inside a plain WebView — an app that wrapped the
- * site would look right and be impossible to sign into. Handing off also means
- * the session, the passkey and the history are the ones already on the phone.
+ * <p><b>Rendered in a Custom Tab, not a WebView, and not by throwing you into
+ * Chrome.</b> All three were on the table and only one of them works.
+ *
+ * <p>A WebView is the obvious choice and the wrong one. It is a rendering
+ * engine with its own cookie jar and no browser around it: WebAuthn does not
+ * work there, so a passkey cannot be used, and the session is not the one
+ * already signed in on this phone. An app that wrapped the site that way would
+ * look like a real app and be impossible to sign into — the worst of both,
+ * because it fails only at the point somebody has committed to using it.
+ *
+ * <p>Handing off with a plain ACTION_VIEW fixes the sign-in and loses the app:
+ * Chrome opens as a separate task with its own address bar, this screen
+ * disappears, and it stops feeling like anything was opened at all.
+ *
+ * <p>A Custom Tab is the same Chrome — same engine, same cookies, same
+ * passkeys, so sign-in simply works — rendered inside this task with our own
+ * toolbar and a close button that comes back here. It needs no library: the
+ * protocol is an ACTION_VIEW intent carrying a few documented extras, which
+ * suits an app that has managed to avoid every dependency so far.
  */
 public final class PhoneActivity extends Activity {
 
@@ -50,13 +67,28 @@ public final class PhoneActivity extends Activity {
     private static final String TAILSCALE = "com.tailscale.ipn";
 
     private TextView message;
+    private Button openHomesh;
     private Button openTailscale;
     private Button searchAgain;
     private Button changeAddress;
     private LinearLayout root;
 
+    /** The address that answered, kept so the button can reopen without asking again. */
+    private String reachedAt;
+
     /** Set while a check is running, so returning to the app does not start a second. */
     private volatile boolean checking;
+
+    /**
+     * Whether Homesh has been opened over this screen already.
+     *
+     * <p>A Custom Tab lives in this task, so closing it lands back here and
+     * onResume fires again. Without this the check would run and open a second
+     * tab, and closing that one would open a third: an app that cannot be shut.
+     * Coming back is a deliberate act, so what should be waiting is the screen
+     * and a button, not another tab.
+     */
+    private boolean handedOff;
 
     @Override
     protected void onCreate(Bundle state) {
@@ -80,6 +112,10 @@ public final class PhoneActivity extends Activity {
         message.setTextSize(16);
         message.setPadding(0, 0, 0, 28);
 
+        openHomesh = button("Open Homesh", v -> {
+            if (reachedAt != null) open(reachedAt);
+            else check(false);
+        });
         openTailscale = button("Open Tailscale", v -> launchTailscale());
         searchAgain = button("Search on this network", v -> check(true));
         changeAddress = button("Change the address",
@@ -87,6 +123,7 @@ public final class PhoneActivity extends Activity {
 
         root.addView(brand);
         root.addView(message);
+        root.addView(openHomesh);
         root.addView(openTailscale);
         root.addView(searchAgain);
         root.addView(changeAddress);
@@ -98,6 +135,17 @@ public final class PhoneActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
+
+        if (handedOff) {
+            // Back from the tab, on purpose. Offer to open it again rather than
+            // doing it unasked, which would make closing it impossible.
+            handedOff = false;
+            message.setText("Homesh was open. Closed it?");
+            openHomesh.setVisibility(View.VISIBLE);
+            showActions(true);
+            return;
+        }
+
         // The whole point of the Tailscale button: coming back from it should
         // simply continue, not ask to be told again that it worked.
         check(false);
@@ -116,6 +164,9 @@ public final class PhoneActivity extends Activity {
                 show && tailscaleInstalled() ? View.VISIBLE : View.GONE);
         searchAgain.setVisibility(visibility);
         changeAddress.setVisibility(visibility);
+        // Only offered once something has answered; otherwise it is a button
+        // whose only outcome is the error already on the screen.
+        if (!show || reachedAt == null) openHomesh.setVisibility(View.GONE);
     }
 
     /**
@@ -203,18 +254,86 @@ public final class PhoneActivity extends Activity {
         }
     }
 
+    /** Open Homesh over this screen, in a tab that belongs to this app. */
     private void open(String base) {
+        reachedAt = base;
         message.setText("Opening Homesh…");
         showActions(false);
         try {
-            startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(base)));
-            // Finished rather than left behind: coming back should reach the
-            // browser where Homesh is, not this screen again.
-            finish();
+            startActivity(browserIntent(Uri.parse(base)));
+            handedOff = true;
         } catch (Exception e) {
             message.setText("No browser on this phone would open " + base + ".");
             showActions(true);
         }
+    }
+
+    /**
+     * A Custom Tab where one is available, an ordinary browser where it is not.
+     *
+     * <p>The extras are the Custom Tabs protocol, which is a published intent
+     * contract rather than a library: naming a session binder is what marks the
+     * request as a tab at all, and the rest is how it should look. A browser
+     * that does not understand them ignores them and opens the page normally,
+     * so this degrades to what it did before instead of failing.
+     */
+    private Intent browserIntent(Uri uri) {
+        Intent intent = new Intent(Intent.ACTION_VIEW, uri);
+
+        String browser = customTabsBrowser();
+        if (browser == null) return intent;
+
+        intent.setPackage(browser);
+
+        // A null session: this app is not connecting to the service for
+        // warm-up or navigation callbacks, it only wants the tab. The extra
+        // must be present regardless -- it is what distinguishes a Custom Tab
+        // request from a plain "open this in a browser".
+        Bundle session = new Bundle();
+        session.putBinder("android.support.customtabs.extra.SESSION", null);
+        intent.putExtras(session);
+
+        // Homesh's own colour on the toolbar, so the tab reads as part of this
+        // app rather than as somebody else's browser that opened over it.
+        intent.putExtra("android.support.customtabs.extra.TOOLBAR_COLOR", 0xFF17130F);
+        intent.putExtra("android.support.customtabs.extra.TITLE_VISIBILITY", 1);
+        // 2 is dark. The app is dark, and a white toolbar over it is a seam.
+        intent.putExtra("androidx.browser.customtabs.extra.COLOR_SCHEME", 2);
+        return intent;
+    }
+
+    /**
+     * A browser that can show a Custom Tab, preferring the default one.
+     *
+     * <p>The default matters: it is where the passkey and the signed-in session
+     * live. Choosing a different installed browser because it happened to come
+     * first would open Homesh somewhere nobody is signed in, which is the exact
+     * failure a WebView would have caused.
+     */
+    private String customTabsBrowser() {
+        PackageManager pm = getPackageManager();
+
+        // What would ordinarily open a web page -- the user's own choice.
+        ResolveInfo preferred = pm.resolveActivity(
+                new Intent(Intent.ACTION_VIEW, Uri.parse("https://example.com")),
+                PackageManager.MATCH_DEFAULT_ONLY);
+        if (preferred != null && supportsCustomTabs(preferred.activityInfo.packageName)) {
+            return preferred.activityInfo.packageName;
+        }
+
+        for (ResolveInfo candidate : pm.queryIntentActivities(
+                new Intent(Intent.ACTION_VIEW, Uri.parse("https://example.com")), 0)) {
+            if (supportsCustomTabs(candidate.activityInfo.packageName)) {
+                return candidate.activityInfo.packageName;
+            }
+        }
+        return null;
+    }
+
+    private boolean supportsCustomTabs(String pkg) {
+        Intent service = new Intent("android.support.customtabs.action.CustomTabsService");
+        service.setPackage(pkg);
+        return getPackageManager().resolveService(service, 0) != null;
     }
 
     private void cannotReach() {
