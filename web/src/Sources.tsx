@@ -1,13 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
 import { useLockScroll } from "./useLockScroll";
 import {
-  addLocalFolder,
-  browseLocal,
   discoverSources,
   formatDate,
   listSources,
+  removeSource,
   scanSource,
-  type Browsing,
   type Source,
 } from "./library";
 
@@ -104,21 +102,38 @@ export default function Sources(props: { onClose: () => void }) {
             <div className="muted small">{s.mount_prefix}</div>
             <div className="source-foot">
               <span className="muted small">{describeScan(s)}</span>
-              <button
-                className="compact"
-                disabled={s.scan?.state === "running"}
-                onClick={async () => {
-                  await scanSource(s.id);
-                  refresh();
-                }}
-              >
-                {s.scan?.state === "running" ? "Scanning…" : "Rescan"}
-              </button>
+              <div className="zone-controls">
+                <button
+                  className="compact"
+                  disabled={s.scan?.state === "running"}
+                  onClick={async () => {
+                    await scanSource(s.id);
+                    refresh();
+                  }}
+                >
+                  {s.scan?.state === "running" ? "Scanning…" : "Rescan"}
+                </button>
+                {/* Forgetting, not deleting. Nothing here can touch a file —
+                    the mounts are read-only — and the folder itself stays
+                    granted until it is withdrawn on the PC. */}
+                <button
+                  className="compact"
+                  onClick={async () => {
+                    if (!confirm(`Remove ${s.name} from the catalog? The files are not touched.`)) {
+                      return;
+                    }
+                    await removeSource(s.id);
+                    refresh();
+                  }}
+                >
+                  Remove
+                </button>
+              </div>
             </div>
           </div>
         ))}
 
-        <AddAFolder onAdded={refresh} />
+        <AddAFolder />
 
         <button className="compact" style={{ marginTop: 18 }} onClick={props.onClose}>
           Done
@@ -128,148 +143,40 @@ export default function Sources(props: { onClose: () => void }) {
   );
 }
 
-/** Browsing this machine for a folder to add.
+/** How a folder on this PC reaches Homesh.
  *
- * The drives are mounted read-only and the server lists them, which is what
- * every other media server does and the only design that works from a phone: no
- * browser will hand a web page a real path, so a file picker here returns names
- * and bytes and never "D:\Media".
+ * Instructions, not a control, and that is the design rather than a limitation
+ * of the web. Adding a folder is a one-time act performed at the machine that
+ * holds it — the same shape as sharing a folder with the Homesh account in
+ * Drive, which also happens in Drive and not in here.
  *
- * The first version of this refused to list the host at all and told people to
- * run a script on the PC instead. That is purity at the expense of the person
- * using it — no help whatsoever to somebody holding a phone in another room —
- * and it was rightly rejected. Read-only mounts, admin-only, and nothing read
- * beyond folder names until a folder is picked is where the safety actually
- * lives.
+ * A version of this did mount the whole of C: so the folders could be browsed
+ * from a phone. That is what most media servers do, and it was rejected for a
+ * better reason than I had for building it: the convenience lands once, on a
+ * job you do once, and the cost is the server being able to read the entire
+ * disk for the rest of its life. What was never granted should be unreachable,
+ * not merely unlisted.
  */
-function AddAFolder(props: { onAdded: () => void }) {
-  const [open, setOpen] = useState(false);
-  const [view, setView] = useState<Browsing | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [note, setNote] = useState<string | null>(null);
-
-  const go = useCallback(async (at: string) => {
-    setBusy(true);
-    setNote(null);
-    try {
-      setView(await browseLocal(at));
-    } catch (e) {
-      setNote(e instanceof Error ? e.message : String(e));
-    } finally {
-      setBusy(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (open && !view) void go("");
-  }, [open, view, go]);
-
-  if (!open) {
-    return (
-      <div className="add-folder">
-        <button className="compact primary" onClick={() => setOpen(true)}>
-          ＋ Add a folder from this computer
-        </button>
-        <p className="muted small">
-          Or share a folder with the Homesh account in Google Drive as{" "}
-          <b>Editor</b>, then press <b>Look for new folders</b>.
-        </p>
-      </div>
-    );
-  }
-
+function AddAFolder() {
   return (
     <div className="add-folder">
-      <div className="sheet-head">
-        <h3>Choose a folder</h3>
-        <button className="compact" onClick={() => setOpen(false)}>
-          Cancel
-        </button>
-      </div>
+      <h3>Add a folder from this computer</h3>
+      <p className="muted small">
+        On the PC that runs Homesh, double-click{" "}
+        <b>Add a folder to Homesh</b> in the Homesh folder. Windows asks which
+        folder; it is added read-only and appears above.
+      </p>
+      <p className="muted small">
+        Homesh can read the folders you have given it and nothing else on that
+        machine — the same bargain as a folder shared in Drive.
+      </p>
 
-      {note && <p className="error">{note}</p>}
-
-      {view && (
-        <>
-          {/* Where you are, and every step back. On a phone this is longer than
-              the screen, so it scrolls rather than wrapping into three lines. */}
-          <nav className="crumbs browse-crumbs">
-            <button className="crumb" onClick={() => void go("")}>
-              This computer
-            </button>
-            {view.crumbs.map((crumb) => (
-              <span key={crumb.path}>
-                <span className="sep">/</span>
-                <button className="crumb" onClick={() => void go(crumb.path)}>
-                  {crumb.name}
-                </button>
-              </span>
-            ))}
-          </nav>
-
-          {view.at && (
-            <div className="browse-here">
-              <span className="muted small">
-                {view.files} file{view.files === 1 ? "" : "s"} in this folder
-              </span>
-              {view.added ? (
-                <span className="badge">already added</span>
-              ) : (
-                <button
-                  className="compact primary"
-                  disabled={busy}
-                  onClick={async () => {
-                    setBusy(true);
-                    setNote(null);
-                    try {
-                      const added = await addLocalFolder(view.at);
-                      setNote(`Added ${added.name}. Rescan it to index what is in it.`);
-                      setOpen(false);
-                      setView(null);
-                      props.onAdded();
-                    } catch (e) {
-                      setNote(e instanceof Error ? e.message : String(e));
-                    } finally {
-                      setBusy(false);
-                    }
-                  }}
-                >
-                  Add this folder
-                </button>
-              )}
-            </div>
-          )}
-
-          {view.unmounted && (
-            <p className="error">
-              Docker has not attached this drive, so it looks empty from in
-              here. On the PC, run <code>.\tools\mount-drives.ps1</code> — it
-              attaches removable drives, which Windows never does by itself,
-              and restarts the server. Needed again after a reboot.
-            </p>
-          )}
-
-          {view.folders.length > 0 ? (
-            <ul className="folder-list">
-              {view.folders.map((folder) => (
-                <li key={folder.path}>
-                  <button className="folder-open" onClick={() => void go(folder.path)}>
-                    <span className="folder-ic" aria-hidden="true">▸</span>
-                    <span className="folder-name nm-clip">{folder.name}</span>
-                  </button>
-                  {folder.added && <span className="badge">added</span>}
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="muted small">
-              No folders in here{view.files > 0 ? ` — just ${view.files} file(s)` : ""}.
-            </p>
-          )}
-        </>
-      )}
-
-      {!view && busy && <p className="muted">Reading…</p>}
+      <h3>Add a folder from Google Drive</h3>
+      <p className="muted small">
+        Share it with the Homesh account as <b>Editor</b> — not Viewer, which
+        cannot grant the access the server needs — then press{" "}
+        <b>Look for new folders</b>.
+      </p>
     </div>
   );
 }

@@ -9,12 +9,10 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import re
 from pathlib import Path
 from uuid import UUID
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
-from pydantic import BaseModel, Field
 from sqlalchemy import text
 
 from .access import can_read, library_scope, visible
@@ -39,12 +37,19 @@ def register_sources() -> None:
     _register_drive()
 
 
-# Folders mounted straight into the container, one directory each.
+# Folders granted from the PC, one directory each, read-only.
 #
-# The ordinary way to add a folder is to browse for it (see HOST_FS below). This
-# is the compose-file route, for a headless host being set up by editing YAML
-# rather than by clicking: mount a folder at /library/music and it is a source
-# on the next start, with nobody having to sign in to say so.
+# This is the whole local-source mechanism, and the shape is deliberate: the
+# server sees the folders it has been given and has no way to look at anything
+# else. It is the same bargain as a Drive folder shared with the Homesh account
+# -- you grant it where it lives, and what you did not grant is not merely
+# hidden but unreachable.
+#
+# It went through a version that mounted the whole of C: and let an
+# administrator browse it in the app. That is what most media servers do, and it
+# was rejected for a good reason: adding a folder is a one-time act performed at
+# the machine, so the convenience of doing it from a phone was never worth the
+# server being able to see the entire disk for the rest of its life.
 LIBRARY_MOUNTS = Path("/library")
 
 
@@ -177,219 +182,32 @@ def _source_names() -> set[str]:
         return {r[0] for r in conn.execute(text("SELECT mount_prefix FROM sources")).all()}
 
 
-# ── Browsing this machine for a folder to add ────────────────────────────────
-#
-# The machine's drives, mounted read-only, so an administrator can walk them in
-# the app and pick a folder. Every other media server does this and it is the
-# only design that works from a phone: a browser will not tell a web page a real
-# path, so the alternative is typing one from memory, or running a script on the
-# PC -- which is no use at all to somebody holding a phone in another room.
-#
-# I built the script version first, on the theory that a server should not list
-# the host. That was purity applied to somebody else's product. A media server
-# installed natively on Windows has full read and write access to these drives;
-# this has read-only mounts, cannot reach outside them, and lists them only to
-# an authenticated administrator. Mounting is not indexing -- nothing is read
-# beyond folder names until a folder is picked.
-HOST_FS = Path("/hostfs")
-
-# Folders nobody is looking for, hidden to keep what is left worth reading. Not
-# a security measure: the confinement below is that. This is so "Users" does not
-# arrive buried under twenty directories Windows made.
-NOISE = {
-    "$recycle.bin", "system volume information", "windows", "programdata",
-    "$windows.~ws", "$windows.~bt", "recovery", "perflogs", "config.msi",
-    "appdata", "application data", "program files", "program files (x86)",
-    "node_modules", "__pycache__", ".git", ".cache", "temp", "tmp",
-}
+# ── Removing a folder that was granted ───────────────────────────────────────
 
 
-class NewSource(BaseModel):
-    """A folder on this machine, as the browser hands it back."""
+@router.delete("/sources/{source_id}", status_code=status.HTTP_204_NO_CONTENT)
+def remove_source(source_id: UUID, user: CurrentUser = Depends(require_user)) -> None:
+    """Forget a source. The files are not touched -- nothing here can touch them.
 
-    path: str = Field(min_length=1, max_length=4096)
-    name: str | None = Field(default=None, max_length=120)
-
-
-def _resolve_in_host(relative: str) -> Path:
-    """Turn a browsed path into a real one, or refuse.
-
-    Confinement is checked *after* resolution, which is the project rule and the
-    reason it is worth stating: ".." and a symlink both look innocent until the
-    path is resolved, and a check done before resolution is checking a string
-    rather than a location.
-    """
-    if not HOST_FS.is_dir():
-        raise HTTPException(
-            status.HTTP_503_SERVICE_UNAVAILABLE,
-            "no drives are mounted for browsing — see BROWSE_C in docker-compose.yml",
-        )
-
-    candidate = (HOST_FS / relative.strip("/")).resolve() if relative else HOST_FS.resolve()
-    root = HOST_FS.resolve()
-    if candidate != root and root not in candidate.parents:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "not found")
-    if not candidate.is_dir():
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "not found")
-    return candidate
-
-
-def _worth_offering(entry: Path) -> bool:
-    name = entry.name
-    if name.startswith("."):
-        return False
-    if name.lower() in NOISE:
-        return False
-    try:
-        return entry.is_dir()
-    except OSError:
-        # A drive that has gone away, or a junction pointing nowhere. Not an
-        # error worth failing a whole listing over.
-        return False
-
-
-@router.get("/sources/local/browse")
-def browse_this_machine(
-    at: str = Query("", max_length=4096),
-    user: CurrentUser = Depends(require_user),
-) -> dict:
-    """List folders on this machine, for choosing one to index.
-
-    A plain `def`, so FastAPI runs it in the threadpool: listing a directory on
-    a spinning disk blocks, and blocking the event loop stops every stream in
-    the house.
+    Granting a folder happens on the PC, where the folder is. Withdrawing it can
+    happen here, because forgetting needs no access to anything. The mount stays
+    until somebody removes it on the PC too, which is the honest order: this is
+    the catalog letting go, not the grant being revoked.
     """
     if not user.is_admin:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "admin only")
-
-    here = _resolve_in_host(at)
-    root = HOST_FS.resolve()
-    known = _local_roots()
-
-    try:
-        entries = sorted(here.iterdir(), key=lambda p: p.name.lower())
-    except PermissionError:
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "this folder cannot be read") from None
-    except OSError as exc:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from None
-
-    folders = []
-    files = 0
-    for entry in entries:
-        if _worth_offering(entry):
-            rel = str(entry.relative_to(root)).replace("\\", "/")
-            folders.append(
-                {
-                    "name": _display(entry, root),
-                    "path": rel,
-                    "added": str(entry) in known,
-                }
-            )
-        else:
-            try:
-                if entry.is_file():
-                    files += 1
-            except OSError:
-                pass
-
-    rel_here = "" if here == root else str(here.relative_to(root)).replace("\\", "/")
-
-    # A drive that is mounted but empty is not an empty drive. Docker attaches
-    # the host's drives when it starts, so one that was powered off then -- which
-    # this RAID is, by design -- comes up as an empty directory rather than as an
-    # error. Showing "no folders in here" for a disk full of music is a lie the
-    # person then has to debug, so say what it actually means.
-    unmounted = bool(rel_here) and "/" not in rel_here and not folders and not files
-    crumbs = []
-    walked = ""
-    for part in [p for p in rel_here.split("/") if p]:
-        walked = f"{walked}/{part}".lstrip("/")
-        crumbs.append({"name": _display(root / walked, root), "path": walked})
-
-    return {
-        "available": True,
-        "at": rel_here,
-        "crumbs": crumbs,
-        "folders": folders,
-        "files": files,
-        "added": str(here) in known,
-        "unmounted": unmounted,
-    }
-
-
-def _display(path: Path, root: Path) -> str:
-    """What to call a folder on screen.
-
-    The top level is drive letters, mounted as "c" and "g" because a mount point
-    is a Unix path. "C:" is what somebody is looking for; "c" is a puzzle.
-    """
-    if path.parent == root and len(path.name) == 1:
-        return f"{path.name.upper()}:"
-    return path.name
-
-
-def _local_roots() -> set[str]:
-    with get_engine().connect() as conn:
-        return {
-            r[0]
-            for r in conn.execute(
-                text("SELECT remote_id FROM sources WHERE kind = 'local' AND remote_id IS NOT NULL")
-            ).all()
-        }
-
-
-@router.post("/sources/local", status_code=status.HTTP_201_CREATED)
-def add_local_folder(
-    body: NewSource,
-    user: CurrentUser = Depends(require_user),
-) -> dict:
-    """Add a folder on this machine as a source.
-
-    No restart, because the drive is already mounted: adding a folder is a row,
-    not a change to how the container is wired. That is the difference between
-    picking a folder and redeploying the server to add one.
-    """
-    if not user.is_admin:
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "admin only")
-
-    folder = _resolve_in_host(body.path)
-    if folder == HOST_FS.resolve():
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "pick a folder, not the whole machine")
-
-    name = (body.name or folder.name or "folder").strip()
-    prefix = "/local/" + re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
-    if prefix == "/local/":
-        prefix = "/local/folder"
 
     with get_engine().begin() as conn:
-        taken = conn.execute(
-            text("SELECT remote_id FROM sources WHERE mount_prefix = :p"), {"p": prefix}
+        gone = conn.execute(
+            text("DELETE FROM sources WHERE id = :id RETURNING mount_prefix"),
+            {"id": str(source_id)},
         ).scalar_one_or_none()
-        if taken is not None and taken != str(folder):
-            # Two folders called "Music" in different places is ordinary, and
-            # the second must not quietly take over the first.
-            suffix = 2
-            while conn.execute(
-                text("SELECT 1 FROM sources WHERE mount_prefix = :p"), {"p": f"{prefix}-{suffix}"}
-            ).first():
-                suffix += 1
-            prefix = f"{prefix}-{suffix}"
 
-        conn.execute(
-            text(
-                """
-                INSERT INTO sources (kind, name, mount_prefix, remote_id)
-                VALUES ('local', :name, :prefix, :root)
-                ON CONFLICT (mount_prefix)
-                DO UPDATE SET name = EXCLUDED.name, remote_id = EXCLUDED.remote_id
-                """
-            ),
-            {"name": name, "prefix": prefix, "root": str(folder)},
-        )
+    if gone is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "no such source")
 
     forget_connectors()
-    log.info("added local source %s -> %s", prefix, folder)
-    return {"name": name, "mount_prefix": prefix}
+    log.info("removed source %s", gone)
 
 
 @router.get("/sources")

@@ -43,22 +43,11 @@ services:
       # Your media, mounted READ-ONLY. The server indexes and streams; it has no
       # business writing to your library.
       - ${MEDIA_HOST_PATH:-./sample-media}:/media/library:ro
-      # This machine's drives, read-only, so an administrator can browse them
-      # in the app and pick a folder to index -- the way every other media
-      # server does it, and the only way that works from a phone.
-      #
-      # Read-only is the safety argument, and it is stronger than it looks: a
-      # media server installed natively on Windows runs with the account's full
-      # read AND write access to these same drives. This has read only, can
-      # reach nothing outside these mounts, and lists them only to an
-      # authenticated administrator.
-      #
-      # Mounted is not indexed. Nothing here is read beyond folder names until
-      # somebody picks a folder, and then only that folder. Narrow BROWSE_C to
-      # one directory and that is all the server can ever see.
-      - ${BROWSE_C:-C:/}:/hostfs/c:ro
-      # Other drives are mounted in docker-compose.override.yml, written by
-      # tools/mount-drives.ps1 from what Windows reports.
+      # Folders granted from the PC land here, one directory each, read-only.
+      # docker-compose.override.yml holds them; "Add a folder to Homesh" on the
+      # PC writes it. The server registers what it finds and can reach nothing
+      # else -- the same shape as a Drive folder shared with the Homesh account,
+      # and the same guarantee: what was granted, and not the rest of the disk.
       # The Drive credential, mounted read-only. Kept out of the image so it is
       # never baked into a layer that could be pushed somewhere.
       - ./.secrets:/run/secrets:ro
