@@ -64,7 +64,7 @@ Deployed and believed correct; not yet confirmed in use.
 | | Item | Note |
 |---|---|---|
 | 🟡 | **Any file can be opened** | Files nothing could preview were inert — a `.MSWMM` or one with no extension could not even be clicked. The viewer shows the bytes as text or hex, choosing whichever answers the question, and either can be switched to |
-| 🟡 | **Homesh Connect, the phone app** | Install from `‹your server›/phone` — the address is in Settings. Checks both addresses, offers **Open Tailscale** when neither answers, then hands off to the browser. Tailscale reconnects on being opened, and coming back continues by itself |
+| 🟡 | **Homesh Connect, the phone app** | Install from [the releases page](https://github.com/shahafdu/Homesh/releases/latest) — which works with the server unreachable, and that is the point: the app exists to fix not being able to reach the server, so it cannot be hosted only there. Also at `‹your server›/phone` when you are already connected. Checks both addresses, offers **Open Tailscale** when neither answers, then hands off to the browser |
 | 🟡 | **The logo goes home** | From four folders deep, one tap |
 | 🟡 | **Browsing this computer for a folder** | Settings browses your own storage — descend, breadcrumbs, **Add this folder** at any depth. The first attempt only listed the top of one mounted folder, which is not browsing: the folder somebody wants is three levels down |
 | 🟡 | **Shuffle in a room is a switch** | It was an action, so the button looked identical whether or not it had been pressed. The state lives with the queue now, where several phones can see it |

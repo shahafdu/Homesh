@@ -113,7 +113,7 @@ jobs:
         run: npm run build
 
   tv:
-    name: Android TV — build APK
+    name: Android — build both APKs
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -124,7 +124,7 @@ jobs:
       # The runner already carries the Android SDK, so nothing is downloaded.
       # The build uses aapt2/javac/d8/apksigner directly — no Gradle, no AGP,
       # and no third-party Android dependencies to resolve.
-      - name: Build
+      - name: Build the TV app
         run: bash tools/build-tv-apk.sh
         env:
           # A throwaway key per run. The APK from CI is for testing; the copy
@@ -140,10 +140,30 @@ jobs:
           # losing it would leave an APK that installs and cannot be opened.
           grep -q "leanback-launchable-activity" badging.txt
           grep -q "application-label:'Homesh'" badging.txt
+      # The phone app is built from the same sources by the same script, and
+      # went unbuilt here for a fortnight -- long enough for a broken one to
+      # have reached a phone unnoticed. Anything that ships gets built.
+      - name: Build the phone app
+        run: APP=phone bash tools/build-tv-apk.sh
+        env:
+          HOMESH_TV_KEYSTORE: ${{ runner.temp }}/ci-signing.jks
+
+      - name: Check the phone app declares a launcher
+        run: |
+          BT=$(ls -1d "$ANDROID_HOME"/build-tools/*/ | sort -V | tail -1)
+          "${BT}aapt2" dump badging build/homesh-phone.apk > phone-badging.txt
+          cat phone-badging.txt
+          # No launcher entry means an app that installs and cannot be opened,
+          # which is exactly the failure a 25 KB APK is too small to make obvious.
+          grep -q "launchable-activity" phone-badging.txt
+          grep -q "package: name='com.homesh.phone'" phone-badging.txt
+
       - uses: actions/upload-artifact@v4
         with:
-          name: homesh-tv-apk
-          path: build/homesh-tv.apk
+          name: homesh-apks
+          path: |
+            build/homesh-tv.apk
+            build/homesh-phone.apk
           if-no-files-found: error
 
   image:
