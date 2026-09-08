@@ -17,7 +17,7 @@ The list to work from. Everything else can proceed without you.
 
 | | What | Why it matters |
 |---|---|---|
-| ✅ | **Add a folder of your own media** | On the PC, double-click **Add a folder to Homesh**. Windows asks which folder; it is granted read-only and appears under Sources. `E:\music` is granted and indexing. The server reaches that folder and nothing else on the machine — verified: `/hostfs` is gone, and a write into the mount is refused |
+| ✅ | **Add a folder of your own media** | **Sources → Choose a folder...** opens the Windows folder picker on the PC, via a `homesh://` protocol handler. Double-click **Add a folder to Homesh** once to register it. `E:\music` is granted; the server reaches that folder and nothing else — `/hostfs` is gone and writes into the mount are refused |
 
 ---
 

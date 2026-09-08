@@ -299,21 +299,27 @@ TOKEN=$(printf "protocol=https\nhost=github.com\n\n" | git credential fill | gre
 - No media URL is guessable or long-lived
 - No inbound ports at home; agents dial out
 - Path confinement checked *after* symlink resolution
-- **The server reaches only the folders it has been granted.** Each is mounted
-  read-only under `/library` by *Add a folder to Homesh* on the PC, which opens
-  the ordinary Windows picker. There is no endpoint that lists the host and none
-  that takes a path. What was not granted is unreachable, not merely unlisted.
+- **The server reaches only the folders it has been granted.** Each is a
+  read-only mount under `/library`, made on the PC. No endpoint lists the host
+  and none takes a path, so no request can widen what the server reaches. What
+  was not granted is unreachable, not merely unlisted.
 
-  Three attempts to get here, and the third is the one to keep. First the app
-  listed a mounted folder automatically, which Shahaf objected to as scanning
-  his PC unbidden. I over-corrected into "never list the host" and shipped a
-  PowerShell chore. Told to build a browser like every other media server, I
-  mounted whole drives — and that was wrong too, for the reason he gave: adding
-  a folder is a **one-time act performed at the machine**, exactly like sharing
-  a folder in Drive, so buying the convenience of doing it from a phone costs
-  permanent read access to the entire disk. The grant is the feature; the
-  picker is only how you name it. Make granting pleasant — a double-click, not
-  a terminal — and do not widen scope to make it convenient
+  **The button that does it is in the app**, and lives at `homesh://add-folder`
+  — a protocol handler registered in HKCU by `tools/grant-folder.ps1`, the same
+  mechanism as a Zoom or Spotify link. A web page cannot open a folder dialog on
+  the machine, but it can ask Windows to open something that can. The page never
+  learns the path and does not need to.
+
+  Four attempts to get here, and the shape of the mistake was the same each
+  time: reading a complaint about *ergonomics* as a request to widen *scope*.
+  Shahaf objected to the app listing his folders unbidden; I banned host
+  listing and shipped a terminal chore. He asked for a browser like every other
+  media server; I mounted whole drives — and he refused that too, because
+  adding a folder is a **one-time act at the machine**, exactly like sharing a
+  folder in Drive, so convenience from a phone was never worth permanent read
+  access to the disk. Then a double-click, which was still not a button.
+  **The grant is the feature; the picker is only how you name it. Make the
+  naming pleasant. Never widen the grant to make it convenient**
 - **No secure-context-only browser APIs.** Screens reach the server over plain
   http at a LAN address, which is not a secure context: `crypto.randomUUID`,
   `navigator.clipboard` and friends are undefined there. They work on the

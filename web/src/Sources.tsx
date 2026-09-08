@@ -133,7 +133,7 @@ export default function Sources(props: { onClose: () => void }) {
           </div>
         ))}
 
-        <AddAFolder />
+        <AddAFolder onAdded={refresh} />
 
         <button className="compact" style={{ marginTop: 18 }} onClick={props.onClose}>
           Done
@@ -143,31 +143,86 @@ export default function Sources(props: { onClose: () => void }) {
   );
 }
 
-/** How a folder on this PC reaches Homesh.
+/** The button that opens Windows' own folder picker on the PC.
  *
- * Instructions, not a control, and that is the design rather than a limitation
- * of the web. Adding a folder is a one-time act performed at the machine that
- * holds it — the same shape as sharing a folder with the Homesh account in
- * Drive, which also happens in Drive and not in here.
+ * A web page cannot open a folder dialog on the machine — no browser will tell
+ * a page a path, and a file input returns names and bytes and never
+ * "E:\music". But it can ask Windows to open something that can, which is what
+ * a protocol handler is for and how a Zoom or Spotify link works.
  *
- * A version of this did mount the whole of C: so the folders could be browsed
- * from a phone. That is what most media servers do, and it was rejected for a
- * better reason than I had for building it: the convenience lands once, on a
- * job you do once, and the cost is the server being able to read the entire
- * disk for the rest of its life. What was never granted should be unreachable,
- * not merely unlisted.
+ * So the button is real. Pressing it hands "homesh://add-folder" to Windows,
+ * which runs the grant script, which opens the ordinary folder dialog on the
+ * PC. The page never learns the path and does not need to: the picking and the
+ * granting both happen on the machine that holds the folder, which is also
+ * what keeps the server's reach limited to what was actually chosen.
+ *
+ * Nothing comes back — a protocol launch has no result — so this watches the
+ * source list instead and stops as soon as something new appears.
  */
-function AddAFolder() {
+function AddAFolder(props: { onAdded: () => void }) {
+  const [waiting, setWaiting] = useState(false);
+
+  // Poll while a picker is open on the PC. It ends on the first new source, or
+  // after two minutes, because somebody who wandered off should not leave the
+  // app asking the server about it for the rest of the evening.
+  useEffect(() => {
+    if (!waiting) return;
+    let before: number | null = null;
+    const stop = window.setTimeout(() => setWaiting(false), 120_000);
+    const poll = window.setInterval(async () => {
+      try {
+        const now = (await listSources()).length;
+        if (before === null) before = now;
+        else if (now > before) {
+          setWaiting(false);
+          props.onAdded();
+        }
+      } catch {
+        // A restart is expected: granting a folder recreates the container.
+      }
+    }, 2000);
+    return () => {
+      window.clearInterval(poll);
+      window.clearTimeout(stop);
+    };
+  }, [waiting, props]);
+
   return (
     <div className="add-folder">
       <h3>Add a folder from this computer</h3>
+
+      <button
+        className="compact primary"
+        onClick={() => {
+          setWaiting(true);
+          // Not fetch, not a new tab: handing the URL to the browser is what
+          // makes Windows run the handler. A blocked or unregistered protocol
+          // fails silently here, which is why the line below says what to do.
+          window.location.href = "homesh://add-folder";
+        }}
+      >
+        ＋ Choose a folder…
+      </button>
+
+      {waiting ? (
+        <p className="muted small">
+          Windows is asking which folder — <b>on the PC's screen</b>. Pick one
+          and it appears here. The server restarts, so this page may blink.
+        </p>
+      ) : (
+        <p className="muted small">
+          Opens the Windows folder picker <b>on the PC that runs Homesh</b>,
+          which is where the folders are. Nothing happens if you press it from a
+          phone.
+        </p>
+      )}
+
       <p className="muted small">
-        On the PC that runs Homesh, double-click{" "}
-        <b>Add a folder to Homesh</b> in the Homesh folder. Windows asks which
-        folder; it is added read-only and appears above.
+        If nothing opens, double-click <b>Add a folder to Homesh</b> in the
+        Homesh folder once — that also teaches this button to work.
       </p>
       <p className="muted small">
-        Homesh can read the folders you have given it and nothing else on that
+        Homesh reads the folders you have given it and nothing else on that
         machine — the same bargain as a folder shared in Drive.
       </p>
 

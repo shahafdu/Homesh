@@ -155,12 +155,17 @@ Both are stored on your account, not in the browser, so you set them once.
 
 ## 7. Adding a folder of your own
 
-On the PC that runs Homesh, double-click **Add a folder to Homesh** in the Homesh
-folder. Windows asks which folder. That folder is given to the server read-only
-and appears under **Sources**; press **Rescan** to index it.
+In the app: **Sources** (the toolbar's ◫ button) → **Choose a folder…**
 
-That is the whole thing, and it is the same shape as sharing a folder in Drive:
-you grant it where it lives, once.
+Windows' own folder picker opens **on the PC that runs Homesh** — the machine the
+folders are actually on. Pick one and it appears in the list; press **Rescan** to
+index it.
+
+The button works by handing `homesh://add-folder` to Windows, the same way a Zoom
+or Spotify link works. That registration happens the first time you double-click
+**Add a folder to Homesh** in the Homesh folder, so do that once and the button
+works from then on. (Pressing it from a phone does nothing — the picker would have
+to open on a screen the folders are not on.)
 
 ### What the server can see
 
