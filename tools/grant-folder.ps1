@@ -45,6 +45,42 @@ $ErrorActionPreference = 'Stop'
 $repo = Split-Path -Parent $PSScriptRoot
 $overrideFile = Join-Path $repo 'docker-compose.override.yml'
 
+# Windows hands the whole URL to the handler as an argument, so a click on
+# "homesh://add-folder" in the app arrives here as $Path. It is a request to
+# open the picker, not a folder to grant.
+if ($Path -and $Path -like 'homesh:*') { $Path = $null }
+
+function Register-Protocol {
+    <#
+        Teach Windows what "homesh://add-folder" means, so the app can have a
+        real button that opens the real folder dialog.
+
+        This is the same mechanism behind a Zoom or Spotify link, and it is the
+        answer to a question that kept coming back: a web page cannot open a
+        folder picker on the PC, but it can ask Windows to open something that
+        can. The page never learns a path -- no browser will tell it one -- and
+        it does not need to. The picking and the granting both happen here.
+
+        HKCU, so no administrator rights and nothing machine-wide. Rewritten on
+        every run, which keeps it correct if the repository is moved.
+    #>
+    $key = 'HKCU:\Software\Classes\homesh'
+    $command = ('powershell -NoProfile -ExecutionPolicy Bypass -File "{0}" -Path "%1"' -f
+                (Join-Path $PSScriptRoot 'grant-folder.ps1'))
+    try {
+        New-Item -Path "$key\shell\open\command" -Force | Out-Null
+        Set-ItemProperty -Path $key -Name '(Default)' -Value 'URL:Homesh'
+        Set-ItemProperty -Path $key -Name 'URL Protocol' -Value ''
+        Set-ItemProperty -Path "$key\shell\open\command" -Name '(Default)' -Value $command
+    } catch {
+        # A locked-down profile can refuse this. The double-click still works,
+        # so say so rather than failing the thing somebody actually asked for.
+        Write-Host "  (could not register the in-app button: $_)" -ForegroundColor DarkGray
+    }
+}
+
+Register-Protocol
+
 # Where a granted folder lands inside the container. server/app/library.py
 # registers every directory it finds here, so the two constants must agree.
 $mountRoot = '/library'
