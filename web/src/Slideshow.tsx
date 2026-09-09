@@ -304,24 +304,28 @@ export default function Slideshow(props: {
  */
 export function useSwipe(
   step: (delta: number) => void,
-  /** Whether a gesture starting here is ours to take. Absent means always.
+  /** Whether a completed gesture is ours to act on. Absent means always.
    *
-   * Given the element the touch started on, so a caller can exclude the few
-   * regions that own a sideways drag themselves — a hex dump paging across, a
-   * PDF scrolling, a video's scrubber. Excluding by region rather than by kind
-   * is what lets the gesture work on everything else. */
-  mine?: (target: Element) => boolean,
+   * Asked at the *end*, with the element the touch began on and how far it
+   * travelled, because the interesting cases need both. A region that scrolls
+   * sideways keeps the gesture while it has somewhere left to scroll, and gives
+   * it up at the edge — which cannot be known when the finger lands, only when
+   * it lifts and the direction is known.
+   */
+  mine?: (target: Element, dx: number) => boolean,
 ) {
-  const from = useRef<{ x: number; y: number } | null>(null);
+  const from = useRef<{ x: number; y: number; target: Element | null } | null>(null);
 
   return {
     onTouchStart: (e: React.TouchEvent) => {
-      const target = e.target as Element | null;
-      if (e.touches.length !== 1 || (mine && target && !mine(target))) {
-        from.current = null;
-        return;
-      }
-      from.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+      from.current =
+        e.touches.length === 1
+          ? {
+              x: e.touches[0].clientX,
+              y: e.touches[0].clientY,
+              target: e.target as Element | null,
+            }
+          : null;
     },
     onTouchMove: (e: React.TouchEvent) => {
       // A second finger means a pinch. Abandon the swipe rather than finish it
@@ -336,6 +340,10 @@ export function useSwipe(
       const dx = e.changedTouches[0].clientX - start.x;
       const dy = e.changedTouches[0].clientY - start.y;
       if (Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy) * 2) return;
+
+      // Asked now rather than at the start: whether a scrolling region is done
+      // with the gesture depends on which way it went.
+      if (mine && start.target && !mine(start.target, dx)) return;
 
       // Left means forward, matching the direction the content moves and every
       // gallery anybody has used.

@@ -6,6 +6,7 @@ import FileActions from "./FileActions";
 import PlayTo from "./PlayTo";
 import { useSwipe } from "./Slideshow";
 import type { ViewerScope } from "./prefs";
+import { useLockScroll } from "./useLockScroll";
 import { printDocument, printImage, printViaShareSheet } from "./print";
 import { canShareFiles } from "./share";
 import { castFile, castable, loadCast, whyNotCastable } from "./cast";
@@ -56,6 +57,12 @@ export default function Viewer(props: {
    *  stops rather than the two of them playing at once. */
   onTakeAudio?: () => void;
 }) {
+  // The page behind stays put. Without this the viewer is a fixed layer over a
+  // document that still scrolls, so dragging anywhere scrolled the folder
+  // underneath -- and on a phone that is what makes the browser's own address
+  // bar slide in and out, which reads as the app flickering.
+  useLockScroll();
+
   const { onClose, scope } = props;
 
   // Position is held as an item id rather than an index, and that is what makes
@@ -123,19 +130,34 @@ export default function Viewer(props: {
   // a PDF scrolls and the raw viewer pages a hex dump sideways. That was too
   // blunt: it disabled the gesture across most of the app to protect three
   // small regions. Those regions are excluded by name instead.
-  const swipe = useSwipe(step, (target) => {
-    // A hex dump and a PDF both scroll sideways under the finger; taking that
-    // over would break the thing somebody was actually doing.
-    if (target.closest(".raw-body, .pdf, .v-text")) return false;
-
+  const swipe = useSwipe(step, (target, dx) => {
     // A video's control bar lives along its bottom edge and is part of the same
     // element, so it cannot be excluded by selector. Dragging the scrubber must
-    // seek rather than change file; anywhere above it is picture, and a swipe
-    // there means what it means everywhere else.
+    // seek rather than change file; anywhere above it is picture.
     const video = target.closest("video");
     if (video) {
       const box = video.getBoundingClientRect();
       return lastTouchY.current < box.bottom - CONTROL_BAR;
+    }
+
+    // A hex dump and a PDF scroll sideways under the finger, and taking that
+    // over would break what somebody was doing. But refusing outright was too
+    // much: a document that fits the screen, or one already scrolled hard
+    // against its edge, has nothing left to give the gesture.
+    //
+    // So it is decided at the edge, the way a gallery does it — scroll while
+    // there is somewhere to scroll to, and change file once there is not. The
+    // direction matters: swiping left goes to the next file, and that is only
+    // ours when the content has no more to reveal on its right.
+    const scroller = target.closest<HTMLElement>(".raw-body, .pdf, .v-text");
+    if (scroller) {
+      const slack = scroller.scrollWidth - scroller.clientWidth;
+      if (slack <= 1) return true;   // nothing to scroll; the gesture is ours
+
+      const atStart = scroller.scrollLeft <= 1;
+      const atEnd = scroller.scrollLeft >= slack - 1;
+      // dx < 0 is a leftward swipe, which asks for the next file.
+      return dx < 0 ? atEnd : atStart;
     }
     return true;
   });
@@ -233,6 +255,11 @@ export default function Viewer(props: {
 
   return (
     <div className="viewer" role="dialog" aria-modal="true" aria-label={file.filename}>
+      {/* Three rows, because they were one and it wrapped. The filename, the
+          size and the count sat on the same line as eight buttons, so a long
+          name pushed them onto a second and third row and the header ate the
+          top third of the screen — worst on a phone, where the file is what
+          there is least room for. Name above, buttons below, scope beside. */}
       <header className="v-bar">
         <div className="v-title">
           <span className="v-name">{file.filename}</span>
@@ -241,6 +268,31 @@ export default function Viewer(props: {
             {files.length > 1 && ` · ${at + 1} of ${files.length}`}
           </span>
         </div>
+
+        <div className="v-row">
+          {/* What the arrows and swipes move through. Its own row rather than
+              squeezed among the actions: on a phone it took the width the close
+              button needed, and the close button is the one that must never go
+              missing. */}
+          <div className="seg v-scope" role="group" aria-label="Move between">
+            <button
+              aria-pressed={scope === "kind"}
+              title={`Only ${kindLabel(file.kind)}`}
+              onClick={() => props.onScope("kind")}
+            >
+              {kindLabel(file.kind)}
+            </button>
+            <button
+              aria-pressed={scope === "all"}
+              title="Every file in this folder, whatever it is"
+              onClick={() => props.onScope("all")}
+            >
+              All
+            </button>
+          </div>
+
+          <span className="v-gap" />
+
         <div className="v-actions">
           {/* Everything the row menu offers, from where you are actually
               looking at the file. Opening something used to be a dead end:
@@ -280,27 +332,6 @@ export default function Viewer(props: {
               {casting ? "…" : <CastGlyph />}
             </button>
           )}
-
-          {/* What the arrows and swipes move through. A folder of holiday
-              photographs wants one answer and a folder holding a film, its
-              subtitles and the photographs from that weekend wants the other,
-              so it is a choice rather than a rule. Remembered per account. */}
-          <div className="seg v-scope" role="group" aria-label="Move between">
-            <button
-              aria-pressed={scope === "kind"}
-              title={`Only ${kindLabel(file.kind)}`}
-              onClick={() => props.onScope("kind")}
-            >
-              {kindLabel(file.kind)}
-            </button>
-            <button
-              aria-pressed={scope === "all"}
-              title="Every file in this folder, whatever it is"
-              onClick={() => props.onScope("all")}
-            >
-              All
-            </button>
-          </div>
 
           <button
             className="v-btn"
@@ -346,6 +377,7 @@ export default function Viewer(props: {
           <button className="v-btn" onClick={onClose} aria-label="Close" title="Close (Esc)">
             ✕
           </button>
+        </div>
         </div>
       </header>
 
