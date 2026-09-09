@@ -3,6 +3,7 @@ import { useLockScroll } from "./useLockScroll";
 import { ApiError } from "./api";
 import type { FileEntry } from "./library";
 import { listZones, playInZone, zoneAccepts, zoneStatus, type Zone } from "./zones";
+import { shuffled, type ShowSettings } from "./slideshow";
 
 /** Asks *where* something should play, rather than assuming the phone.
  *
@@ -15,9 +16,20 @@ export default function PlayTo(props: {
   siblings: FileEntry[];
   onHere: () => void;
   onClose: () => void;
+  /** A slideshow instead of a file and its folder.
+   *
+   * The room picker already knows which rooms exist, which will take a picture,
+   * and which are busy — all of which a slideshow needs and none of which is
+   * about files. Given this, the queue and its timing come from here rather
+   * than from the folder around a file. */
+  slideshow?: { itemIds: string[]; settings: ShowSettings; label: string };
 }) {
   useLockScroll();
   const { file, siblings } = props;
+  // What is being sent, which decides which rooms can take it. A
+  // slideshow is photographs regardless of the file the picker was
+  // reached from -- the receiver has no screen and must stay refused.
+  const kind = props.slideshow ? "photo" : file.kind;
   const [zones, setZones] = useState<Zone[] | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -31,6 +43,19 @@ export default function PlayTo(props: {
     setBusy(zone.id);
     setError(null);
     try {
+      if (props.slideshow) {
+        const { itemIds, settings } = props.slideshow;
+        // Shuffled here, once, rather than by asking the room to shuffle after
+        // it has started: the first photograph should already be a random one.
+        const order = settings.shuffle ? shuffled(itemIds) : itemIds;
+        await playInZone(zone.id, order.slice(0, 5000), 0, takeOver, {
+          photo_ms: settings.holdMs,
+          transition: settings.transition,
+        });
+        props.onClose();
+        return;
+      }
+
       // Send the whole folder so a zone behaves like an album, matching what
       // playing here does.
       const siblingQueue = siblings.filter((f) => f.kind === file.kind && f.available);
@@ -66,7 +91,9 @@ export default function PlayTo(props: {
     <div className="sheet" role="dialog" aria-modal="true" aria-label="Play to" onClick={props.onClose}>
       <div className="sheet-inner" onClick={(e) => e.stopPropagation()}>
         <h2>Play to…</h2>
-        <p className="muted small nm-clip">{file.filename}</p>
+        <p className="muted small nm-clip">
+          {props.slideshow ? props.slideshow.label : file.filename}
+        </p>
 
         {error && <div className="error">{error}</div>}
 
@@ -87,18 +114,21 @@ export default function PlayTo(props: {
 
         <button className="pick" onClick={props.onHere}>
           <span className="pick-ic">▤</span>
-          <span className="pick-text"><b>This device</b><span>Play here</span></span>
+          <span className="pick-text">
+            <b>This device</b>
+            <span>{props.slideshow ? "Show it here" : "Play here"}</span>
+          </span>
         </button>
 
         {zones === null && <p className="muted">Looking for zones…</p>}
 
         {zones?.map((zone) => {
-          const ok = zoneAccepts(zone, file.kind);
+          const ok = zoneAccepts(zone, kind);
           const status = zoneStatus(zone);
           const reason = !zone.renderer
             ? "no device"
             : !ok
-              ? `audio only — cannot play ${file.kind}`
+              ? `audio only — cannot play ${kind}`
               : status.label;
 
           return (

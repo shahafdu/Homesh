@@ -426,6 +426,18 @@ async def renderer_socket(websocket: WebSocket, token: str = Query(...)) -> None
                 }
                 await hub.broadcast_state(renderer_id, state)
                 _persist_position(renderer_id, state)
+
+                # The end of an item is news the queue needs. Reported by the
+                # screen because only the screen knows -- for a photograph,
+                # because only the screen is counting the seconds it has been
+                # held. Awaited rather than fired off: two "ended" reports in a
+                # row would otherwise race to advance the same cursor.
+                if state["state"] == "ended":
+                    zone_id = _zone_of(renderer_id)
+                    if zone_id is not None:
+                        from .zones import advance_when_finished
+
+                        await advance_when_finished(zone_id)
             elif kind == "ping":
                 await websocket.send_text(json.dumps({"type": "pong"}))
     except WebSocketDisconnect:
@@ -435,6 +447,20 @@ async def renderer_socket(websocket: WebSocket, token: str = Query(...)) -> None
     finally:
         await hub.remove_renderer(renderer_id)
         log.info("renderer gone: %s", name)
+
+
+def _zone_of(renderer_id: UUID) -> UUID | None:
+    """Which room this screen is, if it is bound to one.
+
+    A screen can be paired and not yet placed in a room, in which case there is
+    no queue for it to advance and nothing to do.
+    """
+    with get_engine().connect() as conn:
+        found = conn.execute(
+            text("SELECT id FROM zones WHERE renderer_id = :r"),
+            {"r": str(renderer_id)},
+        ).scalar_one_or_none()
+    return found
 
 
 def _persist_position(renderer_id: UUID, state: dict) -> None:

@@ -79,6 +79,15 @@ class PlayRequest(BaseModel):
     # is using it. That should be a decision, not a surprise.
     take_over: bool = False
 
+    # How long each photograph is held, when this queue is a slideshow.
+    #
+    # Absent for everything else, and that absence is the definition: a track and
+    # a film end by themselves and the screen says so, while a photograph never
+    # will. Bounded because the bound is the honest range -- a second is as fast
+    # as anybody can look, ten minutes long enough not to be the limit.
+    photo_ms: int | None = Field(default=None, ge=1000, le=600_000)
+    transition: Literal["fade", "slide", "zoom", "none", "random"] = "fade"
+
 
 class VolumeRequest(BaseModel):
     level: int = Field(ge=0, le=100)
@@ -442,11 +451,18 @@ async def play(
         conn.execute(
             text(
                 """
-                INSERT INTO play_sessions (zone_id, queue, cursor, position_ms, state)
-                VALUES (:zid, CAST(:queue AS jsonb), :cursor, 0, 'buffering')
+                INSERT INTO play_sessions
+                    (zone_id, queue, cursor, position_ms, state,
+                     photo_ms, transition, started_by)
+                VALUES (:zid, CAST(:queue AS jsonb), :cursor, 0, 'buffering',
+                        :photo_ms, :transition, :by)
                 ON CONFLICT (zone_id) DO UPDATE
                 SET queue = EXCLUDED.queue, cursor = EXCLUDED.cursor,
                     position_ms = 0, duration_ms = NULL,
+                    photo_ms = EXCLUDED.photo_ms, transition = EXCLUDED.transition,
+                    -- Whoever started what is playing now, so the room can go on
+                    -- advancing after they have put the phone down and left.
+                    started_by = EXCLUDED.started_by,
                     state = 'buffering', updated_at = now()
                 """
             ),
@@ -454,6 +470,9 @@ async def play(
                 "zid": str(zone_id),
                 "queue": json.dumps([str(i) for i in body.item_ids]),
                 "cursor": index,
+                "photo_ms": body.photo_ms,
+                "transition": body.transition,
+                "by": str(user.id),
             },
         )
 
@@ -574,6 +593,16 @@ async def _push_to_screen(zone: Zone, item_id: UUID, user: CurrentUser) -> dict:
     else:
         media_url = f"{base}/api/stream/{item_id}?t={token}"
 
+    # How long to hold a photograph, and how to leave it. Read from the session
+    # rather than passed in, so a skip mid-slideshow keeps the settings the
+    # slideshow was started with instead of reverting to a default.
+    with get_engine().connect() as conn:
+        show = conn.execute(
+            text("SELECT photo_ms, transition FROM play_sessions WHERE zone_id = :z"),
+            {"z": str(zone.id)},
+        ).first()
+    photo_ms, transition = show if show else (None, "fade")
+
     sent = await hub.send(
         zone.renderer_id,
         {
@@ -583,6 +612,10 @@ async def _push_to_screen(zone: Zone, item_id: UUID, user: CurrentUser) -> dict:
             "filename": filename,
             "tags": tags,
             "kind": kind,
+            # Absent for anything that ends by itself, which is what tells the
+            # screen this is a slideshow rather than a photograph somebody sent.
+            "photo_ms": photo_ms,
+            "transition": transition,
         },
     )
     if not sent:
@@ -965,6 +998,52 @@ async def _skip(zone_id: UUID, user: CurrentUser, delta: int) -> dict:
         # receiver click between tracks.
         return await _stream_to_receiver(zone, item_id, user, with_preroll=False)
     return {"zone": zone.name, "state": "buffering", "pushed": False}
+
+
+async def advance_when_finished(zone_id: UUID) -> None:
+    """Move a room on to the next item, because the screen said this one ended.
+
+    The screen has always reported "ended" and the server has always ignored it,
+    so a room played the first thing it was given and then stopped -- a folder of
+    songs sent to a television was one song. It went unnoticed because the phone
+    is usually still in the room and pressing next looks like ordinary use.
+
+    A slideshow makes it unavoidable rather than merely wrong: a photograph never
+    ends on its own, so the screen holds it for photo_ms and then reports the same
+    "ended", and without this there is no second photograph.
+
+    Acting as whoever started the session is the point of recording them. The
+    alternative -- advancing with no account -- would be a queue that reaches
+    items the person who started it cannot, which is the one thing the access
+    rules exist to prevent. A session whose starter has since been removed simply
+    stops, which is the safe direction.
+    """
+    with get_engine().connect() as conn:
+        row = conn.execute(
+            text(
+                """
+                SELECT s.started_by, u.handle, u.display_name, u.is_admin
+                FROM play_sessions s
+                LEFT JOIN users u ON u.id = s.started_by
+                WHERE s.zone_id = :z AND s.state <> 'idle'
+                """
+            ),
+            {"z": str(zone_id)},
+        ).first()
+
+    if row is None or row[0] is None:
+        return
+
+    started_by = CurrentUser(
+        id=row[0], handle=row[1], display_name=row[2], is_admin=row[3]
+    )
+    try:
+        await _skip(zone_id, started_by, 1)
+    except HTTPException as exc:
+        # A room switched off, a file that has gone, a receiver that stopped
+        # answering. Ordinary at the end of a queue and not worth failing a
+        # socket message over.
+        log.info("zone %s did not advance: %s", zone_id, exc.detail)
 
 
 @router.post("/{zone_id}/next")

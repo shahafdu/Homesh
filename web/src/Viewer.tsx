@@ -4,6 +4,7 @@ import PdfView from "./PdfView";
 import RawView from "./RawView";
 import FileActions from "./FileActions";
 import PlayTo from "./PlayTo";
+import { useSwipe } from "./Slideshow";
 import { printDocument, printImage, printViaShareSheet } from "./print";
 import { canShareFiles } from "./share";
 import { castFile, castable, loadCast, whyNotCastable } from "./cast";
@@ -61,6 +62,16 @@ export default function Viewer(props: {
     },
     [index, files.length, onIndex],
   );
+
+  // Swipe, doing what the arrows do. Shared with the slideshow so both agree on
+  // what counts as a swipe rather than each guessing at a threshold.
+  //
+  // Only for photographs. A video has its own scrubber, a PDF scrolls, and the
+  // raw viewer pages a hex dump sideways -- on all three a sideways drag already
+  // means something, and taking it over would break the thing somebody was
+  // actually doing.
+  const swipe = useSwipe(step);
+  const swipeable = file?.kind === "photo" && files.length > 1;
 
   // The viewer gets its own history entry so that back — the natural gesture on a
   // phone — closes it rather than leaving the folder behind it.
@@ -260,7 +271,7 @@ export default function Viewer(props: {
 
       {printNote && <div className="error v-print-note">{printNote}</div>}
 
-      <div className="v-stage">
+      <div className="v-stage" {...(swipeable ? swipe : {})}>
         {files.length > 1 && (
           <button
             className="v-nav prev"

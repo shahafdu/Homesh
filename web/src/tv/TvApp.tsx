@@ -20,6 +20,32 @@ interface Command {
   kind?: "audio" | "video" | "photo";
   position_ms?: number;
   volume?: number;
+  /** Set only for a slideshow: how long to hold this photograph.
+   *
+   * Its presence is what makes a photograph an item in a queue rather than
+   * something somebody sent to look at. A photograph has no end of its own, so
+   * without this the screen would hold the first one for ever. */
+  photo_ms?: number | null;
+  transition?: string;
+}
+
+/** Which transition this photograph arrives with.
+ *
+ * "random" is resolved here, per photograph, rather than once when the
+ * slideshow starts -- which is the only reading of the word that is worth
+ * asking for. Anything unknown falls back to a fade, so an older screen showing
+ * a transition a newer server invented degrades to something rather than to
+ * nothing.
+ */
+const PICKABLE = ["fade", "slide", "zoom"] as const;
+
+function transitionFor(cmd: Command): string {
+  const wanted = cmd.transition ?? "fade";
+  if (wanted === "none") return "none";
+  if (wanted === "random") {
+    return PICKABLE[Math.floor(Math.random() * PICKABLE.length)];
+  }
+  return (PICKABLE as readonly string[]).includes(wanted) ? wanted : "fade";
 }
 
 const STORAGE_KEY = "homesh.tv.credential";
@@ -275,7 +301,8 @@ export default function TvApp() {
         setNow(cmd);
         setPhase("playing");
         // A photo has nothing to start: it is an <img>, and there is no media
-        // element to hand a source to.
+        // element to hand a source to. In a slideshow it does need an end,
+        // which is the timer below.
         if (cmd.kind === "photo") break;
 
         // Video goes to the box's own decoder where there is one. The web app
@@ -488,6 +515,19 @@ export default function TvApp() {
   }, [now, handle, report, wake]);
 
 
+  // A slideshow's clock.
+  //
+  // The server owns the queue, so what happens here is only "this one is done"
+  // -- exactly the message a finished track sends, and it goes down the same
+  // path. The alternative, a timer on the server, would have to survive
+  // restarts and know whether a screen is still watching; the screen already
+  // knows both.
+  useEffect(() => {
+    if (phase !== "playing" || now?.kind !== "photo" || !now.photo_ms) return;
+    const timer = window.setTimeout(() => report("ended"), now.photo_ms);
+    return () => window.clearTimeout(timer);
+  }, [phase, now?.kind, now?.photo_ms, now?.item_id, report, now]);
+
   useEffect(() => {
     // The native player is outside React and outside the media element, so it
     // reports through these two hooks. Without the first, the server never
@@ -608,7 +648,15 @@ export default function TvApp() {
             {isVideo && <video ref={mediaRef} playsInline />}
 
             {isPhoto && now.url && (
-              <img className="tv-photo" src={now.url} alt={now.filename ?? ""} />
+              // Keyed on the item, so React replaces the element rather than
+              // swapping its src -- which is what lets the CSS animation run
+              // again for each photograph instead of only for the first.
+              <img
+                key={now.item_id}
+                className={`tv-photo fx-${transitionFor(now)}`}
+                src={now.url}
+                alt={now.filename ?? ""}
+              />
             )}
 
             {!isVideo && !isPhoto && (
