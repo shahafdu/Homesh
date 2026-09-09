@@ -3,7 +3,7 @@ import { useLockScroll } from "./useLockScroll";
 import { ApiError } from "./api";
 import type { FileEntry } from "./library";
 import { listZones, playInZone, zoneAccepts, zoneStatus, type Zone } from "./zones";
-import { shuffled, type ShowSettings } from "./slideshow";
+import { type ShowSettings } from "./slideshow";
 
 /** Asks *where* something should play, rather than assuming the phone.
  *
@@ -22,7 +22,13 @@ export default function PlayTo(props: {
    * and which are busy — all of which a slideshow needs and none of which is
    * about files. Given this, the queue and its timing come from here rather
    * than from the folder around a file. */
-  slideshow?: { itemIds: string[]; settings: ShowSettings; label: string };
+  slideshow?: {
+    itemIds: string[];
+    settings: ShowSettings;
+    label: string;
+    /** Sent with the queue so the room can go back for more. */
+    folder: string;
+  };
 }) {
   useLockScroll();
   const { file, siblings } = props;
@@ -44,13 +50,17 @@ export default function PlayTo(props: {
     setError(null);
     try {
       if (props.slideshow) {
-        const { itemIds, settings } = props.slideshow;
-        // Shuffled here, once, rather than by asking the room to shuffle after
-        // it has started: the first photograph should already be a random one.
-        const order = settings.shuffle ? shuffled(itemIds) : itemIds;
-        await playInZone(zone.id, order.slice(0, 5000), 0, takeOver, {
+        const { itemIds, settings, folder } = props.slideshow;
+        // Already sampled by the server when shuffling, so it is sent as it
+        // came. Reordering it here would reshuffle a sample rather than the
+        // folder, which is the distinction the gather exists to preserve.
+        await playInZone(zone.id, itemIds.slice(0, 5000), 0, takeOver, {
           photo_ms: settings.holdMs,
           transition: settings.transition,
+          // Where they came from, so an endless slideshow can fetch more when
+          // the queue runs out instead of replaying the same seven hours.
+          under: folder,
+          endless: settings.endless,
         });
         props.onClose();
         return;

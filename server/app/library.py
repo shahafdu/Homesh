@@ -399,24 +399,53 @@ _PHOTOS_WHERE = """
       AND (:rel = '' OR r.dir_path = :rel OR r.dir_path LIKE :rel || '/%')
 """
 
-# The order photographs were taken in, as far as the folders record it.
+# The order photographs were taken in, as far as the folders record it. Paged,
+# so a slideshow can walk a folder of any size and start again at the end
+# without ever having asked how big it was.
 _PHOTOS_IN_ORDER = (
-    _PHOTOS_WHERE + " ORDER BY r.dir_path COLLATE natsort, r.filename COLLATE natsort LIMIT :lim"
+    _PHOTOS_WHERE
+    + " ORDER BY r.dir_path COLLATE natsort, r.filename COLLATE natsort"
+    + " OFFSET :off LIMIT :lim"
 )
 
 # A random sample of everything, rather than a shuffle of the first slice --
 # which would be a random ordering of one corner of the library while claiming
 # to be a random ordering of all of it.
-_PHOTOS_AT_RANDOM = _PHOTOS_WHERE + " ORDER BY random() LIMIT :lim"
+#
+# The offset is accepted and means little here, which is the honest description:
+# every call is an independent draw, so there is no sequence to page through.
+# It is taken only so both queries bind the same parameters.
+_PHOTOS_AT_RANDOM = _PHOTOS_WHERE + " ORDER BY random() OFFSET :off LIMIT :lim"
 
 
 @router.get("/slideshow")
 def slideshow(
     under: str = Query(..., min_length=1, description="Folder to gather photos from"),
     shuffle: bool = Query(False, description="Sample at random rather than taking the first"),
+    offset: int = Query(0, ge=0, description="Skip this many, for paging on and on"),
+    count: bool = Query(True, description="Whether to count the folder as well"),
     user: CurrentUser = Depends(require_user),
 ) -> dict:
+    """Every photograph in a folder and everything below it. See gather_photos."""
+    return gather_photos(under=under, shuffle=shuffle, offset=offset, count=count, user=user)
+
+
+def gather_photos(
+    *,
+    under: str,
+    user: CurrentUser,
+    shuffle: bool = False,
+    offset: int = 0,
+    count: bool = True,
+) -> dict:
     """Every photograph in a folder and everything below it, in order.
+
+    A plain function with the endpoint above as a thin wrapper, because the room
+    code calls this to refill an endless slideshow. Calling the endpoint
+    directly appeared to work and was a trap: FastAPI's defaults are Query
+    objects, so any argument left out arrived as one and reached the database as
+    a parameter it could not adapt. Keyword-only, so nothing can be passed
+    positionally into the wrong slot either.
 
     Recursive because that is how photographs are kept: a year, with months
     inside it, with a weekend inside that. Asking for "2019" and being shown the
@@ -436,6 +465,16 @@ def slideshow(
     would be a random ordering of one corner of the library while claiming to
     be a random ordering of all of it. A random sample of everything is what
     somebody means by shuffle, and only the database can take one.
+
+    `offset` is how a slideshow runs for ever in order: page through, and when a
+    page comes back empty, start again from nothing. That needs no total, which
+    is why `count` is optional — an endless slideshow never asks how many there
+    are, because it is never going to reach the end.
+
+    Running for ever shuffled needs no offset at all: each call is an
+    independent draw, and repeats are expected. Refusing to show a photograph
+    twice would mean remembering every one already shown, for a slideshow that
+    by definition never finishes.
 
     A plain `def`: this walks a source that may hold a hundred thousand rows, and
     blocking the event loop stops every stream in the house.
@@ -461,17 +500,23 @@ def slideshow(
     LIMIT = 10_000
 
     with get_engine().connect() as conn:
-        total = conn.execute(
-            text(
-                """
-                SELECT count(*)
-                FROM replicas r JOIN items i ON i.id = r.item_id
-                WHERE r.source_id = :sid AND i.kind = 'photo' AND r.available
-                  AND (:rel = '' OR r.dir_path = :rel OR r.dir_path LIKE :rel || '/%')
-                """
-            ),
-            {"sid": str(source_id), "rel": rel},
-        ).scalar_one()
+        # Skipped for an endless slideshow, which never reaches the end and so
+        # learns nothing from being told how far away it is. Counting 105,000
+        # rows to answer a question nobody asked is the sort of thing that makes
+        # a photo frame feel slow to start.
+        total = None
+        if count:
+            total = conn.execute(
+                text(
+                    """
+                    SELECT count(*)
+                    FROM replicas r JOIN items i ON i.id = r.item_id
+                    WHERE r.source_id = :sid AND i.kind = 'photo' AND r.available
+                      AND (:rel = '' OR r.dir_path = :rel OR r.dir_path LIKE :rel || '/%')
+                    """
+                ),
+                {"sid": str(source_id), "rel": rel},
+            ).scalar_one()
 
         # Two whole queries rather than one with the ordering pasted in. The
         # value would have been safe -- it is one of two literals -- but a
@@ -479,7 +524,7 @@ def slideshow(
         # that also handles paths from the network.
         rows = conn.execute(
             text(_PHOTOS_AT_RANDOM if shuffle else _PHOTOS_IN_ORDER),
-            {"sid": str(source_id), "rel": rel, "lim": LIMIT},
+            {"sid": str(source_id), "rel": rel, "lim": LIMIT, "off": offset},
         ).all()
 
     # A subfolder can be closed while its parent is open, and a slideshow must
@@ -500,10 +545,13 @@ def slideshow(
         "item_ids": items,
         "count": len(items),
         # What is actually there, so the interface can say "10,000 of 105,162"
-        # rather than quietly presenting a slice as the whole thing.
+        # rather than quietly presenting a slice as the whole thing. Absent when
+        # counting was skipped, which an endless slideshow does — it is never
+        # going to reach the end, so the size of the folder tells it nothing.
         "total": total,
-        "truncated": total > len(items),
+        "truncated": total is not None and total > len(items),
         "shuffled": shuffle,
+        "offset": offset,
     }
 
 

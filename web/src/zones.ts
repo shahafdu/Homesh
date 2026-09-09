@@ -91,7 +91,7 @@ export const playInZone = (
   takeOver = false,
   /** Set only for a slideshow: how long each photo is held, and how it leaves.
    *  Its absence is what tells the server this queue ends by itself. */
-  show?: { photo_ms: number; transition: string },
+  show?: { photo_ms: number; transition: string; under?: string; endless?: boolean },
 ) =>
   api.post<{ zone: string; state: string; pushed: boolean }>(
     `/api/zones/${zoneId}/play`,
@@ -99,7 +99,14 @@ export const playInZone = (
       item_ids: itemIds,
       start_index: startIndex,
       take_over: takeOver,
-      ...(show ? { photo_ms: show.photo_ms, transition: show.transition } : {}),
+      ...(show
+        ? {
+            photo_ms: show.photo_ms,
+            transition: show.transition,
+            under: show.under,
+            endless: show.endless,
+          }
+        : {}),
     },
   );
 

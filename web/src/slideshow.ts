@@ -26,10 +26,17 @@ export interface PhotoSet {
  * corner of the library while claiming to be a random ordering of all of it.
  * Only the database can take a sample of everything.
  */
-export const gatherPhotos = (under: string, shuffle = false) =>
-  api.get<PhotoSet>(
-    `/api/slideshow?under=${encodeURIComponent(under)}${shuffle ? "&shuffle=1" : ""}`,
-  );
+export const gatherPhotos = (
+  under: string,
+  opts: { shuffle?: boolean; offset?: number; count?: boolean } = {},
+) => {
+  const q = new URLSearchParams({ under });
+  if (opts.shuffle) q.set("shuffle", "1");
+  if (opts.offset) q.set("offset", String(opts.offset));
+  // Counting 105,000 rows to answer a question an endless slideshow never asks.
+  if (opts.count === false) q.set("count", "0");
+  return api.get<PhotoSet>(`/api/slideshow?${q}`);
+};
 
 /** How one photograph gives way to the next. */
 export const TRANSITIONS = [
@@ -73,9 +80,29 @@ export interface ShowSettings {
   holdMs: number;
   transition: Transition;
   shuffle: boolean;
+  /** Keep going, fetching more, rather than stopping at the end of a folder.
+   *
+   * Repeats are expected and fine. Refusing to show a photograph twice would
+   * mean remembering every one already shown, for something that by definition
+   * never finishes — and on a wall nobody minds seeing a good one again. */
+  endless: boolean;
 }
 
-export const DEFAULTS: ShowSettings = { holdMs: 5000, transition: "fade", shuffle: false };
+export const DEFAULTS: ShowSettings = {
+  holdMs: 5000,
+  transition: "fade",
+  shuffle: false,
+  // The useful default for a photo frame, and closest to what it already did:
+  // an in-order slideshow has always wrapped at the end.
+  endless: true,
+};
+
+/** How long a signed media URL is good for, less a margin.
+ *
+ * The server mints them for five minutes. A slideshow that ran for longer than
+ * that and came back to an earlier photograph would hand the browser an expired
+ * URL and show a broken image — so the cache has to forget, not merely hold. */
+export const URL_GOOD_FOR_MS = 4 * 60 * 1000;
 
 /** A Fisher-Yates shuffle over a copy.
  *

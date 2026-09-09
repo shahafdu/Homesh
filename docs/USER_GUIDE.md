@@ -209,6 +209,7 @@ months inside it, with a weekend inside that — then asks three things:
 
 | | |
 |---|---|
+| **Plays** | Forever, or once through |
 | **Order** | In order, or shuffled |
 | **Each photo for** | 3s to a minute |
 | **Transition** | Fade, slide, zoom, cut, or random |
@@ -223,7 +224,25 @@ down or taken out of the house.
 While it plays: swipe or use the arrow keys to move, space to pause, Escape or
 back to leave. The controls fade out and return on any movement.
 
-### Very large folders
+### Playing forever
+
+The default. It keeps going, fetching more from the folder as it needs them, and
+never asks how many there are — so it starts the same whether the folder holds
+fifty photos or a hundred thousand.
+
+**Photos will repeat**, and that is the deal. Not repeating would mean
+remembering every photo ever shown, for something that by definition never
+finishes. On a wall, seeing a good one again is no loss.
+
+- **Shuffled** — every batch is a fresh draw from the whole folder
+- **In order** — walks through, and starts again at the beginning when it reaches
+  the end
+
+A room does the same thing: when its queue runs out it goes back to the folder
+for more, so a television can be left on it. It fetches as the account that
+started it, so a folder closed to that person tomorrow stops appearing tomorrow.
+
+### Once through
 
 Ten thousand photos are sent at a time — at five seconds each that is fourteen
 hours. If the folder holds more, the screen says so.

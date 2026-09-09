@@ -293,3 +293,176 @@ class TestOnlyWhatYouCanReach:
             app.dependency_overrides.pop(require_user, None)
 
         assert r.status_code == 404 or r.json()["count"] == 0
+
+
+class TestASlideshowWithNoEnd:
+    """Forever, with repeats, rather than forever over the same seven hours.
+
+    Five thousand photographs at five seconds each is seven hours before a queue
+    wraps. In a house with 105,000 that is not "forever" in any sense worth
+    having, so an endless slideshow goes back to the folder for more.
+    """
+
+    def _paged(self, client, prefix, **params):
+        r = client.get("/api/slideshow", params={"under": prefix, **params})
+        assert r.status_code == 200, r.text
+        return r.json()
+
+    def test_paging_walks_past_the_first_page(self, client, scanned):
+        """Without an offset an endless slideshow would circle its first page."""
+        _sid, prefix, _root = scanned
+        everything = self._paged(client, prefix)["item_ids"]
+        assert len(everything) >= 2, "needs more than one photo to page through"
+
+        second = self._paged(client, prefix, offset=1)["item_ids"]
+        assert second == everything[1:], "offset skips, and skips in the same order"
+
+    def test_walking_off_the_end_returns_nothing(self, client, scanned):
+        """Which is how the wrap-around is detected without ever counting."""
+        _sid, prefix, _root = scanned
+        total = self._paged(client, prefix)["total"]
+        assert self._paged(client, prefix, offset=total)["item_ids"] == []
+
+    def test_counting_can_be_skipped(self, client, scanned):
+        """An endless slideshow never reaches an end, so the size tells it nothing."""
+        _sid, prefix, _root = scanned
+        uncounted = self._paged(client, prefix, count=0)
+        assert uncounted["total"] is None
+        assert uncounted["truncated"] is False
+        assert uncounted["item_ids"], "it still returns photographs"
+
+    def test_shuffled_draws_are_independent(self, client, scanned):
+        """Repeats are the point: refusing them would mean remembering everything."""
+        _sid, prefix, _root = scanned
+        once = self._paged(client, prefix, shuffle=1, count=0)["item_ids"]
+        twice = self._paged(client, prefix, shuffle=1, count=0)["item_ids"]
+        assert set(once) == set(twice), (
+            "the fixture is small enough that both draws take all of it — "
+            "what matters is that neither refused to repeat what the other had"
+        )
+
+    def test_a_room_records_where_to_get_more(self, client, db, scanned):
+        """Without the folder there is nothing to go back to."""
+        _sid, prefix, _root = scanned
+        r = client.post(
+            "/api/zones",
+            json={
+                "name": f"Hall {uuid.uuid4().hex[:6]}",
+                "renderer_kind": "tvapp",
+                "device_key": f"uuid:test::hall::{uuid.uuid4()}",
+                "preroll": [],
+            },
+        )
+        zone_id = r.json()["id"]
+        photos = client.get("/api/slideshow", params={"under": prefix}).json()["item_ids"]
+
+        client.post(
+            f"/api/zones/{zone_id}/play",
+            json={
+                "item_ids": photos,
+                "photo_ms": 5000,
+                "under": prefix,
+                "endless": True,
+            },
+        )
+
+        with db.connect() as conn:
+            under, endless, offset = conn.execute(
+                text(
+                    "SELECT photo_under, photo_endless, photo_offset "
+                    "FROM play_sessions WHERE zone_id = :z"
+                ),
+                {"z": zone_id},
+            ).one()
+        assert (under, endless) == (prefix, True)
+        # The first queue is page one, so refilling continues rather than
+        # repeating what has just been sent.
+        assert offset == len(photos)
+
+    def test_an_ordinary_queue_is_not_endless(self, client, db, scanned):
+        zone_id = client.post(
+            "/api/zones",
+            json={
+                "name": f"Porch {uuid.uuid4().hex[:6]}",
+                "renderer_kind": "tvapp",
+                "device_key": f"uuid:test::porch::{uuid.uuid4()}",
+                "preroll": [],
+            },
+        ).json()["id"]
+        photos = client.get(
+            "/api/slideshow", params={"under": scanned[1]}
+        ).json()["item_ids"]
+
+        client.post(f"/api/zones/{zone_id}/play", json={"item_ids": photos})
+
+        with db.connect() as conn:
+            under, endless = conn.execute(
+                text("SELECT photo_under, photo_endless FROM play_sessions WHERE zone_id = :z"),
+                {"z": zone_id},
+            ).one()
+        assert (under, endless) == (None, False)
+
+    def test_a_room_refills_when_the_queue_runs_out(self, client, db, scanned):
+        """The whole point, and the thing that cannot be checked by reading."""
+        from app.zones import _refill_endless
+
+        _sid, prefix, _root = scanned
+        zone_id = client.post(
+            "/api/zones",
+            json={
+                "name": f"Loft {uuid.uuid4().hex[:6]}",
+                "renderer_kind": "tvapp",
+                "device_key": f"uuid:test::loft::{uuid.uuid4()}",
+                "preroll": [],
+            },
+        ).json()["id"]
+        photos = client.get("/api/slideshow", params={"under": prefix}).json()["item_ids"]
+
+        client.post(
+            f"/api/zones/{zone_id}/play",
+            json={"item_ids": photos, "photo_ms": 5000, "under": prefix, "endless": True},
+        )
+
+        with db.connect() as conn:
+            starter = conn.execute(
+                text("SELECT started_by FROM play_sessions WHERE zone_id = :z"),
+                {"z": zone_id},
+            ).scalar_one()
+            row = conn.execute(
+                text("SELECT handle, display_name, is_admin FROM users WHERE id = :id"),
+                {"id": starter},
+            ).one()
+
+        who = CurrentUser(id=starter, handle=row[0], display_name=row[1], is_admin=row[2])
+
+        # The first refill walks off the end of the folder, so it wraps to the
+        # beginning -- which is the behaviour asked for, and needs no count.
+        fresh = _refill_endless(uuid.UUID(zone_id), who)
+        assert fresh, "the room went back to the folder rather than stopping"
+        assert set(fresh) <= set(photos)
+
+    def test_a_queue_that_is_not_endless_refuses_to_refill(self, client, db, scanned):
+        from app.zones import _refill_endless
+
+        zone_id = client.post(
+            "/api/zones",
+            json={
+                "name": f"Shed {uuid.uuid4().hex[:6]}",
+                "renderer_kind": "tvapp",
+                "device_key": f"uuid:test::shed::{uuid.uuid4()}",
+                "preroll": [],
+            },
+        ).json()["id"]
+        photos = client.get(
+            "/api/slideshow", params={"under": scanned[1]}
+        ).json()["item_ids"]
+        client.post(f"/api/zones/{zone_id}/play", json={"item_ids": photos})
+
+        with db.connect() as conn:
+            starter = conn.execute(
+                text("SELECT started_by FROM play_sessions WHERE zone_id = :z"),
+                {"z": zone_id},
+            ).scalar_one()
+        who = CurrentUser(id=starter, handle="x", display_name="X", is_admin=True)
+
+        assert _refill_endless(uuid.UUID(zone_id), who) is None
