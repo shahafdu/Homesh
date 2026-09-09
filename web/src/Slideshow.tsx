@@ -47,20 +47,32 @@ export default function Slideshow(props: {
 
   const total = order.length;
 
-  /** A signed URL for one photograph, fetched once and remembered. */
-  const urlFor = useCallback(
-    async (itemId: string): Promise<string | null> => {
-      if (urls[itemId]) return urls[itemId];
-      try {
-        const { url } = await api.get<{ url: string }>(`/api/items/${itemId}/url`);
-        setUrls((seen) => ({ ...seen, [itemId]: url }));
-        return url;
-      } catch {
-        return null;
-      }
-    },
-    [urls],
-  );
+  // Always the latest close callback, depended on by nothing. The parent passes
+  // an inline arrow, so the function is new on every one of its renders and any
+  // effect listing it would restart on each.
+  const closeRef = useRef(props.onClose);
+  closeRef.current = props.onClose;
+
+  /** A signed URL for one photograph, fetched once and remembered.
+   *
+   * The cache is a ref as well as state. State is what draws the picture; the
+   * ref is what this function reads, so that filling the cache does not change
+   * the function's identity. It did, and every effect that depended on it
+   * re-ran on every fetch -- including the one that owns the history entry,
+   * which then wound the browser back a step for each photograph.
+   */
+  const cache = useRef<Record<string, string>>({});
+  const urlFor = useCallback(async (itemId: string): Promise<string | null> => {
+    if (cache.current[itemId]) return cache.current[itemId];
+    try {
+      const { url } = await api.get<{ url: string }>(`/api/items/${itemId}/url`);
+      cache.current[itemId] = url;
+      setUrls((seen) => ({ ...seen, [itemId]: url }));
+      return url;
+    } catch {
+      return null;
+    }
+  }, []);
 
   // The one on screen, and the one after it, warmed in the browser's cache.
   useEffect(() => {
@@ -105,23 +117,31 @@ export default function Slideshow(props: {
 
   // Its own history entry, so back closes the slideshow rather than the folder
   // behind it — the same bargain the viewer makes.
+  //
+  // Mount and unmount only, and that is load-bearing rather than tidiness. This
+  // had `props` in its dependencies, and `props` is a fresh object on every
+  // render: the entry was pushed and the cleanup wound the browser back once
+  // per render, which on a phone walked straight out of the page. It read as
+  // the slideshow crashing on the first or second photograph.
+  //
+  // Closing goes through a ref so the effect never needs to see a new callback.
   useEffect(() => {
     let closedByBack = false;
     window.history.pushState({ slideshow: true }, "");
     const onPop = () => {
       closedByBack = true;
-      props.onClose();
+      closeRef.current();
     };
     window.addEventListener("popstate", onPop);
     return () => {
       window.removeEventListener("popstate", onPop);
       if (!closedByBack) window.history.back();
     };
-  }, [props]);
+  }, []);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") props.onClose();
+      if (e.key === "Escape") closeRef.current();
       else if (e.key === "ArrowRight") step(1);
       else if (e.key === "ArrowLeft") step(-1);
       else if (e.key === " ") {
@@ -131,7 +151,7 @@ export default function Slideshow(props: {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [props, step]);
+  }, [step]);
 
   // The controls get out of the way of the photographs, and come back on any
   // movement. A slideshow is watched rather than operated.

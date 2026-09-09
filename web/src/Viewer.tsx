@@ -73,15 +73,26 @@ export default function Viewer(props: {
   const swipe = useSwipe(step);
   const swipeable = file?.kind === "photo" && files.length > 1;
 
+  // Always the latest close callback, depended on by nothing. The parent passes
+  // an inline arrow, so it is a new function on every one of its renders.
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
+
   // The viewer gets its own history entry so that back — the natural gesture on a
   // phone — closes it rather than leaving the folder behind it.
+  //
+  // Mount and unmount only. Listing onClose here meant the entry was pushed and
+  // wound back again on every render of the parent — while a song was playing,
+  // several times a second. The slideshow made the same mistake far more
+  // visibly, and this is the same fix: nothing here should restart because a
+  // callback was recreated.
   useEffect(() => {
     let closedByBack = false;
     window.history.pushState({ viewer: true }, "");
 
     const onPop = () => {
       closedByBack = true;
-      onClose();
+      closeRef.current();
     };
     window.addEventListener("popstate", onPop);
 
@@ -91,17 +102,17 @@ export default function Viewer(props: {
       // drop it, or the next back press would appear to do nothing.
       if (!closedByBack) window.history.back();
     };
-  }, [onClose]);
+  }, []);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape") closeRef.current();
       else if (e.key === "ArrowRight") step(1);
       else if (e.key === "ArrowLeft") step(-1);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onClose, step]);
+  }, [step]);
 
   useEffect(() => {
     let cancelled = false;

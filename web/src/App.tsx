@@ -6,6 +6,7 @@ import Player from "./Player";
 import Settings from "./Settings";
 import Sources from "./Sources";
 import Slideshow, { SlideshowSetup } from "./Slideshow";
+import Boundary from "./Boundary";
 import type { ShowSettings } from "./slideshow";
 import FileActions from "./FileActions";
 import LinkDevice from "./LinkDevice";
@@ -181,11 +182,16 @@ export default function App() {
         )}
 
         {showing && (
-          <Slideshow
-            itemIds={showing.ids}
-            settings={showing.settings}
-            onClose={() => setShowing(null)}
-          />
+          // Its own boundary, so a slideshow that fails returns to the folder
+          // rather than taking the whole app down with it -- and reports what
+          // went wrong instead of going white.
+          <Boundary what="slideshow" onClose={() => setShowing(null)}>
+            <Slideshow
+              itemIds={showing.ids}
+              settings={showing.settings}
+              onClose={() => setShowing(null)}
+            />
+          </Boundary>
         )}
         {showPeople && <People onClose={() => setShowPeople(false)} />}
 

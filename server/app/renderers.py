@@ -534,7 +534,7 @@ class CrashReport(BaseModel):
 
 @router.post("/crash", status_code=status.HTTP_204_NO_CONTENT)
 async def report_crash(body: CrashReport) -> Response:
-    """A screen saying why it died.
+    """A screen, or the web app, saying why it died.
 
     Unauthenticated on purpose: a process that is already crashing may have no
     usable credential, and the alternative is the crash going nowhere. Nothing
@@ -545,11 +545,13 @@ async def report_crash(body: CrashReport) -> Response:
     means carrying a laptop to it with a cable, which in practice means guessing
     — and every guess costs somebody an evening.
     """
+    # The web app reports here too, so the line no longer says "television".
+    # A log that names the wrong device sends somebody to the wrong room.
     log.error(
-        "a screen crashed — %s, Homesh TV %s, thread %s\n%s",
+        "%s crashed — %s, version %s\n%s",
+        body.thread or "something",
         body.device or "unknown device",
-        body.version or "unknown version",
-        body.thread or "?",
+        body.version or "unknown",
         body.trace or "(no stack trace)",
     )
     return Response(status_code=status.HTTP_204_NO_CONTENT)
