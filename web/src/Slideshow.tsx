@@ -302,15 +302,26 @@ export default function Slideshow(props: {
  * is worse than no gesture at all because it happens while somebody is doing
  * something else.
  */
-export function useSwipe(step: (delta: number) => void) {
+export function useSwipe(
+  step: (delta: number) => void,
+  /** Whether a gesture starting here is ours to take. Absent means always.
+   *
+   * Given the element the touch started on, so a caller can exclude the few
+   * regions that own a sideways drag themselves — a hex dump paging across, a
+   * PDF scrolling, a video's scrubber. Excluding by region rather than by kind
+   * is what lets the gesture work on everything else. */
+  mine?: (target: Element) => boolean,
+) {
   const from = useRef<{ x: number; y: number } | null>(null);
 
   return {
     onTouchStart: (e: React.TouchEvent) => {
-      from.current =
-        e.touches.length === 1
-          ? { x: e.touches[0].clientX, y: e.touches[0].clientY }
-          : null;
+      const target = e.target as Element | null;
+      if (e.touches.length !== 1 || (mine && target && !mine(target))) {
+        from.current = null;
+        return;
+      }
+      from.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
     },
     onTouchMove: (e: React.TouchEvent) => {
       // A second finger means a pinch. Abandon the swipe rather than finish it

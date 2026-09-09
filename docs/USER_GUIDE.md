@@ -104,6 +104,26 @@ column.
 
 Files sort **naturally**: `track2` before `track10`, and `Episode 9` before `Episode 10`.
 
+### Moving between files
+
+The viewer has a selector in its header: **Photos** (or Videos, Songs,
+Documents) and **All**.
+
+- **By kind** — arrows and swipes stay among files like the one you opened.
+  Stepping from a photo straight onto a spreadsheet is rarely what was meant.
+- **All** — walks the whole folder in order, changing what it draws as the kind
+  changes: a photo, then a film, then the song beside them.
+
+Songs play in the viewer, and finishing one moves to the next file. Starting one
+stops the app's own player, so you never get two things playing at once.
+
+The choice is remembered on your account, so it follows you to the phone and the
+television.
+
+**Swipe left and right** moves between files, on every kind. The exceptions are
+the three places a sideways drag already means something: a hex dump paging
+across, a PDF scrolling, and a video's scrubber along the bottom edge.
+
 ### View modes
 
 Pick from the toolbar; your choice is remembered on your account, so it follows you to

@@ -4,16 +4,29 @@ export type Palette = "warm" | "studio" | "daylight";
 export type Appearance = "auto" | "light" | "dark";
 export type View = "details" | "columns" | "tiles-small" | "tiles-large";
 
+/** What the viewer's arrows and swipes move through.
+ *
+ * "kind" keeps to the sort of file you opened; "all" walks the whole folder and
+ * changes what is drawn as the kind changes. Both are wanted — a folder of
+ * holiday photographs is one thing, and a folder holding a film, its subtitles
+ * and the photographs from the same weekend is another. */
+export type ViewerScope = "kind" | "all";
+
 export interface Prefs {
   palette: Palette;
   appearance: Appearance;
   view: View;
+  // Snake case, because this object is sent to the API as it stands: a
+  // camelCase name would be dropped by the server's allow-list without a
+  // word said, and the setting would simply never stick.
+  viewer_scope: ViewerScope;
 }
 
 export const DEFAULT_PREFS: Prefs = {
   palette: "warm",
   appearance: "auto",
   view: "details",
+  viewer_scope: "kind",
 };
 
 export const PALETTES: { id: Palette; name: string; blurb: string; swatch: string[] }[] = [
