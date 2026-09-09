@@ -40,6 +40,8 @@ export default function Browser(props: {
   onOpenPlaylists: () => void;
   onOpenPeople?: () => void;
   onOpenSources?: () => void;
+  /** Show a folder of photographs, here or in a room. */
+  onSlideshow?: (path: string, name: string) => void;
   onPlay: (files: FileEntry[], index: number, folderPath: string) => void;
   onView: (files: FileEntry[], index: number) => void;
   onActions: (file: FileEntry, siblings: FileEntry[], foundAt?: string) => void;
@@ -50,7 +52,7 @@ export default function Browser(props: {
 }) {
   const {
     view, onViewChange, onOpenSettings, onOpenZones, onOpenPlaylists, onOpenPeople,
-    onOpenSources,
+    onOpenSources, onSlideshow,
     onPlay, onView, onActions, playingId,
   } = props;
 
@@ -259,17 +261,34 @@ export default function Browser(props: {
           </span>
         )}
 
-        <div className="seg" role="group" aria-label="View mode">
-          {VIEWS.map((v) => (
+        <div className="toolbar-right">
+          {/* Offered wherever there is a folder, because whether it holds
+              photographs is a question about everything beneath it and this
+              listing only knows about one level. Pressing it counts them and
+              says so, which is a better answer than a button that was hidden
+              for reasons nobody can see. */}
+          {hits === null && path !== "/" && onSlideshow && (
             <button
-              key={v.id}
-              aria-pressed={view === v.id}
-              title={v.hint}
-              onClick={() => onViewChange(v.id)}
+              className="compact"
+              title={`Show the photos in ${here(path)} and its subfolders`}
+              onClick={() => onSlideshow(path, here(path))}
             >
-              {v.label}
+              ▶ Slideshow
             </button>
-          ))}
+          )}
+
+          <div className="seg" role="group" aria-label="View mode">
+            {VIEWS.map((v) => (
+              <button
+                key={v.id}
+                aria-pressed={view === v.id}
+                title={v.hint}
+                onClick={() => onViewChange(v.id)}
+              >
+                {v.label}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 

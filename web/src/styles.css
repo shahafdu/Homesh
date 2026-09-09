@@ -1376,3 +1376,88 @@ button.compact:disabled { opacity: .5; cursor: not-allowed; }
   overflow-x: auto; white-space: pre;
   -webkit-overflow-scrolling: touch;
 }
+
+/* ── Slideshow ───────────────────────────────────────────────────────────────
+ *
+ * Two layers that alternate, rather than one image whose src changes: a
+ * transition needs the outgoing photograph still on screen while the incoming
+ * one arrives, and swapping src leaves a blank frame in the middle of it.
+ *
+ * Every transition is written as a pair — how the arriving layer starts, and
+ * what it settles to — so adding one means adding a rule and nothing else. */
+.slideshow {
+  position: fixed; inset: 0; z-index: 60;
+  background: #000;
+  overflow: hidden;
+  touch-action: pan-y;   /* leaves room for the swipe to be recognised */
+}
+
+.ss-layer {
+  position: absolute; inset: 0;
+  display: grid; place-items: center;
+  transition: opacity .7s ease, transform .7s ease;
+  will-change: opacity, transform;
+}
+.ss-layer img {
+  max-width: 100%; max-height: 100%;
+  object-fit: contain;
+  user-select: none; -webkit-user-drag: none;
+}
+
+/* The layer beneath is the one being left. It stays put and fades out, which is
+   what makes a slide read as movement rather than as two things sliding. */
+.ss-layer.off { opacity: 0; z-index: 1; }
+.ss-layer.on  { opacity: 1; z-index: 2; }
+
+.fx-none .ss-layer { transition: none; }
+
+.fx-slide .ss-layer.off { transform: translateX(-8%); }
+.fx-slide .ss-layer.on  { transform: translateX(0); }
+
+.fx-zoom .ss-layer.off { transform: scale(1.06); }
+.fx-zoom .ss-layer.on  { transform: scale(1); }
+
+/* Controls fade out and come back on any movement: a slideshow is watched
+   rather than operated, and a bar across the bottom of a photograph is the
+   thing you are trying not to look at. */
+.ss-chrome {
+  position: absolute; inset: 0; z-index: 3;
+  display: flex; flex-direction: column; justify-content: space-between;
+  pointer-events: none;
+  opacity: 1; transition: opacity .4s ease;
+}
+.ss-chrome.hidden { opacity: 0; }
+.ss-chrome > * { pointer-events: auto; }
+
+.ss-top {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; padding: 14px 16px;
+  background: linear-gradient(to bottom, rgba(0,0,0,.55), transparent);
+}
+.ss-top .muted { color: #d8d2c8; }
+
+.ss-controls {
+  display: flex; align-items: center; justify-content: center; gap: 10px;
+  padding: 18px;
+  background: linear-gradient(to top, rgba(0,0,0,.55), transparent);
+}
+.ss-controls button {
+  min-width: 56px; padding: 10px 16px;
+  font-size: 20px; line-height: 1; cursor: pointer;
+  color: #f2ebe2; background: rgba(0,0,0,.45);
+  border: 1px solid rgba(255,255,255,.22); border-radius: 10px;
+}
+.ss-controls button:hover { background: rgba(0,0,0,.7); }
+
+.ss-error { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); z-index: 4; }
+
+.ss-start { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 20px; }
+
+/* The options are choices, not a number to type: nobody has an opinion about
+   seven seconds, and the useful distinction is between glancing and looking. */
+.seg.wrap { flex-wrap: wrap; }
+
+/* The toolbar's right-hand group: what to do with this folder, and how to look
+   at it. Wraps as one block on a phone rather than letting the view switcher
+   fall to a line of its own. */
+.toolbar-right { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }

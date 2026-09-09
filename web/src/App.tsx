@@ -5,6 +5,8 @@ import Browser from "./Browser";
 import Player from "./Player";
 import Settings from "./Settings";
 import Sources from "./Sources";
+import Slideshow, { SlideshowSetup } from "./Slideshow";
+import type { ShowSettings } from "./slideshow";
 import FileActions from "./FileActions";
 import LinkDevice from "./LinkDevice";
 import People from "./People";
@@ -23,6 +25,12 @@ export default function App() {
   const [prefs, setPrefs] = useState<Prefs>(DEFAULT_PREFS);
   const [showSettings, setShowSettings] = useState(false);
   const [showSources, setShowSources] = useState(false);
+  // Setting one up, and then running one. Two states rather than one,
+  // because the room picker can be reached from the setup screen and the
+  // slideshow itself may never start here at all.
+  const [settingUp, setSettingUp] = useState<{ path: string; name: string } | null>(null);
+  const [showing, setShowing] = useState<{ ids: string[]; settings: ShowSettings } | null>(null);
+  const [sendShow, setSendShow] = useState<{ ids: string[]; settings: ShowSettings; label: string } | null>(null);
   const player = usePlayer();
   const rooms = useRoomActivity();
   const [viewing, setViewing] = useState<{ files: FileEntry[]; index: number } | null>(null);
@@ -121,6 +129,7 @@ export default function App() {
           onViewChange={(view) => void changePrefs({ view })}
           onOpenSettings={() => setShowSettings(true)}
           onOpenSources={state.user.is_admin ? () => setShowSources(true) : undefined}
+          onSlideshow={(path, name) => setSettingUp({ path, name })}
           onOpenZones={() => setShowZones(true)}
           onOpenPlaylists={() => setShowPlaylists(true)}
           onOpenPeople={state.user.is_admin ? () => setShowPeople(true) : undefined}
@@ -153,6 +162,31 @@ export default function App() {
 
         {showZones && <Zones onClose={() => setShowZones(false)} />}
         {showSources && <Sources onClose={() => setShowSources(false)} />}
+
+        {settingUp && (
+          <SlideshowSetup
+            folder={settingUp.path}
+            folderName={settingUp.name}
+            onPlayHere={(ids, settings) => {
+              setSettingUp(null);
+              setShowing({ ids, settings });
+            }}
+            onSendToRoom={(ids, settings) => {
+              const label = `${settingUp.name} — ${ids.length} photos`;
+              setSettingUp(null);
+              setSendShow({ ids, settings, label });
+            }}
+            onClose={() => setSettingUp(null)}
+          />
+        )}
+
+        {showing && (
+          <Slideshow
+            itemIds={showing.ids}
+            settings={showing.settings}
+            onClose={() => setShowing(null)}
+          />
+        )}
         {showPeople && <People onClose={() => setShowPeople(false)} />}
 
         {showPlaylists && (
@@ -192,6 +226,24 @@ export default function App() {
               setActionsFor(null);
             }}
             onClose={() => setActionsFor(null)}
+          />
+        )}
+
+        {/* The room picker, carrying a slideshow instead of a file. It already
+            knows which rooms exist, which will take a picture and which are
+            busy — none of which is about files. */}
+        {sendShow && (
+          <PlayTo
+            file={{ item_id: "", filename: sendShow.label, ext: null, kind: "photo",
+                    size: null, mtime: null, available: true }}
+            siblings={[]}
+            slideshow={{ itemIds: sendShow.ids, settings: sendShow.settings,
+                         label: sendShow.label }}
+            onHere={() => {
+              setShowing({ ids: sendShow.ids, settings: sendShow.settings });
+              setSendShow(null);
+            }}
+            onClose={() => setSendShow(null)}
           />
         )}
 

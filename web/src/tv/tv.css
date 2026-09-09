@@ -223,3 +223,37 @@ body {
 /* Quiet, and always there. Small enough to ignore across a room, readable when
    somebody walks up to check whether this screen took the update. */
 .version { margin-top: 14px; font-size: 15px; color: var(--muted); opacity: .7; }
+
+/* ── Slideshow transitions ───────────────────────────────────────────────────
+ *
+ * One-shot animations rather than a transition between two layers. A television
+ * shows one photograph at a time from a queue the server owns, so there is no
+ * outgoing image to cross-fade with -- the previous one is already gone when
+ * the next command arrives. An animation on arrival is the honest version of
+ * that, and it costs one element instead of two.
+ *
+ * forwards, so the photograph stays where the animation left it rather than
+ * snapping back for the rest of its time on screen. */
+.tv-photo.fx-fade  { animation: tv-fade .8s ease both; }
+.tv-photo.fx-slide { animation: tv-slide .8s ease both; }
+.tv-photo.fx-zoom  { animation: tv-zoom .8s ease both; }
+.tv-photo.fx-none  { animation: none; }
+
+@keyframes tv-fade {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+@keyframes tv-slide {
+  from { opacity: 0; transform: translateX(6%); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+@keyframes tv-zoom {
+  from { opacity: 0; transform: scale(1.06); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+/* A screen across the room, driven by somebody who may have left. Motion is
+   decoration here, so an accessibility preference simply removes it. */
+@media (prefers-reduced-motion: reduce) {
+  .tv-photo { animation: none !important; }
+}

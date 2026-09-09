@@ -17,6 +17,7 @@ The list to work from. Everything else can proceed without you.
 
 | | What | Why it matters |
 |---|---|---|
+| ✅ | **Photo slideshows** | Open a folder → **▶ Slideshow**. Recursive through subfolders, in order or shuffled, 3s-1m per photo, fade/slide/zoom/cut/random transitions. Plays here or in a room. Shuffle over a large folder is a random sample of all of it, taken by the database (verified: two draws over 105,162 photos share 948 of 10,000) |
 | ✅ | **Add a folder of your own media** | **Sources → Choose a folder...** opens the Windows folder picker on the PC, via a `homesh://` protocol handler. Double-click **Add a folder to Homesh** once to register it. `E:\music` is granted; the server reaches that folder and nothing else — `/hostfs` is gone and writes into the mount are refused |
 
 ---

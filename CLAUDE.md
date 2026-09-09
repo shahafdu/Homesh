@@ -98,7 +98,7 @@ routinely breaks another, and the tracker is what makes that visible.
 | 8 · Optional transcode | ⬜ | May never be needed — see §3.2 of ARCHITECTURE |
 | 9 · Public release | ⬜ | Docs, screenshots, name decision |
 
-**Tests: 365 passing. Migrations: 018. Lint: clean. CI green.**
+**Tests: 380 passing. Migrations: 019. Lint: clean. CI green.**
 
 ### AI design decisions — agreed, not yet built
 

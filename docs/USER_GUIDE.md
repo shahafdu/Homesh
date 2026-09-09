@@ -200,7 +200,41 @@ folder to Homesh** again on that folder — it re-attaches it.
 
 ---
 
-## 8. Keeping the catalog current
+## 8. Slideshows
+
+Open a folder of photographs and press **▶ Slideshow** in the toolbar.
+
+It gathers every photo in that folder **and everything below it** — a year, with
+months inside it, with a weekend inside that — then asks three things:
+
+| | |
+|---|---|
+| **Order** | In order, or shuffled |
+| **Each photo for** | 3s to a minute |
+| **Transition** | Fade, slide, zoom, cut, or random |
+
+**Random** picks a different transition for each photo, so a long slideshow does
+not settle into a rhythm.
+
+Then **Play here**, or **Play in a room…** to send it to a television. A room
+running a slideshow advances by itself; the phone that started it can be put
+down or taken out of the house.
+
+While it plays: swipe or use the arrow keys to move, space to pause, Escape or
+back to leave. The controls fade out and return on any movement.
+
+### Very large folders
+
+Ten thousand photos are sent at a time — at five seconds each that is fourteen
+hours. If the folder holds more, the screen says so.
+
+**Shuffle then means a random sample of the whole folder**, not a shuffle of the
+first ten thousand. With 105,000 photos indexed here, two shuffled runs share
+about 950 photos, which is what a genuine sample of everything looks like.
+
+---
+
+## 9. Keeping the catalog current
 
 Scanning is manual for now: go to the root screen and press **Rescan** next to a source.
 A rescan never creates duplicates, and files that have disappeared are marked *offline*
@@ -210,7 +244,7 @@ rather than deleted — so the catalog still remembers they exist and where.
 
 ---
 
-## 9. Troubleshooting
+## 10. Troubleshooting
 
 **"This file is on a source that is currently offline"**
 The catalog knows the file but the machine holding it isn't reachable. Expected when the
@@ -233,7 +267,7 @@ Press **Rescan**. Check the folder is actually mounted:
 
 ---
 
-## 10. Playing things
+## 11. Playing things
 
 **Music.** Click a track and the whole folder queues, so playing one file behaves like
 an album. The player bar stays put as you browse elsewhere. It has play/pause,
@@ -246,7 +280,7 @@ than stalling on it.
 items of the same kind in that folder, Escape closes. Video is *direct play* — the
 original file, decoded by your browser, with nothing re-encoded in between.
 
-## 11. Not built yet
+## 12. Not built yet
 
 - Google Drive and Google Photos
 - Casting to a TV or the Denon receiver; multi-room zones

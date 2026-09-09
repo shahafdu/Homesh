@@ -389,6 +389,124 @@ async def browse(
     }
 
 
+_PHOTOS_WHERE = """
+    SELECT i.id, r.dir_path, r.filename
+    FROM replicas r
+    JOIN items i ON i.id = r.item_id
+    WHERE r.source_id = :sid
+      AND i.kind = 'photo'
+      AND r.available
+      AND (:rel = '' OR r.dir_path = :rel OR r.dir_path LIKE :rel || '/%')
+"""
+
+# The order photographs were taken in, as far as the folders record it.
+_PHOTOS_IN_ORDER = (
+    _PHOTOS_WHERE + " ORDER BY r.dir_path COLLATE natsort, r.filename COLLATE natsort LIMIT :lim"
+)
+
+# A random sample of everything, rather than a shuffle of the first slice --
+# which would be a random ordering of one corner of the library while claiming
+# to be a random ordering of all of it.
+_PHOTOS_AT_RANDOM = _PHOTOS_WHERE + " ORDER BY random() LIMIT :lim"
+
+
+@router.get("/slideshow")
+def slideshow(
+    under: str = Query(..., min_length=1, description="Folder to gather photos from"),
+    shuffle: bool = Query(False, description="Sample at random rather than taking the first"),
+    user: CurrentUser = Depends(require_user),
+) -> dict:
+    """Every photograph in a folder and everything below it, in order.
+
+    Recursive because that is how photographs are kept: a year, with months
+    inside it, with a weekend inside that. Asking for "2019" and being shown the
+    handful of loose files that happen to sit at the top of it, while nine
+    hundred in its subfolders are ignored, would be a slideshow of the wrong
+    thing.
+
+    Ordered by folder and then filename so that a run through a year arrives in
+    the order it happened.
+
+    Bounded, because this house has 105,000 photographs and the whole list is
+    four megabytes of identifiers to send to a phone. At five seconds each,
+    the cap is still fourteen hours of slideshow.
+
+    Shuffling is therefore done *here* when it is asked for, which is the only
+    way it can be honest: taking the first ten thousand and shuffling those
+    would be a random ordering of one corner of the library while claiming to
+    be a random ordering of all of it. A random sample of everything is what
+    somebody means by shuffle, and only the database can take one.
+
+    A plain `def`: this walks a source that may hold a hundred thousand rows, and
+    blocking the event loop stops every stream in the house.
+    """
+    path = "/" + under.strip("/")
+    rules = library_scope(user.id)
+
+    with get_engine().connect() as conn:
+        sources = conn.execute(
+            text("SELECT id, mount_prefix FROM sources ORDER BY mount_prefix")
+        ).all()
+
+    match = next((s for s in sources if path == s[1] or path.startswith(s[1] + "/")), None)
+    if match is None or not visible(path, rules):
+        # 404 rather than 403: a folder outside your scope should not be
+        # confirmed to exist.
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "no source mounted at that path")
+
+    source_id, prefix = match
+    rel = path[len(prefix) :].strip("/")
+
+    # Generous enough that nobody meets it in a sitting, small enough to send.
+    LIMIT = 10_000
+
+    with get_engine().connect() as conn:
+        total = conn.execute(
+            text(
+                """
+                SELECT count(*)
+                FROM replicas r JOIN items i ON i.id = r.item_id
+                WHERE r.source_id = :sid AND i.kind = 'photo' AND r.available
+                  AND (:rel = '' OR r.dir_path = :rel OR r.dir_path LIKE :rel || '/%')
+                """
+            ),
+            {"sid": str(source_id), "rel": rel},
+        ).scalar_one()
+
+        # Two whole queries rather than one with the ordering pasted in. The
+        # value would have been safe -- it is one of two literals -- but a
+        # query built by concatenation is a shape worth not having in a file
+        # that also handles paths from the network.
+        rows = conn.execute(
+            text(_PHOTOS_AT_RANDOM if shuffle else _PHOTOS_IN_ORDER),
+            {"sid": str(source_id), "rel": rel, "lim": LIMIT},
+        ).all()
+
+    # A subfolder can be closed while its parent is open, and a slideshow must
+    # not be the way round that. Checked per folder rather than per photograph:
+    # the rules are about folders, and a year of holidays is one question asked
+    # a hundred thousand times otherwise.
+    allowed: dict[str, bool] = {}
+    items: list[str] = []
+    for item_id, dir_path, _filename in rows:
+        if dir_path not in allowed:
+            folder = f"{prefix}/{dir_path}".rstrip("/") if dir_path else prefix
+            allowed[dir_path] = can_read(folder, rules)
+        if allowed[dir_path]:
+            items.append(str(item_id))
+
+    return {
+        "under": path,
+        "item_ids": items,
+        "count": len(items),
+        # What is actually there, so the interface can say "10,000 of 105,162"
+        # rather than quietly presenting a slice as the whole thing.
+        "total": total,
+        "truncated": total > len(items),
+        "shuffled": shuffle,
+    }
+
+
 @router.get("/search")
 async def search(
     q: str = Query(min_length=1, max_length=200),

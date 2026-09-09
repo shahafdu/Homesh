@@ -89,10 +89,18 @@ export const playInZone = (
   itemIds: string[],
   startIndex = 0,
   takeOver = false,
+  /** Set only for a slideshow: how long each photo is held, and how it leaves.
+   *  Its absence is what tells the server this queue ends by itself. */
+  show?: { photo_ms: number; transition: string },
 ) =>
   api.post<{ zone: string; state: string; pushed: boolean }>(
     `/api/zones/${zoneId}/play`,
-    { item_ids: itemIds, start_index: startIndex, take_over: takeOver },
+    {
+      item_ids: itemIds,
+      start_index: startIndex,
+      take_over: takeOver,
+      ...(show ? { photo_ms: show.photo_ms, transition: show.transition } : {}),
+    },
   );
 
 export const stopZone = (zoneId: string) => api.post(`/api/zones/${zoneId}/stop`);
