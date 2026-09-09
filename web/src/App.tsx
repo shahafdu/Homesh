@@ -38,7 +38,7 @@ export default function App() {
   >(null);
   const player = usePlayer();
   const rooms = useRoomActivity();
-  const [viewing, setViewing] = useState<{ files: FileEntry[]; index: number } | null>(null);
+  const [viewing, setViewing] = useState<{ files: FileEntry[]; startId: string } | null>(null);
   const closeViewer = useCallback(() => setViewing(null), []);
   const [showZones, setShowZones] = useState(false);
   const [showPeople, setShowPeople] = useState(false);
@@ -141,15 +141,11 @@ export default function App() {
           onActions={(file, siblings, foundAt) => setActionsFor({ file, siblings, foundAt })}
           onPlay={player.play}
           onView={(files, index) => {
-            // Arrowing through a folder should stay within the kind you opened —
-            // stepping from a photo onto a PDF is never what was meant. Also drops
-            // unavailable files, which would only fail to load.
-            const clicked = files[index];
-            const peers = files.filter((f) => f.kind === clicked.kind && f.available);
-            setViewing({
-              files: peers,
-              index: Math.max(0, peers.findIndex((f) => f.item_id === clicked.item_id)),
-            });
+            // The whole folder, unfiltered. Which of it the arrows move through
+            // is the viewer's business now, because the selector there has to be
+            // able to widen the list as well as narrow it — filtering here would
+            // have thrown away the files it needs to offer.
+            setViewing({ files, startId: files[index].item_id });
           }}
           playingId={player.current?.item_id ?? null}
           reveal={reveal}
@@ -159,8 +155,10 @@ export default function App() {
         {viewing && (
           <Viewer
             files={viewing.files}
-            index={viewing.index}
-            onIndex={(index) => setViewing({ ...viewing, index })}
+            startId={viewing.startId}
+            scope={prefs.viewer_scope}
+            onScope={(viewer_scope) => void changePrefs({ viewer_scope })}
+            onTakeAudio={player.stop}
             onClose={closeViewer}
           />
         )}
@@ -274,7 +272,7 @@ export default function App() {
               const audio = sendTo.siblings.filter((f) => f.kind === "audio" && f.available);
               const index = Math.max(0, audio.findIndex((f) => f.item_id === sendTo.file.item_id));
               if (sendTo.file.kind === "audio") player.play(audio, index, "");
-              else setViewing({ files: sendTo.siblings, index: sendTo.siblings.indexOf(sendTo.file) });
+              else setViewing({ files: sendTo.siblings, startId: sendTo.file.item_id });
               setSendTo(null);
             }}
             onClose={() => setSendTo(null)}

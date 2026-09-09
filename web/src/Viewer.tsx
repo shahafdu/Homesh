@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "./api";
 import PdfView from "./PdfView";
 import RawView from "./RawView";
 import FileActions from "./FileActions";
 import PlayTo from "./PlayTo";
 import { useSwipe } from "./Slideshow";
+import type { ViewerScope } from "./prefs";
 import { printDocument, printImage, printViaShareSheet } from "./print";
 import { canShareFiles } from "./share";
 import { castFile, castable, loadCast, whyNotCastable } from "./cast";
@@ -17,7 +18,24 @@ import {
   needsConversion,
   liveVideoUrl,
   needsVideoConversion,
+  tagLine,
 } from "./library";
+
+/** What to call a kind on a button, in the plural somebody would actually say. */
+function kindLabel(kind: string): string {
+  switch (kind) {
+    case "photo":
+      return "Photos";
+    case "video":
+      return "Videos";
+    case "audio":
+      return "Songs";
+    case "doc":
+      return "Documents";
+    default:
+      return "Files";
+  }
+}
 
 /** Full-screen viewer for the kinds that need a viewport rather than a player bar.
  *
@@ -25,13 +43,42 @@ import {
  * close affordance and the filename caption behave identically across all three.
  */
 export default function Viewer(props: {
+  /** Everything in the folder. What is walked through is decided here, from
+   *  `scope`, rather than by the caller filtering before it arrives — the
+   *  selector has to be able to widen the list as well as narrow it. */
   files: FileEntry[];
-  index: number;
-  onIndex: (i: number) => void;
+  /** Which of them to open on. */
+  startId: string;
+  scope: ViewerScope;
+  onScope: (scope: ViewerScope) => void;
   onClose: () => void;
+  /** Called when this viewer starts playing a song, so the app's own player
+   *  stops rather than the two of them playing at once. */
+  onTakeAudio?: () => void;
 }) {
-  const { files, index, onIndex, onClose } = props;
-  const file = files[index];
+  const { onClose, scope } = props;
+
+  // Position is held as an item id rather than an index, and that is what makes
+  // the selector work at all: widening or narrowing the list changes every
+  // index in it, so an index would land on a stranger, while an id stays on the
+  // file you were looking at.
+  const [currentId, setCurrentId] = useState(props.startId);
+
+  // Found in the unfiltered folder, so the current file's kind can decide the
+  // filter without the two definitions chasing each other.
+  const current =
+    props.files.find((f) => f.item_id === currentId) ?? props.files[0];
+
+  const files = useMemo(
+    () =>
+      props.files.filter(
+        (f) => f.available && (scope === "all" || f.kind === current?.kind),
+      ),
+    [props.files, scope, current?.kind],
+  );
+
+  const at = Math.max(0, files.findIndex((f) => f.item_id === currentId));
+  const file = files[at] ?? current;
   const previewable = file ? canPreview(file.kind, file.ext) : false;
 
   const [url, setUrl] = useState<string | null>(null);
@@ -55,23 +102,44 @@ export default function Viewer(props: {
   const [fellBack, setFellBack] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // How tall a video's own controls are, near enough. Chrome and Safari both
+  // draw a bar in this region; a swipe starting inside it belongs to the
+  // scrubber, not to us.
+  const CONTROL_BAR = 64;
+  const lastTouchY = useRef(0);
+
   const step = useCallback(
     (delta: number) => {
-      const next = index + delta;
-      if (next >= 0 && next < files.length) onIndex(next);
+      const next = at + delta;
+      if (next >= 0 && next < files.length) setCurrentId(files[next].item_id);
     },
-    [index, files.length, onIndex],
+    [at, files],
   );
 
-  // Swipe, doing what the arrows do. Shared with the slideshow so both agree on
-  // what counts as a swipe rather than each guessing at a threshold.
+  // Swipe, doing what the arrows do, on every kind of file. Shared with the
+  // slideshow so both agree on what counts as a swipe rather than each guessing.
   //
-  // Only for photographs. A video has its own scrubber, a PDF scrolls, and the
-  // raw viewer pages a hex dump sideways -- on all three a sideways drag already
-  // means something, and taking it over would break the thing somebody was
-  // actually doing.
-  const swipe = useSwipe(step);
-  const swipeable = file?.kind === "photo" && files.length > 1;
+  // It began as photographs only, on the reasoning that a video has a scrubber,
+  // a PDF scrolls and the raw viewer pages a hex dump sideways. That was too
+  // blunt: it disabled the gesture across most of the app to protect three
+  // small regions. Those regions are excluded by name instead.
+  const swipe = useSwipe(step, (target) => {
+    // A hex dump and a PDF both scroll sideways under the finger; taking that
+    // over would break the thing somebody was actually doing.
+    if (target.closest(".raw-body, .pdf, .v-text")) return false;
+
+    // A video's control bar lives along its bottom edge and is part of the same
+    // element, so it cannot be excluded by selector. Dragging the scrubber must
+    // seek rather than change file; anywhere above it is picture, and a swipe
+    // there means what it means everywhere else.
+    const video = target.closest("video");
+    if (video) {
+      const box = video.getBoundingClientRect();
+      return lastTouchY.current < box.bottom - CONTROL_BAR;
+    }
+    return true;
+  });
+  const swipeable = files.length > 1;
 
   // Always the latest close callback, depended on by nothing. The parent passes
   // an inline arrow, so it is a new function on every one of its renders.
@@ -170,7 +238,7 @@ export default function Viewer(props: {
           <span className="v-name">{file.filename}</span>
           <span className="v-meta">
             {formatSize(file.size)}
-            {files.length > 1 && ` · ${index + 1} of ${files.length}`}
+            {files.length > 1 && ` · ${at + 1} of ${files.length}`}
           </span>
         </div>
         <div className="v-actions">
@@ -212,6 +280,27 @@ export default function Viewer(props: {
               {casting ? "…" : <CastGlyph />}
             </button>
           )}
+
+          {/* What the arrows and swipes move through. A folder of holiday
+              photographs wants one answer and a folder holding a film, its
+              subtitles and the photographs from that weekend wants the other,
+              so it is a choice rather than a rule. Remembered per account. */}
+          <div className="seg v-scope" role="group" aria-label="Move between">
+            <button
+              aria-pressed={scope === "kind"}
+              title={`Only ${kindLabel(file.kind)}`}
+              onClick={() => props.onScope("kind")}
+            >
+              {kindLabel(file.kind)}
+            </button>
+            <button
+              aria-pressed={scope === "all"}
+              title="Every file in this folder, whatever it is"
+              onClick={() => props.onScope("all")}
+            >
+              All
+            </button>
+          </div>
 
           <button
             className="v-btn"
@@ -282,12 +371,20 @@ export default function Viewer(props: {
 
       {printNote && <div className="error v-print-note">{printNote}</div>}
 
-      <div className="v-stage" {...(swipeable ? swipe : {})}>
+      <div
+        className="v-stage"
+        {...(swipeable ? swipe : {})}
+        onTouchStartCapture={(e) => {
+          // Recorded before the swipe handler runs, so the video test above has
+          // a Y to compare against without threading it through the hook.
+          if (e.touches.length === 1) lastTouchY.current = e.touches[0].clientY;
+        }}
+      >
         {files.length > 1 && (
           <button
             className="v-nav prev"
             onClick={() => step(-1)}
-            disabled={index === 0}
+            disabled={at === 0}
             aria-label="Previous"
           >
             ‹
@@ -329,6 +426,35 @@ export default function Viewer(props: {
             <Convertible file={file} />
           )}
 
+          {/* A song, in a viewer that used to draw nothing for one.
+              canPreview has always said audio was previewable and no branch
+              here handled it, so opening a track showed an empty stage. That
+              only became reachable when the scope selector let you walk from a
+              photograph onto the track beside it. */}
+          {url && file.kind === "audio" && (
+            <div className="v-audio">
+              <div className="v-audio-art" aria-hidden="true">♪</div>
+              <div className="v-audio-name nm-clip">{file.filename}</div>
+              {tagLine(file.meta) && (
+                <div className="muted small nm-clip">{tagLine(file.meta)}</div>
+              )}
+              <audio
+                className="v-audio-player"
+                src={url}
+                controls
+                autoPlay
+                // Straight on to the next file when a track finishes, which is
+                // what the rest of the viewer does and what a folder of songs
+                // being walked through should feel like.
+                onEnded={() => step(1)}
+                // The app's own player is stopped rather than left underneath:
+                // two things playing at once out of one phone is nobody's idea
+                // of a feature.
+                onPlay={() => props.onTakeAudio?.()}
+              />
+            </div>
+          )}
+
           {url && file.kind === "doc" && text !== null && <pre className="v-text">{text}</pre>}
 
           {url && file.kind === "doc" && text === null && previewable && (
@@ -356,7 +482,7 @@ export default function Viewer(props: {
           <button
             className="v-nav next"
             onClick={() => step(1)}
-            disabled={index === files.length - 1}
+            disabled={at === files.length - 1}
             aria-label="Next"
           >
             ›

@@ -29,6 +29,12 @@ ALLOWED: dict[str, tuple[frozenset[str], str]] = {
     # How a folder is listed. Tiles come in two sizes because one size cannot serve
     # both a 12-photo album and a folder of two thousand tracks.
     "view": (frozenset({"details", "columns", "tiles-small", "tiles-large"}), "details"),
+    # What the viewer arrows and swipes move through. "kind" keeps to the sort of
+    # file you opened -- photographs among photographs -- and "all" walks the
+    # whole folder, changing what is drawn as the kind changes. Both are wanted:
+    # a folder of holiday photographs is one thing, and a folder holding a film,
+    # its subtitles and the photographs from the same weekend is another.
+    "viewer_scope": (frozenset({"kind", "all"}), "kind"),
 }
 
 DEFAULTS = {k: default for k, (_, default) in ALLOWED.items()}
@@ -38,6 +44,7 @@ class PrefsUpdate(BaseModel):
     palette: str | None = None
     appearance: str | None = None
     view: str | None = None
+    viewer_scope: str | None = None
 
 
 def _merged(raw: dict) -> dict:
