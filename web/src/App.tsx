@@ -30,8 +30,12 @@ export default function App() {
   // because the room picker can be reached from the setup screen and the
   // slideshow itself may never start here at all.
   const [settingUp, setSettingUp] = useState<{ path: string; name: string } | null>(null);
-  const [showing, setShowing] = useState<{ ids: string[]; settings: ShowSettings } | null>(null);
-  const [sendShow, setSendShow] = useState<{ ids: string[]; settings: ShowSettings; label: string } | null>(null);
+  const [showing, setShowing] = useState<
+    { ids: string[]; settings: ShowSettings; folder: string } | null
+  >(null);
+  const [sendShow, setSendShow] = useState<
+    { ids: string[]; settings: ShowSettings; label: string; folder: string } | null
+  >(null);
   const player = usePlayer();
   const rooms = useRoomActivity();
   const [viewing, setViewing] = useState<{ files: FileEntry[]; index: number } | null>(null);
@@ -169,13 +173,17 @@ export default function App() {
             folder={settingUp.path}
             folderName={settingUp.name}
             onPlayHere={(ids, settings) => {
+              const folder = settingUp.path;
               setSettingUp(null);
-              setShowing({ ids, settings });
+              setShowing({ ids, settings, folder });
             }}
             onSendToRoom={(ids, settings) => {
-              const label = `${settingUp.name} — ${ids.length} photos`;
+              const label = settings.endless
+                ? `${settingUp.name} — playing forever`
+                : `${settingUp.name} — ${ids.length} photos`;
+              const folder = settingUp.path;
               setSettingUp(null);
-              setSendShow({ ids, settings, label });
+              setSendShow({ ids, settings, label, folder });
             }}
             onClose={() => setSettingUp(null)}
           />
@@ -189,6 +197,7 @@ export default function App() {
             <Slideshow
               itemIds={showing.ids}
               settings={showing.settings}
+              folder={showing.folder}
               onClose={() => setShowing(null)}
             />
           </Boundary>
@@ -244,9 +253,13 @@ export default function App() {
                     size: null, mtime: null, available: true }}
             siblings={[]}
             slideshow={{ itemIds: sendShow.ids, settings: sendShow.settings,
-                         label: sendShow.label }}
+                         label: sendShow.label, folder: sendShow.folder }}
             onHere={() => {
-              setShowing({ ids: sendShow.ids, settings: sendShow.settings });
+              setShowing({
+                ids: sendShow.ids,
+                settings: sendShow.settings,
+                folder: sendShow.folder,
+              });
               setSendShow(null);
             }}
             onClose={() => setSendShow(null)}

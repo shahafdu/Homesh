@@ -7,6 +7,7 @@ import {
   TRANSITIONS,
   type ShowSettings,
   type Transition,
+  URL_GOOD_FOR_MS,
   gatherPhotos,
   resolveTransition,
   type PhotoSet,
@@ -26,15 +27,20 @@ import {
 export default function Slideshow(props: {
   itemIds: string[];
   settings: ShowSettings;
+  /** Where the photographs came from, so an endless one can go back for more. */
+  folder: string;
   onClose: () => void;
 }) {
   useLockScroll();
 
-  // Taken as given, and fixed at the start. When shuffle was asked for the
-  // server already sampled the whole folder at random; reordering here would
-  // gain nothing and cost the one property worth having, which is that the
-  // sample came from all of it.
-  const [order] = useState(() => props.itemIds);
+  // Grows, when it is endless. The first page arrives with the props; the rest
+  // is fetched as the end comes into view, so a slideshow can run all evening
+  // over a hundred thousand photographs without ever holding them all.
+  const [order, setOrder] = useState<string[]>(props.itemIds);
+  // Where the next page of an in-order walk begins. Meaningless when shuffling,
+  // where every fetch is an independent draw.
+  const offset = useRef(props.itemIds.length);
+  const fetching = useRef(false);
 
   const [at, setAt] = useState(0);
   const [urls, setUrls] = useState<Record<string, string>>({});
@@ -53,21 +59,39 @@ export default function Slideshow(props: {
   const closeRef = useRef(props.onClose);
   closeRef.current = props.onClose;
 
-  /** A signed URL for one photograph, fetched once and remembered.
+  /** A signed URL for one photograph, fetched and remembered until it expires.
    *
    * The cache is a ref as well as state. State is what draws the picture; the
    * ref is what this function reads, so that filling the cache does not change
    * the function's identity. It did, and every effect that depended on it
    * re-ran on every fetch -- including the one that owns the history entry,
    * which then wound the browser back a step for each photograph.
+   *
+   * Entries expire because the URLs do, after five minutes. A slideshow that
+   * ran longer than that and came back to an earlier photograph would hand the
+   * browser a dead URL and draw a broken image -- and on a small folder, which
+   * wraps every couple of minutes, that would be every photograph.
    */
-  const cache = useRef<Record<string, string>>({});
+  const cache = useRef<Record<string, { url: string; at: number }>>({});
   const urlFor = useCallback(async (itemId: string): Promise<string | null> => {
-    if (cache.current[itemId]) return cache.current[itemId];
+    const now = Date.now();
+    const held = cache.current[itemId];
+    if (held && now - held.at < URL_GOOD_FOR_MS) return held.url;
     try {
       const { url } = await api.get<{ url: string }>(`/api/items/${itemId}/url`);
-      cache.current[itemId] = url;
-      setUrls((seen) => ({ ...seen, [itemId]: url }));
+
+      // Expired entries go now rather than accumulating. They are no use to
+      // anybody -- the URL behind them is already dead -- and an endless
+      // slideshow would otherwise carry every photograph it had ever shown.
+      for (const [id, entry] of Object.entries(cache.current)) {
+        if (now - entry.at >= URL_GOOD_FOR_MS) delete cache.current[id];
+      }
+      cache.current[itemId] = { url, at: now };
+      setUrls(() => {
+        const live: Record<string, string> = {};
+        for (const [id, entry] of Object.entries(cache.current)) live[id] = entry.url;
+        return live;
+      });
       return url;
     } catch {
       return null;
@@ -97,14 +121,67 @@ export default function Slideshow(props: {
     };
   }, [at, order, total, urlFor]);
 
+  // More photographs, when the end is in sight.
+  //
+  // Endless means exactly this: go back to the folder rather than loop what is
+  // already here. Shuffled, each fetch is an independent draw and repeats are
+  // expected; in order, it pages on, and an empty page means the folder ran out
+  // and the walk starts again — a wrap-around that never had to count anything.
+  useEffect(() => {
+    if (!props.settings.endless || fetching.current) return;
+    // Twenty photographs of warning, which at three seconds is a minute to
+    // fetch in — long enough that nobody sees the join.
+    if (at < order.length - 20) return;
+
+    fetching.current = true;
+    void (async () => {
+      try {
+        const shuffle = props.settings.shuffle;
+        let page = await gatherPhotos(props.folder, {
+          shuffle,
+          offset: shuffle ? 0 : offset.current,
+          count: false,
+        });
+
+        if (page.item_ids.length === 0 && !shuffle) {
+          page = await gatherPhotos(props.folder, { offset: 0, count: false });
+          offset.current = page.item_ids.length;
+        } else if (!shuffle) {
+          offset.current += page.item_ids.length;
+        }
+
+        if (page.item_ids.length > 0) {
+          // Appended, never trimmed. Trimming the front would shift every index
+          // under the one being displayed -- the queue would jump backwards
+          // after a day of running, which is a worse bug than the memory it
+          // saves. The identifiers are small; what actually grows is the URL
+          // cache, and that prunes itself below.
+          setOrder((have) => have.concat(page.item_ids));
+        }
+      } catch {
+        // The queue keeps playing what it has. A slideshow is not the place to
+        // put a network error on the wall.
+      } finally {
+        fetching.current = false;
+      }
+    })();
+  }, [at, order.length, props.settings.endless, props.settings.shuffle, props.folder]);
+
   const step = useCallback(
     (delta: number) => {
       setError(null);
       setEffect(resolveTransition(props.settings.transition));
       setLayer((n) => 1 - n);
-      setAt((i) => (i + delta + total) % total);
+      setAt((i) => {
+        const next = i + delta;
+        // Wrapping is for a slideshow that has an end. An endless one walks
+        // forward into photographs it has not fetched yet, so stopping at the
+        // last known one is right — the next page is already on its way.
+        if (props.settings.endless) return Math.max(0, Math.min(next, total - 1));
+        return (next + total) % total;
+      });
     },
-    [props.settings.transition, total],
+    [props.settings.transition, props.settings.endless, total],
   );
 
   // The clock. Restarted whenever the photograph changes, so pressing next
@@ -283,7 +360,10 @@ export function SlideshowSetup(props: {
     setFound(null);
     void (async () => {
       try {
-        const set = await gatherPhotos(props.folder, settings.shuffle);
+        // Counted here and only here: the setup screen is the one place the
+        // size of the folder is worth knowing, and an endless slideshow never
+        // asks again.
+        const set = await gatherPhotos(props.folder, { shuffle: settings.shuffle });
         if (!cancelled) setFound(set);
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : String(e));
@@ -308,7 +388,7 @@ export function SlideshowSetup(props: {
               "including subfolders"}
         </p>
 
-        {found?.truncated && (
+        {found?.truncated && !settings.endless && (
           <p className="muted small">
             Showing {found.count.toLocaleString()} of them
             {found.shuffled ? ", picked at random from the whole folder" : ", from the beginning"}.
@@ -326,6 +406,30 @@ export function SlideshowSetup(props: {
 
         {found !== null && found.count > 0 && (
           <>
+            <div className="setting">
+              <h3>Plays</h3>
+              <div className="seg">
+                <button
+                  aria-pressed={settings.endless}
+                  onClick={() => setSettings((s) => ({ ...s, endless: true }))}
+                >
+                  Forever
+                </button>
+                <button
+                  aria-pressed={!settings.endless}
+                  onClick={() => setSettings((s) => ({ ...s, endless: false }))}
+                >
+                  Once through
+                </button>
+              </div>
+              {settings.endless && (
+                <p className="muted small">
+                  Keeps going, fetching more from the folder as it needs them.
+                  Photos will repeat eventually, which on a wall is no bad thing.
+                </p>
+              )}
+            </div>
+
             <div className="setting">
               <h3>Order</h3>
               <div className="seg">

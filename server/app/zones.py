@@ -11,6 +11,7 @@ enabling ZONE2 and selecting the network source before any audio is pushed.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import secrets
@@ -87,6 +88,13 @@ class PlayRequest(BaseModel):
     # as anybody can look, ten minutes long enough not to be the limit.
     photo_ms: int | None = Field(default=None, ge=1000, le=600_000)
     transition: Literal["fade", "slide", "zoom", "none", "random"] = "fade"
+
+    # Where the photographs came from, and whether to go back for more when the
+    # queue runs out. Five thousand photographs at five seconds each is seven
+    # hours, so a queue that merely wrapped would be "for ever" over the same
+    # seven hours of a library holding a hundred thousand.
+    under: str | None = Field(default=None, max_length=4096)
+    endless: bool = False
 
 
 class VolumeRequest(BaseModel):
@@ -453,13 +461,16 @@ async def play(
                 """
                 INSERT INTO play_sessions
                     (zone_id, queue, cursor, position_ms, state,
-                     photo_ms, transition, started_by)
+                     photo_ms, transition, started_by, photo_under, photo_endless, photo_offset)
                 VALUES (:zid, CAST(:queue AS jsonb), :cursor, 0, 'buffering',
-                        :photo_ms, :transition, :by)
+                        :photo_ms, :transition, :by, :under, :endless, :offset)
                 ON CONFLICT (zone_id) DO UPDATE
                 SET queue = EXCLUDED.queue, cursor = EXCLUDED.cursor,
                     position_ms = 0, duration_ms = NULL,
                     photo_ms = EXCLUDED.photo_ms, transition = EXCLUDED.transition,
+                    photo_under = EXCLUDED.photo_under,
+                    photo_endless = EXCLUDED.photo_endless,
+                    photo_offset = EXCLUDED.photo_offset,
                     -- Whoever started what is playing now, so the room can go on
                     -- advancing after they have put the phone down and left.
                     started_by = EXCLUDED.started_by,
@@ -473,6 +484,11 @@ async def play(
                 "photo_ms": body.photo_ms,
                 "transition": body.transition,
                 "by": str(user.id),
+                "under": body.under,
+                "endless": body.endless,
+                # Where the next page starts. The first queue is page one, so
+                # refilling in order continues rather than repeating it.
+                "offset": len(body.item_ids),
             },
         )
 
@@ -953,6 +969,68 @@ async def shuffle_queue(
     return {"shuffle": body.on}
 
 
+def _refill_endless(zone_id: UUID, user: CurrentUser) -> list[str] | None:
+    """Fetch another queue's worth of photographs, for a slideshow with no end.
+
+    Returns None for every queue that is not one, which is nearly all of them.
+
+    Gathered as whoever started the session, so an endless slideshow reaches
+    exactly what they could reach — including as that changes. A folder closed
+    to them tomorrow stops appearing tomorrow, rather than living on in a queue
+    drawn while it was open.
+    """
+    with get_engine().connect() as conn:
+        row = conn.execute(
+            text(
+                "SELECT photo_under, photo_endless, shuffle, photo_offset "
+                "FROM play_sessions WHERE zone_id = :z"
+            ),
+            {"z": str(zone_id)},
+        ).first()
+
+    if row is None or not row[1] or not row[0]:
+        return None
+
+    under, _endless, shuffling, offset = row
+    from .library import gather_photos
+
+    def draw(at: int) -> list[str]:
+        # Counting is skipped: this is never going to reach an end it needs to
+        # know the distance to.
+        found = gather_photos(
+            under=under, shuffle=shuffling, offset=at, count=False, user=user
+        )
+        return found["item_ids"][:5000]
+
+    try:
+        # Shuffled stays shuffled and in order stays in order. Somebody who
+        # asked for the order the photographs were taken in has not changed
+        # their mind by reaching the end of a page.
+        fresh = draw(0 if shuffling else offset)
+        next_offset = 0 if shuffling else offset + len(fresh)
+
+        if not fresh and not shuffling:
+            # Walked off the end of the folder: back to the beginning, which is
+            # the wrap-around, and done without ever counting anything.
+            fresh = draw(0)
+            next_offset = len(fresh)
+    except HTTPException as exc:
+        log.info("could not refill %s: %s", zone_id, exc.detail)
+        return None
+
+    if not fresh:
+        return None
+
+    with get_engine().begin() as conn:
+        conn.execute(
+            text("UPDATE play_sessions SET queue = CAST(:q AS jsonb), cursor = 0, "
+                 "photo_offset = :off, updated_at = now() WHERE zone_id = :z"),
+            {"q": json.dumps(fresh), "off": next_offset, "z": str(zone_id)},
+        )
+    log.info("refilled %s with %d more photographs", zone_id, len(fresh))
+    return fresh
+
+
 async def _skip(zone_id: UUID, user: CurrentUser, delta: int) -> dict:
     zone = _load_zone(zone_id)
     _require_zone_access(zone_id, user)
@@ -974,11 +1052,24 @@ async def _skip(zone_id: UUID, user: CurrentUser, delta: int) -> dict:
             # wrapping to the end: nobody presses previous hoping to be sent to
             # the far end of a list.
             target = 0
-        else:
-            # Forward from the last one starts again. A list that has finished
-            # is exactly when somebody reaches for next, and stopping the room
-            # dead is not what that button is for.
-            target = target % len(queue)
+        elif target >= len(queue):
+            # Past the end. An endless slideshow goes back to the folder for
+            # more rather than replaying the same seven hours, which is the
+            # whole difference between "for ever" and "for ever over these five
+            # thousand".
+            # In a thread: gathering ten thousand photographs from a source of
+            # a hundred thousand takes the better part of a second, and this is
+            # an async path -- blocking the event loop stops every stream in the
+            # house while a slideshow fetches its next page.
+            refilled = await asyncio.to_thread(_refill_endless, zone_id, user)
+            if refilled:
+                queue = refilled
+                target = 0
+            else:
+                # Forward from the last one starts again. A list that has
+                # finished is exactly when somebody reaches for next, and
+                # stopping the room dead is not what that button is for.
+                target = target % len(queue)
 
     item_id = UUID(queue[target])
     if not may_access_item(item_id, user.id):
