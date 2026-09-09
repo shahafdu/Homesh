@@ -125,6 +125,7 @@ export default function RawView(props: {
   return (
     <div className="raw">
       <div className="raw-bar">
+        <span className="muted small nowrap raw-label">Reading as</span>
         <div className="seg" role="group" aria-label="How to show this file">
           <button
             aria-pressed={mode === "text"}
@@ -151,20 +152,26 @@ export default function RawView(props: {
           {loading && " · reading…"}
         </span>
 
-        <div className="zone-controls">
+        {/* Named for what they do to the file rather than for a direction.
+            "Back" and "More" sat under a header full of navigation buttons and
+            read as moving between files -- they move within this one, which is
+            a different thing entirely and worth saying. */}
+        <div className="raw-paging">
           <button
             className="compact"
             disabled={loading || from === 0}
+            title="Earlier in this file"
             onClick={() => void read(Math.max(0, from - step), step)}
           >
-            ← Back
+            ↑ Earlier
           </button>
           <button
             className="compact"
             disabled={loading || shown >= total}
+            title="Further into this file"
             onClick={() => void read(from + bytes.length, step)}
           >
-            More →
+            ↓ Further
           </button>
         </div>
       </div>
