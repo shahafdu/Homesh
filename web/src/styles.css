@@ -1354,21 +1354,30 @@ button.compact:disabled { opacity: .5; cursor: not-allowed; }
  * dump is wider than a phone and longer than a page, and neither should push
  * the viewer around it sideways. */
 .raw {
-  display: flex; flex-direction: column; gap: 10px;
+  display: flex; flex-direction: column;
   width: 100%; max-width: 1000px; margin: 0 auto; padding: 12px 16px 20px;
   min-height: 0;
 }
+
+/* Joined to the text beneath it rather than floating under the app's own
+   header. Two unattached toolbars a centimetre apart is what made it unclear
+   which one moved between files and which moved within one; this bar visibly
+   belongs to the document, so its buttons obviously act on the document. */
 .raw-bar {
   display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  padding: 8px 12px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-bottom: 0;
+  border-radius: 10px 10px 0 0;
 }
 .raw-bar .seg { flex: none; }
-
 
 .raw-body {
   margin: 0; padding: 14px 16px;
   background: var(--surface);
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: 0 0 10px 10px;
   font-family: var(--mono);
   font-size: 12.5px;
   line-height: 1.55;
@@ -1537,3 +1546,11 @@ button.compact:disabled { opacity: .5; cursor: not-allowed; }
    things is a good way to lose somebody. */
 .raw-paging { display: flex; gap: 8px; margin-left: auto; }
 .raw-label { flex: none; }
+
+@media (max-width: 720px) {
+  /* The label goes before the buttons do: "Reading as" is a courtesy, and the
+     paging is not. */
+  .raw-label { display: none; }
+  .raw-paging { margin-left: 0; }
+  .raw-bar { gap: 8px; }
+}
