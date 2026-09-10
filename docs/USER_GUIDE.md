@@ -53,13 +53,39 @@ container — `Library` becomes the mount point you see when browsing. **The fol
 mounted read-only**: Homesh indexes and streams, and has no business writing to your
 library.
 
-Then:
+Then, on Windows, double-click **Start Homesh** in the Homesh folder. Elsewhere:
 
 ```bash
 docker compose up -d --build
 ```
 
 Open <http://localhost:8080>.
+
+---
+
+## 2a. Starting and stopping it afterwards
+
+Double-click **Start Homesh** in the Homesh folder. It starts Docker Desktop if it
+is not running, waits for the server, and prints the addresses to open.
+
+From a terminal, the same thing with a few more options:
+
+```powershell
+.\tools\start-homesh.ps1            # start it
+.\tools\start-homesh.ps1 -Status    # what is running, and where
+.\tools\start-homesh.ps1 -Stop      # stop it; nothing is deleted
+.\tools\start-homesh.ps1 -Rebuild   # start it, rebuilding first
+```
+
+**Why not just `docker compose up`.** That is most of the job but not all of it.
+Docker's virtual machine is rebuilt every time Docker restarts, and Windows only
+attaches *fixed* disks to it — so a folder you granted from an external drive comes
+back **empty rather than missing**, which looks exactly like an empty folder and
+sends you off to check the wrong thing. The script looks inside each granted folder
+and re-attaches the drive when one is empty that should not be.
+
+It also waits for the server's own healthcheck instead of guessing. Migrations run
+at startup, so how long that takes depends on what changed.
 
 ---
 

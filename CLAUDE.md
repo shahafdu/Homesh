@@ -239,8 +239,10 @@ web/src/          App, Browser, Settings, api, auth, library, prefs, styles.css
 android/          TV shell — Manifest, java/com/homesh/tv/{MainActivity,SetupActivity,
                   Prefs,ServerAddress}, res/, test/ServerAddressTest.java
 tools/            probe-denon.ps1, configure-network.ps1, run-tests.ps1,
-                  build-tv-apk.sh, grant-folder.ps1, verify-ci.ps1,
-                  scan-apk.py, githooks/
+                  build-tv-apk.sh, grant-folder.ps1, start-homesh.ps1,
+                  homesh-common.ps1, verify-ci.ps1, scan-apk.py, githooks/
+(repo root)       "Start Homesh.cmd", "Add a folder to Homesh.cmd" — the two
+                  jobs done by double-click rather than through a terminal
 docs/             ARCHITECTURE.md, USER_GUIDE.md, TV_APP.md
 ```
 
@@ -249,11 +251,30 @@ docs/             ARCHITECTURE.md, USER_GUIDE.md, TV_APP.md
 ## Running and testing
 
 ```powershell
+.\tools\start-homesh.ps1          # the whole sequence; "Start Homesh.cmd" double-clicks it
+.\tools\start-homesh.ps1 -Status  # what is running, and the addresses to open
+.\tools\start-homesh.ps1 -Rebuild # after a code change
 .\tools\configure-network.ps1     # derive DENON_HOST + LAN_BASE_URL into .env
-docker compose up -d --build      # stack on http://localhost:8080
 .\tools\run-tests.ps1             # suite against the homesh_test database
 docker compose logs api           # first-run bootstrap code lives here
 ```
+
+`start-homesh.ps1` exists because `docker compose up -d` is not the whole job,
+and the missing steps are the ones that waste an evening. It starts Docker
+Desktop when the engine is down, waits on the container's own healthcheck rather
+than a guessed sleep, and — the part that is easy to forget — **checks whether
+each granted folder actually has anything in it, and re-attaches the drive if
+not.**
+
+That last step is needed because Docker's virtual machine is rebuilt on every
+restart and WSL2 attaches fixed disks only. A folder on an external drive comes
+back as an empty directory rather than as an error, which looks exactly like an
+empty folder. Attaching the drive *before* Docker starts avoids it; attaching it
+afterwards does not, and nothing says so.
+
+Shared helpers live in `tools/homesh-common.ps1`, dot-sourced by both this and
+`grant-folder.ps1` — a second copy of the drvfs mount is the sort of thing that
+drifts and is then debugged twice.
 
 ⚠️ **Never point the test suite at the `homesh` database.** Fixtures truncate `users`
 and `sources`; doing so once destroyed a registered passkey. `conftest.py` refuses any
