@@ -1571,3 +1571,15 @@ button.compact:disabled { opacity: .5; cursor: not-allowed; }
   color: var(--ink); background: var(--bg);
   border: 1px solid var(--line); border-radius: 7px;
 }
+
+/* A page that has not been drawn yet. It holds the right height from the start,
+   so the document is its true length immediately and scrolling does not jump as
+   pages arrive — and so that "what is in view" means something, which is what
+   lazy drawing depends on. */
+.pdf-slot {
+  width: 100%;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+}
+.pdf-slot .pdf-page { display: block; border: 0; border-radius: 4px; }
