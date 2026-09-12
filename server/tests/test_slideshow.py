@@ -466,3 +466,82 @@ class TestASlideshowWithNoEnd:
         who = CurrentUser(id=starter, handle="x", display_name="X", is_admin=True)
 
         assert _refill_endless(uuid.UUID(zone_id), who) is None
+
+
+class TestSendingPaperToARoom:
+    """A document on the television in the room where it is needed.
+
+    It was impossible, and for two reasons that both looked like design. The
+    room picker had a list of kinds that had simply never been extended, and the
+    endpoint that renders a document to PDF took a session -- which a television
+    does not have, because it authenticates as a renderer and fetches media by
+    signed URL, exactly as it does for every other kind.
+    """
+
+    def _a_document(self, db):
+        with db.connect() as conn:
+            return conn.execute(
+                text(
+                    "SELECT i.id FROM items i JOIN replicas r ON r.item_id = i.id "
+                    "WHERE i.kind = 'doc' ORDER BY r.filename LIMIT 1"
+                )
+            ).scalar_one_or_none()
+
+    def test_a_signed_url_is_accepted(self, anon_client, db, scanned, user):
+        """The television's only way in, and it was refused outright.
+
+        Asserted as "not 401" rather than "200" deliberately: what was broken
+        was authentication, and everything past it -- reaching the file,
+        running LibreOffice -- belongs to the conversion tests and needs a
+        mounted source this one does not have. A 503 here is the endpoint
+        saying "I know who you are and the file is elsewhere", which is exactly
+        the behaviour being checked.
+        """
+        from app.signing import mint
+
+        item = self._a_document(db)
+        if item is None:
+            pytest.skip("the fixture has no documents")
+
+        token = mint(item, user.id, "stream", ttl=600)
+        r = anon_client.get(f"/api/documents/{item}", params={"t": token})
+        assert r.status_code != 401, "a valid signed URL was turned away"
+
+    def test_no_token_and_no_session_is_refused(self, anon_client, db, scanned):
+        item = self._a_document(db)
+        if item is None:
+            pytest.skip("the fixture has no documents")
+        assert anon_client.get(f"/api/documents/{item}").status_code == 401
+
+    def test_a_token_for_another_item_does_not_open_this_one(
+        self, anon_client, db, scanned, user
+    ):
+        """A signed URL is bound to one file. It has to stay bound to it."""
+        from app.signing import mint
+
+        item = self._a_document(db)
+        if item is None:
+            pytest.skip("the fixture has no documents")
+
+        with db.connect() as conn:
+            other = conn.execute(
+                text("SELECT id FROM items WHERE id <> :id LIMIT 1"), {"id": str(item)}
+            ).scalar_one()
+
+        token = mint(other, user.id, "stream", ttl=600)
+        assert anon_client.get(
+            f"/api/documents/{item}", params={"t": token}
+        ).status_code == 401
+
+    def test_a_thumb_token_does_not_open_a_document(self, anon_client, db, scanned, user):
+        """Purposes are separate for a reason; a thumbnail grant is not a read."""
+        from app.signing import mint
+
+        item = self._a_document(db)
+        if item is None:
+            pytest.skip("the fixture has no documents")
+
+        token = mint(item, user.id, "thumb", ttl=600)
+        assert anon_client.get(
+            f"/api/documents/{item}", params={"t": token}
+        ).status_code == 401

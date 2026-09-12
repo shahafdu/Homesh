@@ -24,12 +24,13 @@ from contextlib import closing
 from pathlib import Path
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import FileResponse
 
 from .access import may_access_item
 from .config import get_settings
-from .security import CurrentUser, require_user
+from .security import CurrentUser, optional_user
+from .signing import TokenError, verify
 from .stream import resolve_playable
 
 log = logging.getLogger("homesh.documents")
@@ -119,9 +120,34 @@ async def _run_soffice(source: Path, out_dir: Path) -> Path:
 
 
 @router.get("/documents/{item_id}")
-async def document_pdf(item_id: UUID, user: CurrentUser = Depends(require_user)) -> FileResponse:
-    """The document as a PDF, converting and caching on first request."""
-    if not may_access_item(item_id, user.id):
+async def document_pdf(
+    item_id: UUID,
+    t: str | None = Query(None),
+    user: CurrentUser | None = Depends(optional_user),
+) -> FileResponse:
+    """The document as a PDF, converting and caching on first request.
+
+    Takes either a session or a signed token, the same bargain /stream and
+    /thumb already make. A television has no session -- it authenticates as a
+    renderer and fetches media by signed URL -- so requiring one here is what
+    made a document the one kind of file that could not be sent to a room.
+    """
+    viewer = user.id if user else None
+    if viewer is None and t:
+        try:
+            claim = verify(t, "stream")
+            if claim.item_id == item_id:
+                viewer = claim.user_id
+        except TokenError:
+            viewer = None
+
+    if viewer is None:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "authentication required")
+
+    # The same scope check either way: a signed URL carries the account it was
+    # minted for, so a token cannot reach further than the person it was made
+    # for could reach themselves.
+    if not may_access_item(item_id, viewer):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "no such item")
 
     connector, rel_path, filename, size, ext = resolve_playable(item_id)

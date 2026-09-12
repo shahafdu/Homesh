@@ -71,7 +71,15 @@ public class MainActivity extends Activity {
         // Named for what it is on the page. Only the methods marked
         // @JavascriptInterface are reachable, and the page is served by this
         // household's own server.
-        web.addJavascriptInterface(new NativeVideo(this, video), "HomeshVideo");
+        //
+        // Handed a supplier rather than the view itself. It was handed the field
+        // directly, and the field was assigned twenty-four lines further down --
+        // so the bridge captured null and kept it for the life of the app. Every
+        // call through it then dereferenced null on the UI thread: sending a
+        // video crashed the television, and so did pressing stop. A supplier
+        // reads the field when it is used rather than when it is written, which
+        // is the only ordering that cannot be got wrong by moving code around.
+        web.addJavascriptInterface(new NativeVideo(this, () -> video), "HomeshVideo");
         web.setWebViewClient(new WebViewClient() {
             @Override
             public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {

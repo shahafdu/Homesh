@@ -26,9 +26,17 @@ def cache_root() -> Path:
     """Where thumbnails live. Resolved per call so configuration can change."""
     return Path(get_settings().cache_dir) / "thumbs"
 
-# Two sizes, matching the two tile views. Small is deliberately small: a folder of
-# two thousand tracks should not pull two thousand large images.
-SIZES = {"small": 160, "large": 480}
+# Sizes, each matching somewhere they are actually shown. Small is deliberately
+# small: a folder of two thousand tracks should not pull two thousand large
+# images.
+#
+# "screen" exists for televisions. A slideshow was handing a set-top box the
+# original file -- 2.3 MB on average here, up to 34 MB -- and asking it to decode
+# a twelve-megapixel photograph every few seconds. It managed, but visibly: the
+# transitions stuttered because the box was still decoding when the animation was
+# meant to run. 1920 is native on the screens this feeds and about a fortieth of
+# the pixels.
+SIZES = {"small": 160, "large": 480, "screen": 1920}
 
 # Written when a file genuinely has no artwork, so we do not re-run ffmpeg on every
 # page view for a track that will never have a cover.
