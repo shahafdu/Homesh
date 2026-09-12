@@ -46,6 +46,12 @@ public class MainActivity extends Activity {
     private String server;
 
     @SuppressLint("SetJavaScriptEnabled")
+    /** Layout parameters that fill the frame, which is what every layer here wants. */
+    private static FrameLayout.LayoutParams fill() {
+        return new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT);
+    }
+
     @Override
     protected void onCreate(Bundle state) {
         super.onCreate(state);
@@ -158,18 +164,20 @@ public class MainActivity extends Activity {
         trouble.setOrientation(LinearLayout.VERTICAL);
         trouble.setPadding(64, 64, 64, 64);
         trouble.setVisibility(View.GONE);
-        // Filling the frame rather than wrapping its contents, which is what a
-        // FrameLayout child does by default — a panel sized to its text sits in
-        // the corner of a television and reads as a glitch.
-        trouble.setLayoutParams(new FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
         trouble.addView(problem);
         trouble.addView(changeAddress);
         trouble.addView(searchAgain);
 
-        root.addView(web);
-        root.addView(video);
-        root.addView(trouble);
+        // All three fill the frame. A FrameLayout child wraps its contents by
+        // default, which the error panel above already had to work around --
+        // and the other two did not, because until the video bridge started
+        // working nothing ever made the VideoView visible. Once it did, the
+        // player was laid out at its own size against the start edge, which on
+        // a Hebrew system is the *right* edge: a film played in a strip down
+        // one side with the web app squeezed into what was left.
+        root.addView(web, fill());
+        root.addView(video, fill());
+        root.addView(trouble, fill());
         setContentView(root);
 
         immersive();

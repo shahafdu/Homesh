@@ -196,10 +196,11 @@ export default function Zones(props: { onClose: () => void }) {
  */
 function ZoneSeek(props: { zone: Zone; onSeek: (positionMs: number) => void }) {
   const session = props.zone.session;
-  // What the screen reports first, the catalog second. Music has a length in
-  // the catalog; a video being transcoded as it plays does not, and only the
-  // thing decoding it knows — which is why the bar appeared for songs and
-  // never for films.
+  // What the screen reports first, the catalog second. Most video here carries
+  // a length, but not all of it: the backfill that works lengths out had only
+  // ever run over audio, so a film sent to a room often had none and the bar
+  // was hidden entirely. Both sources are still needed — a video transcoded as
+  // it plays has no length until it ends, and only the screen ever knows.
   const duration = session?.duration_ms ?? session?.now?.duration_ms ?? 0;
 
   // While dragging, the bar follows the finger rather than the four-second
@@ -208,9 +209,21 @@ function ZoneSeek(props: { zone: Zone; onSeek: (positionMs: number) => void }) {
   const position = dragging ?? session?.position_ms ?? 0;
 
   // A receiver plays a stream it is being fed and cannot be moved through, so
-  // there is nothing honest to offer. Nor is there for anything with no known
-  // length: a bar with no end is not a bar.
-  if (!session || duration <= 0 || props.zone.renderer?.kind !== "tvapp") return null;
+  // there is nothing honest to offer.
+  if (!session || props.zone.renderer?.kind !== "tvapp") return null;
+
+  // A bar with no end is not a bar, so nothing was drawn at all when a length
+  // was unknown -- and the room then looked as though it had no position and
+  // never would. The elapsed time is known regardless, and saying how far in
+  // something is beats saying nothing while the length is worked out.
+  if (duration <= 0) {
+    return (
+      <div className="zone-seek">
+        <span className="time">{formatClock(position)}</span>
+        <span className="muted small">length unknown</span>
+      </div>
+    );
+  }
 
   return (
     <div className="zone-seek">

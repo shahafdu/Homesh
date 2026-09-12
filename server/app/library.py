@@ -682,10 +682,18 @@ def _scan_then_extract(source_id: UUID, connector) -> None:
     extract_for_source(source_id, connector)
 
     # Lengths for anything catalogued before they could be derived. Converges:
-    # only rows still missing one are read.
+    # only rows still missing one are read, so each pass has less to do than the
+    # last and an interrupted one loses nothing -- every length is written as it
+    # is worked out.
+    #
+    # Bounded per pass, which matters more since this began covering video as
+    # well as audio. The host is a mini PC with 16 GB, and reading thousands of
+    # files in one unbroken run is how two jobs on this machine were killed for
+    # memory. A few thousand a night reaches the end of a library this size
+    # within a week and never competes with anything.
     from .metadata import backfill_durations
 
-    backfill_durations(source_id, connector)
+    backfill_durations(source_id, connector, limit=2000)
 
 
 # Connectors are kept rather than rebuilt. A Drive connector remembers which
