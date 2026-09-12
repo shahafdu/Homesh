@@ -223,7 +223,12 @@ def _describe(item_ids: list[str]) -> dict[str, dict]:
                        -- A bar needs something to be a fraction of. Without it
                        -- the tower could show a position but never how far
                        -- through, which is not a seek bar.
-                       min(i.duration_ms) AS duration_ms
+                       min(i.duration_ms) AS duration_ms,
+                       -- What sort of thing this is, so the control tower can
+                       -- offer controls that mean something. A document has no
+                       -- pause, no position and no volume, and offering all
+                       -- three made a PDF look like a broken song.
+                       min(i.kind::text) AS kind
                 FROM items i
                 JOIN replicas r ON r.item_id = i.id
                 LEFT JOIN item_metadata m ON m.item_id = i.id
@@ -242,6 +247,7 @@ def _describe(item_ids: list[str]) -> dict[str, dict]:
             "title": r[2],
             "artist": r[3],
             "duration_ms": r[4],
+            "kind": r[5],
         }
         for r in rows
     }

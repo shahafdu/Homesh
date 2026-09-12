@@ -654,3 +654,47 @@ def test_catalog_duration_reads_the_catalog(db, scanned):
         )
 
     assert _catalog_duration(item) == 12345
+
+
+class TestTheTowerKnowsWhatSortOfThing:
+    """A document has no pause, no position and no volume.
+
+    The tower offered all three for a PDF on a television, which made a document
+    look like a song that had broken -- and it had no way to know better,
+    because the description of what was playing carried a filename and a title
+    and never said what sort of file it was.
+    """
+
+    def _first_of(self, db, kind):
+        with db.connect() as conn:
+            return conn.execute(
+                text(
+                    "SELECT i.id FROM items i JOIN replicas r ON r.item_id = i.id "
+                    "WHERE i.kind = :k ORDER BY r.filename LIMIT 1"
+                ),
+                {"k": kind},
+            ).scalar_one_or_none()
+
+    def test_the_session_says_what_is_playing(self, client, db, scanned, receiver):
+        item = self._first_of(db, "audio")
+        assert item is not None, "the fixture has audio"
+
+        zone_id = _make_zone(client, name="Describing")
+        client.post(f"/api/zones/{zone_id}/play", json={"item_ids": [str(item)]})
+
+        zones = client.get("/api/zones").json()
+        zone = next(z for z in zones if z["id"] == zone_id)
+        assert zone["session"]["now"]["kind"] == "audio"
+
+    def test_a_document_is_described_as_one(self, client, db, scanned, receiver):
+        """The distinction the controls are chosen from."""
+        item = self._first_of(db, "doc")
+        if item is None:
+            pytest.skip("the fixture has no documents")
+
+        zone_id = _make_zone(client, name="Paper")
+        client.post(f"/api/zones/{zone_id}/play", json={"item_ids": [str(item)]})
+
+        zones = client.get("/api/zones").json()
+        zone = next(z for z in zones if z["id"] == zone_id)
+        assert zone["session"]["now"]["kind"] == "doc"
