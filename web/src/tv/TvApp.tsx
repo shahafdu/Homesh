@@ -490,6 +490,22 @@ export default function TvApp() {
           void media?.play().catch(() => undefined);
         }
         break;
+      case "slideshow":
+        // Changed while it runs, without restarting it. `now` carries the
+        // settings, and the clock below is keyed on them -- so a new duration
+        // gives the photograph currently on the wall the time just asked for
+        // rather than waiting for the next one, which is what somebody
+        // pressing "3s" expects to see happen.
+        setNow((showing) =>
+          showing
+            ? {
+                ...showing,
+                photo_ms: cmd.photo_ms ?? showing.photo_ms,
+                transition: cmd.transition ?? showing.transition,
+              }
+            : showing,
+        );
+        break;
       case "stop":
         setPlayFault(null);
         native()?.stop();

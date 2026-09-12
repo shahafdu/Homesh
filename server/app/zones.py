@@ -264,7 +264,7 @@ async def list_zones(user: CurrentUser = Depends(require_user)) -> list[dict]:
                        s.state::text, s.queue, s.cursor, s.position_ms, s.volume,
                        s.updated_at, z.preroll, s.duration_ms, s.shuffle,
                        r.capabilities ->> 'app_version' AS app_version,
-                       s.photo_ms
+                       s.photo_ms, s.transition
                 FROM zones z
                 LEFT JOIN renderers r ON r.id = z.renderer_id
                 LEFT JOIN play_sessions s ON s.zone_id = z.id
@@ -373,6 +373,7 @@ async def list_zones(user: CurrentUser = Depends(require_user)) -> list[dict]:
                     # from a photograph somebody simply sent to a screen. The
                     # two want different controls.
                     "photo_ms": row[15],
+                    "transition": row[16],
                     "volume": row[9],
                     "updated_at": row[10].isoformat() if row[10] else None,
                 }
@@ -983,6 +984,72 @@ async def jump(
 
 class ShuffleRequest(BaseModel):
     on: bool
+
+
+class SlideshowUpdate(BaseModel):
+    """A change to a slideshow that is already running.
+
+    Both optional, because these are two separate decisions somebody makes
+    while watching: "these are going past too quickly" and "I am tired of the
+    fade". Sending one must not silently reset the other.
+    """
+
+    photo_ms: int | None = Field(default=None, ge=1000, le=600_000)
+    transition: Literal["fade", "slide", "zoom", "none", "random"] | None = None
+
+
+@router.post("/{zone_id}/slideshow")
+async def adjust_slideshow(
+    zone_id: UUID, body: SlideshowUpdate, user: CurrentUser = Depends(require_user)
+) -> dict:
+    """Change how a running slideshow behaves, without restarting it.
+
+    The settings already live on the session, because a slideshow is started
+    from a phone that then leaves the room -- so they were only ever set once,
+    when it began. Changing your mind meant stopping it and starting again from
+    the first photograph, which for a folder of a hundred thousand is not a
+    small thing to ask.
+
+    The screen is told at once rather than at the next photograph. It holds the
+    clock, so a new duration means the photograph on the wall now gets the time
+    just asked for, which is what somebody pressing "3s" is expecting to see.
+    """
+    zone = _load_zone(zone_id)
+    _require_zone_access(zone_id, user)
+
+    with get_engine().connect() as conn:
+        running = conn.execute(
+            text(
+                "SELECT photo_ms, transition FROM play_sessions "
+                "WHERE zone_id = :z AND photo_ms IS NOT NULL"
+            ),
+            {"z": str(zone_id)},
+        ).first()
+
+    if running is None:
+        raise HTTPException(status.HTTP_409_CONFLICT, "that room is not showing a slideshow")
+
+    photo_ms = body.photo_ms if body.photo_ms is not None else running[0]
+    transition = body.transition if body.transition is not None else running[1]
+
+    with get_engine().begin() as conn:
+        conn.execute(
+            text(
+                "UPDATE play_sessions SET photo_ms = :ms, transition = :t, "
+                "updated_at = now() WHERE zone_id = :z"
+            ),
+            {"ms": photo_ms, "t": transition, "z": str(zone_id)},
+        )
+
+    if zone.renderer_kind == "tvapp" and zone.renderer_id is not None:
+        from .renderers import hub
+
+        await hub.send(
+            zone.renderer_id,
+            {"type": "slideshow", "photo_ms": photo_ms, "transition": transition},
+        )
+
+    return {"photo_ms": photo_ms, "transition": transition}
 
 
 @router.post("/{zone_id}/shuffle")

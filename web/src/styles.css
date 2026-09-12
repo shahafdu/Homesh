@@ -1554,3 +1554,20 @@ button.compact:disabled { opacity: .5; cursor: not-allowed; }
   .raw-paging { margin-left: 0; }
   .raw-bar { gap: 8px; }
 }
+
+/* ── Adjusting a slideshow while it plays ────────────────────────────────────
+ *
+ * In the room card, because that is where somebody is when they notice: in the
+ * room, watching, thinking "these are going past too quickly". These used to
+ * live only in the dialogue that started the slideshow, so changing one meant
+ * starting again from the first photograph. */
+.slideshow-controls {
+  display: flex; align-items: flex-end; gap: 10px; flex-wrap: wrap;
+  margin-top: 10px;
+}
+.show-field { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.show-field select {
+  padding: 6px 8px; font: inherit; font-size: 13px;
+  color: var(--ink); background: var(--bg);
+  border: 1px solid var(--line); border-radius: 7px;
+}
