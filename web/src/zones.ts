@@ -67,6 +67,8 @@ export interface ZoneSession {
    *  way to tell one from a photograph somebody sent to a screen -- the two
    *  want quite different controls. */
   photo_ms: number | null;
+  /** How one photograph gives way to the next. */
+  transition: string | null;
   volume: number | null;
   updated_at: string | null;
 }
@@ -118,6 +120,18 @@ export const shuffleZone = (zoneId: string, on: boolean) =>
   api.post<{ shuffle: boolean }>(`/api/zones/${zoneId}/shuffle`, { on });
 
 /** Move to a point in what is playing in another room. */
+/** Change a running slideshow without restarting it.
+ *
+ * Either field alone: they are two separate decisions somebody makes while
+ * watching, and sending one must not quietly reset the other. */
+export const adjustSlideshow = (
+  zoneId: string,
+  change: { photo_ms?: number; transition?: string },
+) => api.post<{ photo_ms: number; transition: string }>(
+  `/api/zones/${zoneId}/slideshow`,
+  change,
+);
+
 export const seekZone = (zoneId: string, positionMs: number) =>
   api.post<{ zone: string; position_ms: number }>(`/api/zones/${zoneId}/seek`, {
     position_ms: Math.max(0, Math.round(positionMs)),

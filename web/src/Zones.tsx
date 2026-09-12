@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useLockScroll } from "./useLockScroll";
 import AudiencePicker, { type Choice } from "./Audience";
+import { HOLDS, TRANSITIONS } from "./slideshow";
 import { listPeople, type Person } from "./people";
 import { ApiError, api } from "./api";
 import { copyText } from "./copy";
@@ -13,6 +14,7 @@ import {
   previousInZone,
   removeZone,
   renameZone,
+  adjustSlideshow,
   roomMode,
   jumpInZone,
   resumeZone,
@@ -272,6 +274,92 @@ function formatClock(ms: number): string {
  * Collapsed by default — thirty-one rows under every card is a wall — and
  * fetched only when opened, since it is one query per room per poll otherwise.
  */
+/** How a running slideshow behaves, changed while it runs.
+ *
+ * These lived only in the dialogue that started it, so changing your mind meant
+ * stopping and starting again from the first photograph -- which for a folder
+ * of a hundred thousand is not a small thing to ask. They belong here because
+ * this is where somebody is when they notice: in the room, watching, thinking
+ * "these are going past too quickly".
+ */
+function SlideshowControls(props: { zone: Zone; onChanged: () => void }) {
+  const { zone } = props;
+  const [busy, setBusy] = useState(false);
+  const session = zone.session;
+
+  const change = async (patch: { photo_ms?: number; transition?: string }) => {
+    setBusy(true);
+    try {
+      await adjustSlideshow(zone.id, patch);
+      props.onChanged();
+    } catch {
+      // The room carries on with what it had. A slideshow is not the place to
+      // put a failed request on the wall.
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="slideshow-controls">
+      <label className="show-field">
+        <span className="muted small">Each photo</span>
+        <select
+          value={session?.photo_ms ?? 5000}
+          disabled={busy}
+          onChange={(e) => void change({ photo_ms: Number(e.target.value) })}
+        >
+          {HOLDS.map((h) => (
+            <option key={h.ms} value={h.ms}>
+              {h.label}
+            </option>
+          ))}
+        </select>
+      </label>
+
+      <label className="show-field">
+        <span className="muted small">Transition</span>
+        <select
+          value={session?.transition ?? "fade"}
+          disabled={busy}
+          onChange={(e) => void change({ transition: e.target.value })}
+        >
+          {TRANSITIONS.map((t) => (
+            <option key={t.id} value={t.id}>
+              {t.label}
+            </option>
+          ))}
+        </select>
+      </label>
+
+      {/* Shuffle belongs to a slideshow as much as to a queue of songs -- it is
+          the difference between a year in order and a year at random. It is the
+          room's own switch, so it is the same one the queue uses. */}
+      <button
+        className={`compact${session?.shuffle ? " primary" : ""}`}
+        disabled={busy}
+        aria-pressed={session?.shuffle ?? false}
+        title={
+          session?.shuffle
+            ? "Showing them at random — tap for the order they were taken in"
+            : "Show what is left at random"
+        }
+        onClick={async () => {
+          setBusy(true);
+          try {
+            await shuffleZone(zone.id, !session?.shuffle);
+            props.onChanged();
+          } finally {
+            setBusy(false);
+          }
+        }}
+      >
+        ⤨ Shuffle{session?.shuffle ? " on" : ""}
+      </button>
+    </div>
+  );
+}
+
 function ZoneQueue(props: { zone: Zone; onChanged: () => void }) {
   const [open, setOpen] = useState(false);
   const [tracks, setTracks] = useState<QueueTrack[] | null>(null);
@@ -541,6 +629,10 @@ function ZoneCard(props: {
             </button>
             <button className="compact" onClick={props.onStop}>Stop</button>
           </div>
+
+          {mode === "slideshow" && (
+            <SlideshowControls zone={zone} onChanged={props.onChanged} />
+          )}
 
           <ZoneQueue zone={zone} onChanged={props.onChanged} />
 

@@ -545,3 +545,104 @@ class TestSendingPaperToARoom:
         assert anon_client.get(
             f"/api/documents/{item}", params={"t": token}
         ).status_code == 401
+
+
+class TestChangingASlideshowWhileItRuns:
+    """Second thoughts, without starting again from the first photograph.
+
+    The settings lived only in the dialogue that started it, so changing one
+    meant stopping the room and beginning again -- which for a folder of a
+    hundred thousand photographs is not a small thing to ask of somebody who
+    only wanted them to go past more slowly.
+    """
+
+    def _showing(self, client, db, **extra):
+        zone_id = client.post(
+            "/api/zones",
+            json={
+                "name": f"Gallery {uuid.uuid4().hex[:6]}",
+                "renderer_kind": "tvapp",
+                "device_key": f"uuid:test::gallery::{uuid.uuid4()}",
+                "preroll": [],
+            },
+        ).json()["id"]
+
+        with db.connect() as conn:
+            photos = [
+                str(r[0])
+                for r in conn.execute(
+                    text(
+                        "SELECT i.id FROM items i JOIN replicas r ON r.item_id = i.id "
+                        "WHERE i.kind = 'photo' ORDER BY r.filename LIMIT 3"
+                    )
+                ).all()
+            ]
+        client.post(
+            f"/api/zones/{zone_id}/play",
+            json={"item_ids": photos, "photo_ms": 5000, "transition": "fade", **extra},
+        )
+        return zone_id
+
+    def _settings(self, db, zone_id):
+        with db.connect() as conn:
+            return conn.execute(
+                text("SELECT photo_ms, transition FROM play_sessions WHERE zone_id = :z"),
+                {"z": zone_id},
+            ).one()
+
+    def test_the_hold_can_be_changed(self, client, db, scanned):
+        zone_id = self._showing(client, db)
+        r = client.post(f"/api/zones/{zone_id}/slideshow", json={"photo_ms": 15000})
+        assert r.status_code == 200, r.text
+        assert self._settings(db, zone_id) == (15000, "fade")
+
+    def test_the_transition_can_be_changed(self, client, db, scanned):
+        zone_id = self._showing(client, db)
+        client.post(f"/api/zones/{zone_id}/slideshow", json={"transition": "zoom"})
+        assert self._settings(db, zone_id) == (5000, "zoom")
+
+    def test_one_does_not_reset_the_other(self, client, db, scanned):
+        """They are two separate decisions, made at two separate moments."""
+        zone_id = self._showing(client, db)
+        client.post(f"/api/zones/{zone_id}/slideshow", json={"transition": "slide"})
+        client.post(f"/api/zones/{zone_id}/slideshow", json={"photo_ms": 30000})
+        assert self._settings(db, zone_id) == (30000, "slide")
+
+    @pytest.mark.parametrize("bad", [{"photo_ms": 10}, {"transition": "barrel-roll"}])
+    def test_nonsense_is_refused(self, client, db, scanned, bad):
+        zone_id = self._showing(client, db)
+        assert client.post(f"/api/zones/{zone_id}/slideshow", json=bad).status_code == 422
+
+    def test_a_room_that_is_not_showing_one_says_so(self, client, db, scanned):
+        """Rather than quietly writing settings nothing will ever read."""
+        zone_id = client.post(
+            "/api/zones",
+            json={
+                "name": f"Quiet {uuid.uuid4().hex[:6]}",
+                "renderer_kind": "tvapp",
+                "device_key": f"uuid:test::quiet::{uuid.uuid4()}",
+                "preroll": [],
+            },
+        ).json()["id"]
+
+        with db.connect() as conn:
+            song = conn.execute(
+                text(
+                    "SELECT i.id FROM items i JOIN replicas r ON r.item_id = i.id "
+                    "WHERE i.kind = 'audio' LIMIT 1"
+                )
+            ).scalar_one()
+        client.post(f"/api/zones/{zone_id}/play", json={"item_ids": [str(song)]})
+
+        r = client.post(f"/api/zones/{zone_id}/slideshow", json={"photo_ms": 8000})
+        assert r.status_code == 409
+
+    def test_the_tower_reports_both(self, client, db, scanned):
+        """The card draws its dropdowns from these, so they have to come back."""
+        zone_id = self._showing(client, db)
+        client.post(f"/api/zones/{zone_id}/slideshow", json={"photo_ms": 8000,
+                                                            "transition": "random"})
+
+        zone = next(z for z in client.get("/api/zones").json() if z["id"] == zone_id)
+        assert zone["session"]["photo_ms"] == 8000
+        assert zone["session"]["transition"] == "random"
