@@ -718,6 +718,17 @@ export default function TvApp() {
     return () => window.clearInterval(timer);
   }, [phase, now?.kind, report]);
 
+  // The page becomes glass while the box's own player is decoding.
+  //
+  // On body rather than only on a div: body paints an opaque ground of its own,
+  // and a transparent panel over an opaque page is still an opaque page. The
+  // film is behind all of it.
+  useEffect(() => {
+    const over = usingNative(now) && phase === "playing";
+    document.body.classList.toggle("over-native", over);
+    return () => document.body.classList.remove("over-native");
+  }, [now, phase]);
+
   useEffect(() => {
     // A screen may sit untouched for weeks, so tell the server we are still here
     // rather than waiting for it to notice a dead socket.
@@ -812,7 +823,7 @@ export default function TvApp() {
     const paper = paperKind(now.filename ?? "");
 
     return (
-      <div className="tv">
+      <div className={`tv${usingNative(now) ? " over-native" : ""}`}>
         <div className={`player${isPhoto ? " photo" : ""}`}>
           <div className="stage">
             {/* Hidden when the box has its own decoder: the native player is

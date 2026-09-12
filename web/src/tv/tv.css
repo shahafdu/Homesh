@@ -302,3 +302,18 @@ body {
   white-space: pre-wrap; word-break: break-word;
   color: var(--ink);
 }
+
+
+/* While the box's own player is decoding, the page is a sheet of glass.
+ *
+ * The player is a native view underneath this one, so anything the page paints
+ * is painted over the film. Everything it has to say -- the title, the position,
+ * the confirmation that a remote press was heard -- is drawn on top and the rest
+ * shows through. Before this the overlay was behind the picture and invisible
+ * for as long as anything was playing. */
+body.over-native,
+body.over-native .tv,
+body.over-native .player,
+body.over-native .stage {
+  background: transparent;
+}

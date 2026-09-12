@@ -7,6 +7,7 @@ import android.graphics.Color;
 import android.os.Build;
 import android.os.Bundle;
 import android.util.Log;
+import android.view.Gravity;
 import android.view.KeyEvent;
 import android.view.View;
 import android.view.WindowManager;
@@ -48,8 +49,17 @@ public class MainActivity extends Activity {
     @SuppressLint("SetJavaScriptEnabled")
     /** Layout parameters that fill the frame, which is what every layer here wants. */
     private static FrameLayout.LayoutParams fill() {
-        return new FrameLayout.LayoutParams(
+        FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT);
+        // Centred, which MATCH_PARENT alone does not achieve for a VideoView.
+        //
+        // It measures itself smaller than the space it is given, on purpose, to
+        // keep the film's shape -- and FrameLayout then places what is left
+        // against the start edge. On a Hebrew system start is the right edge,
+        // so a 16:9 film on a 16:10 panel sat in a band down the right with a
+        // gap on the left. Filling the frame was necessary and was not enough.
+        params.gravity = Gravity.CENTER;
+        return params;
     }
 
     @Override
@@ -72,7 +82,10 @@ public class MainActivity extends Activity {
 
         web = new WebView(this);
         configure(web.getSettings());
-        web.setBackgroundColor(Color.BLACK);
+        // Transparent, not black: it sits over the native player now, and a
+        // black background would be an opaque sheet across the film. The page
+        // paints its own ground everywhere it has something to show.
+        web.setBackgroundColor(Color.TRANSPARENT);
         web.setWebChromeClient(new WebChromeClient());
         // Named for what it is on the page. Only the methods marked
         // @JavascriptInterface are reachable, and the page is served by this
@@ -175,8 +188,16 @@ public class MainActivity extends Activity {
         // player was laid out at its own size against the start edge, which on
         // a Hebrew system is the *right* edge: a film played in a strip down
         // one side with the web app squeezed into what was left.
-        root.addView(web, fill());
+        // The player underneath, the web app over it, transparent.
+        //
+        // The title, the position bar and every confirmation a remote press
+        // gives are drawn by the web app -- and the player is a native view, so
+        // with the web app beneath it all of that was behind the film and
+        // invisible for exactly as long as something was playing. Reversing
+        // them puts the overlay back on top; the web app paints nothing where
+        // it has nothing to say, so the film shows through.
         root.addView(video, fill());
+        root.addView(web, fill());
         root.addView(trouble, fill());
         setContentView(root);
 
