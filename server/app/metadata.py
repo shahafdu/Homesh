@@ -396,23 +396,35 @@ def extract_for_source(
 
 
 def backfill_durations(source_id: UUID, connector, limit: int | None = None) -> int:
-    """Work out lengths for tracks catalogued before lengths could be worked out.
+    """Work out lengths for items catalogued before lengths could be worked out.
 
     The tag pass skips anything it has already described, so a fix to how
     duration is derived reaches nothing without a pass of its own. Only items
     still missing a length are touched, which makes this cheap to re-run and
     means it converges rather than repeating work.
+
+    Audio and video, which it was not. This said `kind = 'audio'` and so had
+    never once touched a film -- and a control tower cannot draw a position bar
+    for something whose length nothing knows, so sending a video to a room gave
+    no way to move through it. It went unnoticed because most of the video here
+    is mp4 from a phone, which does carry a length; the six per cent that does
+    not is exactly what somebody happens to send to a television.
+
+    The two are measured differently and have to be. Audio is derived from the
+    declared bitrate and the true size, because these files arrive as prefixes
+    and a prefix cannot be timed. A container header is different: ffprobe reads
+    one without decoding anything, which is both exact and cheap.
     """
     engine = get_engine()
     with engine.connect() as conn:
         rows = conn.execute(
             text(
                 """
-                SELECT i.id, r.dir_path, r.filename, i.size_bytes
+                SELECT i.id, r.dir_path, r.filename, i.size_bytes, i.kind::text
                 FROM items i
                 JOIN replicas r ON r.item_id = i.id
                 WHERE r.source_id = :sid AND r.available
-                  AND i.kind = 'audio'
+                  AND i.kind IN ('audio', 'video')
                   AND i.duration_ms IS NULL
                   AND i.size_bytes > 0
                 ORDER BY r.dir_path, r.filename
@@ -423,11 +435,22 @@ def backfill_durations(source_id: UUID, connector, limit: int | None = None) -> 
         ).all()
 
     filled = 0
-    for item_id, dir_path, filename, size in rows:
+    for item_id, dir_path, filename, size, kind in rows:
         rel = f"{dir_path}/{filename}" if dir_path else filename
         try:
-            with _local_copy(connector, rel, filename) as (path, _partial):
-                duration_ms = _duration_from_bitrate(path, size)
+            with _local_copy(connector, rel, filename) as (path, partial):
+                if kind == "video":
+                    # The container header carries it, and ffprobe reads one
+                    # without decoding. A prefix is usually enough, since the
+                    # header is at the front of every format that matters here.
+                    _tags, duration_ms = read_video(path)
+                else:
+                    duration_ms = _duration_from_bitrate(path, size)
+                if kind == "video" and duration_ms is None and partial:
+                    # Some containers keep their index at the end, so a prefix
+                    # cannot be timed at all. Left for a pass with the whole
+                    # file rather than guessed at.
+                    log.debug("length of %s is not in its first bytes", filename)
         except Exception as exc:  # noqa: BLE001 - one bad file must not stop the pass
             log.debug("no length for %s: %s", filename, exc)
             continue

@@ -378,10 +378,6 @@ export default function TvApp() {
         setPlayFault(null);
         setNow(cmd);
         setPhase("playing");
-        // A photo has nothing to start: it is an <img>, and there is no media
-        // element to hand a source to. In a slideshow it does need an end,
-        // which is the timer below.
-        if (cmd.kind === "photo") break;
 
         // Video goes to the box's own decoder where there is one. The web app
         // keeps the queue and the reporting either way — only the pixels move.
@@ -389,6 +385,19 @@ export default function TvApp() {
           native()!.play(cmd.url ?? "", cmd.position_ms ?? 0);
           break;
         }
+
+        // Anything else: put the box's player away first. It is a native view
+        // sitting *over* the web app, so leaving it up meant a photograph or a
+        // document sent after a film was drawn underneath one — visible only in
+        // whatever strip of screen the player was not covering. It went
+        // unnoticed until the bridge started working, because before that the
+        // player was never shown at all.
+        native()?.stop();
+
+        // A photo has nothing to start: it is an <img>, and there is no media
+        // element to hand a source to. In a slideshow it does need an end,
+        // which is the timer below.
+        if (cmd.kind === "photo") break;
         // The element mounts with this render, so defer until it exists.
         //
         // Stamped, because two play commands in quick succession — pressing
@@ -737,7 +746,19 @@ export default function TvApp() {
       <div className="tv">
         <div className={`player${isPhoto ? " photo" : ""}`}>
           <div className="stage">
-            {isVideo && <video ref={mediaRef} playsInline />}
+            {/* Hidden when the box has its own decoder: the native player is
+                drawing the picture, and an empty <video> element in a WebView
+                draws a large play symbol over half the screen. That is the
+                giant ▶ that appeared beside a film. The element still has to
+                exist -- it is what the queue reports position from when the
+                box has no decoder to hand the file to. */}
+            {isVideo && (
+              <video
+                ref={mediaRef}
+                playsInline
+                style={native() ? { display: "none" } : undefined}
+              />
+            )}
 
             {isPhoto && now.url && (
               // Keyed on the item, so React replaces the element rather than
