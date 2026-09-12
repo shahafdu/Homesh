@@ -417,34 +417,24 @@ async def renderer_socket(websocket: WebSocket, token: str = Query(...)) -> None
                 continue
 
             kind = message.get("type")
-            if kind == "state":
-                state = {
-                    "state": message.get("state"),
-                    "position_ms": message.get("position_ms"),
-                    "duration_ms": message.get("duration_ms"),
-                    "item_id": message.get("item_id"),
-                }
-                await hub.broadcast_state(renderer_id, state)
-                _persist_position(renderer_id, state)
+            try:
+                await _handle_message(renderer_id, kind, message, websocket)
+            except Exception as exc:  # noqa: BLE001
+                # One message must not end the connection.
+                #
+                # A bad statement in the handler that records which build a
+                # screen is running -- a missing cast, nothing to do with
+                # playing anything -- escaped this loop and closed the socket.
+                # The screen reconnected, said hello, and was dropped again:
+                # a television stuck on "connecting" every three seconds, and
+                # no way to play anything at all, because of a line that only
+                # writes a version string.
+                #
+                # The socket is the screen's only way to be told what to do. It
+                # is worth strictly more than whatever any single message
+                # achieves, so a failure is logged and the connection kept.
+                log.warning("renderer %s: a %s message failed: %s", renderer_id, kind, exc)
 
-                # The end of an item is news the queue needs. Reported by the
-                # screen because only the screen knows -- for a photograph,
-                # because only the screen is counting the seconds it has been
-                # held. Awaited rather than fired off: two "ended" reports in a
-                # row would otherwise race to advance the same cursor.
-                if state["state"] == "ended":
-                    zone_id = _zone_of(renderer_id)
-                    if zone_id is not None:
-                        from .zones import advance_when_finished
-
-                        await advance_when_finished(zone_id)
-            elif kind == "hello":
-                # What build the screen is running. Kept in capabilities rather
-                # than a column of its own: it is a fact the screen reports
-                # about itself, which is exactly what that field is for.
-                _remember_version(renderer_id, str(message.get("app_version", ""))[:40])
-            elif kind == "ping":
-                await websocket.send_text(json.dumps({"type": "pong"}))
     except WebSocketDisconnect:
         pass
     except Exception as exc:  # noqa: BLE001
@@ -452,6 +442,46 @@ async def renderer_socket(websocket: WebSocket, token: str = Query(...)) -> None
     finally:
         await hub.remove_renderer(renderer_id)
         log.info("renderer gone: %s", name)
+
+
+async def _handle_message(
+    renderer_id: UUID, kind: str | None, message: dict, websocket: WebSocket
+) -> None:
+    """Act on one message from a screen.
+
+    Its own function so that the loop calling it can decide what a failure
+    costs. Raising here loses the message; it used to lose the connection.
+    """
+    if kind == "state":
+        state = {
+            "state": message.get("state"),
+            "position_ms": message.get("position_ms"),
+            "duration_ms": message.get("duration_ms"),
+            "item_id": message.get("item_id"),
+        }
+        await hub.broadcast_state(renderer_id, state)
+        _persist_position(renderer_id, state)
+
+        # The end of an item is news the queue needs. Reported by the screen
+        # because only the screen knows -- for a photograph, because only the
+        # screen is counting the seconds it has been held. Awaited rather than
+        # fired off: two "ended" reports in a row would otherwise race to
+        # advance the same cursor.
+        if state["state"] == "ended":
+            zone_id = _zone_of(renderer_id)
+            if zone_id is not None:
+                from .zones import advance_when_finished
+
+                await advance_when_finished(zone_id)
+
+    elif kind == "hello":
+        # What build the screen is running. Kept in capabilities rather than a
+        # column of its own: it is a fact the screen reports about itself,
+        # which is exactly what that field is for.
+        _remember_version(renderer_id, str(message.get("app_version", ""))[:40])
+
+    elif kind == "ping":
+        await websocket.send_text(json.dumps({"type": "pong"}))
 
 
 def _remember_version(renderer_id: UUID, version: str) -> None:
@@ -467,8 +497,11 @@ def _remember_version(renderer_id: UUID, version: str) -> None:
     with get_engine().begin() as conn:
         conn.execute(
             text(
+                # Cast explicitly. Postgres cannot infer a parameter's type
+                # inside jsonb_build_object and refuses the statement outright:
+                # "could not determine data type of parameter $1".
                 "UPDATE renderers SET capabilities = capabilities || "
-                "jsonb_build_object('app_version', :v) WHERE id = :id"
+                "jsonb_build_object('app_version', CAST(:v AS text)) WHERE id = :id"
             ),
             {"v": version, "id": str(renderer_id)},
         )
