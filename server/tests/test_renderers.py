@@ -225,3 +225,65 @@ class TestCommandChannel:
 
     def test_listing_requires_authentication(self, anon_client):
         assert anon_client.get("/api/renderers").status_code == 401
+
+
+class TestOneBadMessageIsNotFatal:
+    """A screen's socket is worth more than anything a single message achieves.
+
+    A missing cast in the handler that records which build a screen is running
+    -- a line that writes a version string and nothing else -- raised out of the
+    receive loop and closed the connection. The television reconnected, said
+    hello, and was dropped again: stuck on "connecting" every three seconds and
+    unable to play anything at all.
+
+    So the socket survives a failing message now, and these hold that open.
+    """
+
+    def _paired(self, client, anon_client, name="Snug"):
+        begun = _begin(anon_client, key=f"uuid:test::{name}")
+        client.post("/api/renderers/pair/claim", json={"code": begun["code"], "name": name})
+        return anon_client.get(
+            f"/api/renderers/pair/status?poll_token={begun['poll_token']}"
+        ).json()["device_token"]
+
+    def test_hello_records_the_build(self, client, anon_client, db):
+        """Which is how anybody can tell whether a box took an update."""
+        token = self._paired(client, anon_client, "Loft")
+
+        with client.websocket_connect(f"/api/renderers/ws?token={token}") as ws:
+            ws.send_json({"type": "hello", "app_version": "0.6.1"})
+            ws.send_json({"type": "ping"})
+            assert ws.receive_json()["type"] == "pong"
+
+        with db.connect() as conn:
+            version = conn.execute(
+                text("SELECT capabilities ->> 'app_version' FROM renderers WHERE name = 'Loft'")
+            ).scalar_one()
+        assert version == "0.6.1"
+
+    def test_a_handler_that_raises_does_not_close_the_socket(
+        self, client, anon_client, db, monkeypatch
+    ):
+        """The shape of the bug, rather than the typo that caused it."""
+        from app import renderers
+
+        def explode(*_args, **_kwargs):
+            raise RuntimeError("the database said no")
+
+        monkeypatch.setattr(renderers, "_remember_version", explode)
+        token = self._paired(client, anon_client, "Porch")
+
+        with client.websocket_connect(f"/api/renderers/ws?token={token}") as ws:
+            ws.send_json({"type": "hello", "app_version": "0.6.1"})
+            # Still listening, and still able to answer.
+            ws.send_json({"type": "ping"})
+            assert ws.receive_json()["type"] == "pong"
+
+    def test_an_unknown_message_is_ignored(self, client, anon_client):
+        """An older server meeting a newer screen must not drop it."""
+        token = self._paired(client, anon_client, "Attic")
+
+        with client.websocket_connect(f"/api/renderers/ws?token={token}") as ws:
+            ws.send_json({"type": "something-invented-later", "payload": 1})
+            ws.send_json({"type": "ping"})
+            assert ws.receive_json()["type"] == "pong"
