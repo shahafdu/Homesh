@@ -13,7 +13,7 @@ import {
   previousInZone,
   removeZone,
   renameZone,
-  isSilent,
+  roomMode,
   jumpInZone,
   resumeZone,
   seekZone,
@@ -303,10 +303,10 @@ function ZoneQueue(props: { zone: Zone; onChanged: () => void }) {
           {open ? "▾" : "▸"} Playing next
           <span className="muted small"> · {total}</span>
         </button>
-        {/* Shuffling a folder of documents is not a thing anybody wants. The
-            list and the two arrows are; shuffle only makes sense for something
-            you are listening to rather than reading. */}
-        {total > 1 && !isSilent(zone.session?.now?.kind) && (
+        {/* Shuffle only means something for a queue you are listening to.
+            Shuffling a folder of documents, or the order of a slideshow that is
+            already choosing at random, is not a thing anybody wants. */}
+        {total > 1 && roomMode(zone.session) === "playing" && (
           <button
             className={`compact${zone.session?.shuffle ? " primary" : ""}`}
             disabled={busy}
@@ -386,10 +386,12 @@ function ZoneCard(props: {
   const { zone } = props;
   const status = zoneStatus(zone);
   const live = zone.session?.state === "playing" || zone.session?.state === "paused";
-  // Something read rather than something heard. A document has no pause, no
-  // position and no volume, and a card offering all three made a PDF on a
-  // television look like a song that had broken.
-  const silent = isSilent(zone.session?.now?.kind);
+  // Which controls this room can honestly offer. Three answers: something
+  // playing has a position and a volume; a slideshow has neither but does
+  // advance on a timer, so holding it still is a real thing to want; a
+  // photograph or a document sits there until something moves it on.
+  const mode = roomMode(zone.session);
+  const silent = mode !== "playing";
 
   return (
     <div className={`zone-card${live ? " live" : ""}`}>
@@ -457,7 +459,19 @@ function ZoneCard(props: {
 
       {zone.renderer && (
         <div className="muted small">
-          {zone.renderer.kind === "heos" ? "Receiver · audio only" : "Screen"}
+          {/* The build the screen is running joins the line that already says
+              what it is. Until now the only way to know whether a television
+              had taken an update was to walk to it and read its own corner --
+              so a fix that had shipped and a fix that had never arrived looked
+              identical from here. A screen that reports nothing is running
+              something older than the version that began reporting. */}
+          {zone.renderer.kind === "heos"
+            ? "Receiver · audio only"
+            : `Screen${
+                zone.renderer.app_version
+                  ? ` · app ${zone.renderer.app_version}`
+                  : " · app older than 0.6.1"
+              }`}
         </div>
       )}
 
@@ -476,7 +490,8 @@ function ZoneCard(props: {
           </div>
           {zone.session.queue_length > 1 && (
             <div className="muted small">
-              {silent ? "File" : "Track"} {zone.session.cursor + 1} of{" "}
+              {mode === "playing" ? "Track" : mode === "slideshow" ? "Photo" : "File"}{" "}
+              {zone.session.cursor + 1} of{" "}
               {zone.session.queue_length}
             </div>
           )}
@@ -498,7 +513,7 @@ function ZoneCard(props: {
             >
               ⏮
             </button>
-            {!silent && (
+            {mode !== "still" && (
               <button
                 className="compact"
                 onClick={props.onToggle}
@@ -507,7 +522,11 @@ function ZoneCard(props: {
                     ? `Pause ${zone.name}`
                     : `Resume ${zone.name}`
                 }
-                title={zone.session?.state === "playing" ? "Pause" : "Play"}
+                title={
+                  zone.session?.state === "playing"
+                    ? mode === "slideshow" ? "Hold this photo" : "Pause"
+                    : mode === "slideshow" ? "Carry on" : "Play"
+                }
               >
                 {zone.session?.state === "playing" ? "⏸" : "▶"}
               </button>

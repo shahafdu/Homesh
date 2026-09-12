@@ -28,6 +28,8 @@ interface Command {
    * without this the screen would hold the first one for ever. */
   photo_ms?: number | null;
   transition?: string;
+  /** Still being encoded as it arrives, so the web view has to take it. */
+  transcoded?: boolean;
 }
 
 /** Which transition this photograph arrives with.
@@ -116,6 +118,16 @@ function TvText(props: { url: string; filename: string }) {
   if (problem) return <div className="tv-paper-note">{problem}</div>;
   if (text === null) return <div className="tv-paper-note">Opening {props.filename}…</div>;
   return <pre className="tv-text">{text}</pre>;
+}
+
+/** Whether the box's own decoder is the thing holding this file.
+ *
+ * Asked in several places -- which player to report position from, which one to
+ * pause, whether the page should draw anything -- and every one of them has to
+ * agree. They did not while the rule was written out separately each time.
+ */
+function usingNative(cmd: Command | null): boolean {
+  return Boolean(cmd && cmd.kind === "video" && !cmd.transcoded && native());
 }
 
 const STORAGE_KEY = "homesh.tv.credential";
@@ -231,6 +243,9 @@ export default function TvApp() {
   const [gesture, setGesture] = useState<string | null>(null);
   /** Whether the title and bar are on screen. They fade out while watching. */
   const [overlayShown, setOverlayShown] = useState(true);
+  /** Held, rather than playing. For a slideshow this is the whole of what pause
+   *  means: there is nothing decoding, only a clock. */
+  const [paused, setPaused] = useState(false);
 
   const wake = useCallback(() => {
     setOverlayShown(true);
@@ -340,6 +355,20 @@ export default function TvApp() {
     socket.onopen = () => {
       setConnected(true);
       setPhase((p) => (p === "playing" ? p : "idle"));
+
+      // Which build this screen is running, said out loud.
+      //
+      // The app updates itself, which is the point -- but nobody could tell
+      // whether a given television had taken the update without walking to it
+      // and reading the corner of its own idle screen. So a fix would be
+      // shipped, a fault would persist, and there was no way to know whether
+      // the box had the fix and it had not worked or simply did not have it.
+      socket.send(
+        JSON.stringify({
+          type: "hello",
+          app_version: native()?.appVersion?.() || "0.4.0 or older",
+        }),
+      );
     };
 
     socket.onclose = (event) => {
@@ -376,12 +405,22 @@ export default function TvApp() {
     switch (cmd.type) {
       case "play":
         setPlayFault(null);
+        setPaused(false);
         setNow(cmd);
         setPhase("playing");
 
-        // Video goes to the box's own decoder where there is one. The web app
-        // keeps the queue and the reporting either way — only the pixels move.
-        if (cmd.kind === "video" && native()) {
+        // Video goes to the box's own decoder where there is one -- but only
+        // when it is the original file. A stream still being encoded has no
+        // index, and Android's MediaPlayer cannot read one: handed a live
+        // transcode it opened the URL, failed and opened it again, 216 times
+        // for a single .avi. That is a regression I caused by fixing the
+        // bridge: while the bridge was broken every one of these quietly fell
+        // through to the web view, which plays them properly.
+        //
+        // So the two players are used for what each is good at. The box decodes
+        // what Chromium cannot, which is why it is here; Chromium reads a
+        // fragmented stream, which the box cannot.
+        if (cmd.kind === "video" && native() && !cmd.transcoded) {
           native()!.play(cmd.url ?? "", cmd.position_ms ?? 0);
           break;
         }
@@ -438,12 +477,18 @@ export default function TvApp() {
         }
         break;
       case "pause":
+        setPaused(true);
         if (native()?.isPlaying()) native()!.pause();
         media?.pause();
         break;
       case "resume":
-        if (native() && nowRef.current?.kind === "video") native()!.resume();
-        else void media?.play().catch(() => undefined);
+        setPaused(false);
+        if (usingNative(nowRef.current)) native()!.resume();
+        // A slideshow has no media element to start; the clock above restarts
+        // on its own when `paused` clears.
+        else if (nowRef.current?.kind !== "photo") {
+          void media?.play().catch(() => undefined);
+        }
         break;
       case "stop":
         setPlayFault(null);
@@ -458,8 +503,8 @@ export default function TvApp() {
         // offset, which is also how the transcoded stream is moved through,
         // since a stream still being encoded has no index to seek in. Without
         // this branch the tower's bar moved and the television ignored it.
-        if (native() && nowRef.current?.kind === "video") {
-          native()!.play(nowRef.current.url ?? "", cmd.position_ms);
+        if (usingNative(nowRef.current)) {
+          native()!.play(nowRef.current!.url ?? "", cmd.position_ms);
         } else if (media) {
           media.currentTime = cmd.position_ms / 1000;
         }
@@ -477,7 +522,10 @@ export default function TvApp() {
   const report = useCallback((state: string) => {
     const socket = socketRef.current;
     const media = mediaRef.current;
-    const player = nowRef.current?.kind === "video" ? native() : null;
+    // Only whichever player is actually holding the file. A transcode plays in
+    // the media element even though the kind is video, and asking the box where
+    // it had got to would answer for something it never opened.
+    const player = usingNative(nowRef.current) ? native() : null;
     if (!socket || socket.readyState !== WebSocket.OPEN) return;
     socket.send(
       JSON.stringify({
@@ -547,7 +595,7 @@ export default function TvApp() {
         // All of this in milliseconds. It mixed the two: `live` was seconds and
         // `duration` milliseconds, so the clamp never bit and the confirmation
         // on screen showed a time near zero however far you had moved.
-        const live = player && now?.kind === "video"
+        const live = player && usingNative(now)
           ? player.positionMs()
           : (media?.currentTime ?? 0) * 1000;
         const from = pendingSeek.current ?? live;
@@ -566,7 +614,7 @@ export default function TvApp() {
           pendingSeek.current = null;
           if (target == null) return;
           // The target is milliseconds; the media element wants seconds.
-          if (player && now?.kind === "video") player.play(now.url ?? "", target);
+          if (player && usingNative(now)) player.play(now!.url ?? "", target);
           else if (media) media.currentTime = target / 1000;
         }, 550);
       };
@@ -581,10 +629,10 @@ export default function TvApp() {
         case "MediaPlayPause":
         case "Enter":
         case " ": {
-          const playing = player?.isPlaying() ?? !media?.paused;
+          const playing = usingNative(now) ? (player?.isPlaying() ?? false) : !media?.paused;
           setGesture(playing ? "❚❚ Paused" : "▶ Playing");
           report(playing ? "paused" : "playing");
-          if (player && now?.kind === "video") {
+          if (player && usingNative(now)) {
             playing ? player.pause() : player.resume();
           } else if (media) {
             playing ? media.pause() : void media.play().catch(() => undefined);
@@ -615,9 +663,14 @@ export default function TvApp() {
   // knows both.
   useEffect(() => {
     if (phase !== "playing" || now?.kind !== "photo" || !now.photo_ms) return;
+    // Stopped while the room is held. Pause did nothing at all to a slideshow
+    // -- it reached a media element with no source and a player with no file --
+    // so the photographs carried on changing and the button looked broken. The
+    // clock is the only thing a slideshow has to stop.
+    if (paused) return;
     const timer = window.setTimeout(() => report("ended"), now.photo_ms);
     return () => window.clearTimeout(timer);
-  }, [phase, now?.kind, now?.photo_ms, now?.item_id, report, now]);
+  }, [phase, paused, now?.kind, now?.photo_ms, now?.item_id, report, now]);
 
   useEffect(() => {
     // The native player is outside React and outside the media element, so it
@@ -638,7 +691,7 @@ export default function TvApp() {
   useEffect(() => {
     // Position while the box is playing: the media element knows nothing about
     // it, so it is polled and reported like any other progress.
-    if (phase !== "playing" || now?.kind !== "video" || !native()) return;
+    if (phase !== "playing" || !usingNative(now)) return;
     const timer = window.setInterval(() => {
       const player = native();
       if (!player) return;
@@ -756,7 +809,7 @@ export default function TvApp() {
               <video
                 ref={mediaRef}
                 playsInline
-                style={native() ? { display: "none" } : undefined}
+                style={usingNative(now) ? { display: "none" } : undefined}
               />
             )}
 

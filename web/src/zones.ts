@@ -4,6 +4,13 @@ export interface ZoneRenderer {
   kind: "tvapp" | "heos" | "cast" | "browser";
   state: "ready" | "asleep" | "unavailable";
   name: string | null;
+  /** Which build the screen is running, as it reported on connecting.
+   *
+   * Null until it has connected once since screens began saying so. That is
+   * worth showing rather than hiding: a screen that has not reported a version
+   * is a screen running something older than this, which is exactly the
+   * question being asked when a fix does not appear to have worked. */
+  app_version: string | null;
 }
 
 /** What is playing, as opposed to where it sits in a queue. */
@@ -26,7 +33,23 @@ export interface NowPlaying {
  * like a song that had broken. What a reader wants is the next one, the
  * previous one, one picked from the list, and a way to stop. */
 export const isSilent = (kind: string | null | undefined) =>
-  kind === "doc" || kind === "other";
+  kind === "doc" || kind === "other" || kind === "photo";
+
+/** What a room is doing, as far as which controls make sense.
+ *
+ * Three answers, not two. A song has a position to move through and a volume;
+ * a slideshow has neither but does advance on a timer, so holding it still is
+ * a real thing to want; a photograph or a document sits there until something
+ * moves it on. Giving all three a pause button and a seek bar made two of them
+ * look like a song that had broken.
+ */
+export type RoomMode = "playing" | "slideshow" | "still";
+
+export function roomMode(session: ZoneSession | null | undefined): RoomMode {
+  if (!session) return "still";
+  if (session.photo_ms) return "slideshow";
+  return isSilent(session.now?.kind) ? "still" : "playing";
+}
 
 export interface ZoneSession {
   state: "idle" | "playing" | "paused" | "buffering";
@@ -40,6 +63,10 @@ export interface ZoneSession {
   duration_ms: number | null;
   /** Whether this room is playing its queue in a random order. */
   shuffle: boolean;
+  /** How long each photograph is held. Set only for a slideshow, and the only
+   *  way to tell one from a photograph somebody sent to a screen -- the two
+   *  want quite different controls. */
+  photo_ms: number | null;
   volume: number | null;
   updated_at: string | null;
 }
