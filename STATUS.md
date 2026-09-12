@@ -6,8 +6,8 @@ to reconstruct the state of a large, half-finished system from memory.
 **Legend** — ✅ built and verified · 🟡 built, needs Shahaf to confirm ·
 🔴 known broken · ⬜ not started · ⏳ waiting on Shahaf
 
-Last updated: 5 September 2026 · 364 tests · 18 migrations · CI green
-(verified with `tools/verify-ci.ps1`, not assumed) · repository recreated clean
+Last updated: 13 September 2026 · 409 tests · 20 migrations · CI green
+(verified with `tools/verify-ci.ps1`, not assumed)
 
 ---
 
@@ -65,7 +65,7 @@ Deployed and believed correct; not yet confirmed in use.
 | | Item | Note |
 |---|---|---|
 | 🟡 | **Any file can be opened** | Files nothing could preview were inert — a `.MSWMM` or one with no extension could not even be clicked. The viewer shows the bytes as text or hex, choosing whichever answers the question, and either can be switched to |
-| 🔴 | **Install TV app 0.5.9 on the new room** | The crash on sending a video, and on pressing stop, was one bug: the native video bridge was handed the player before it existed and held null for the life of the app. Fixed in 0.5.9 — install from `‹server›/apk` |
+| 🔴 | **Install TV app 0.6.1 on the boxes** | Three rounds of fixes need this APK, from `‹server›/apk`. The crash on video and on stop was one bug — the video bridge was handed the player before it existed and held null for the life of the app. The film down one edge was another: the layers were added to the frame with no layout parameters, so the player sat against the start edge, which on a Hebrew system is the right one. From 0.6.1 a screen reports its version on connecting and the room card shows it, so you can tell from your phone whether a box took an update |
 | 🟡 | **Homesh Connect, the phone app** | Install from [the releases page](https://github.com/shahafdu/Homesh/releases/latest) — which works with the server unreachable, and that is the point: the app exists to fix not being able to reach the server, so it cannot be hosted only there. Also at `‹your server›/phone` when you are already connected. Checks both addresses, offers **Open Tailscale** when neither answers, then hands off to the browser |
 | 🟡 | **The logo goes home** | From four folders deep, one tap |
 | 🟡 | **Browsing this computer for a folder** | Settings browses your own storage — descend, breadcrumbs, **Add this folder** at any depth. The first attempt only listed the top of one mounted folder, which is not browsing: the folder somebody wants is three levels down |
@@ -113,7 +113,7 @@ Deployed and believed correct; not yet confirmed in use.
 
 | | Item | What is known |
 |---|---|---|
-| 🟠 | **Stopping a playlist crashed the TV app** | Reported on 0.5.3. The likely cause — `stopPlayback()` on a player in no state for it — is wrapped in 0.5.4, but no crash report has arrived to confirm it. From 0.5.4 a crash sends its stack trace to the server, so if it happens again it can be read rather than guessed at |
+| 🟡 | **Stopping a playlist crashed the TV app** | Cause found and it was not the guess. `stop()` called a method reference on a null player, which throws as it is *created* — outside the try block meant to contain it. Same root cause as the video crash. Fixed in 0.5.9 and still in 0.6.1; needs confirming once a box has the new APK |
 
 ---
 
@@ -126,11 +126,11 @@ not decisions waiting on anybody.
    prove the odd-dimension class is closed. Started twice: killed once by my own
    rebuild, then it timed out on one file at 900s and never completed. A sample
    of 20 across five formats passed
-2. ⬜ **Finish the duration backfill** — ~9,950 tracks still have no length, so
-   listings show none for them
-3. ✅ **Shuffle scope** — settled: the folder or list you are playing, never the
-   whole library. It already worked that way on both the phone and in a room;
-   there is now a test that fails if it ever reaches outside the queue
+2. 🟡 **Duration backfill** — the pass said `kind = 'audio'` and had never touched a
+   film. Extended to video with ffprobe: video went from 78% to **98%** with a
+   length, and every major format — mp4, avi, mov, wmv, m4v, mpg — is at 100%.
+   1,086 audio files still have none, where the declared bitrate cannot be
+   trusted; that is a different problem and untouched
 
 ---
 
