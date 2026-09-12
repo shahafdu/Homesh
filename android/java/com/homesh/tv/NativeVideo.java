@@ -1,6 +1,8 @@
 package com.homesh.tv;
 
 import android.app.Activity;
+
+import java.util.function.Supplier;
 import android.util.Log;
 import android.webkit.JavascriptInterface;
 import android.widget.VideoView;
@@ -23,11 +25,33 @@ public final class NativeVideo {
     private static final String TAG = "HomeshVideo";
 
     private final Activity activity;
-    private final VideoView view;
 
-    NativeVideo(Activity activity, VideoView view) {
+    /**
+     * The player, fetched when it is needed rather than captured now.
+     *
+     * <p>This class was handed the VideoView itself, from a line that ran before
+     * the field holding it was assigned. It captured null and kept it: every
+     * call through the bridge then dereferenced null on the UI thread, inside a
+     * posted runnable where nothing catches it. Sending a video to a television
+     * killed the app, and so did pressing stop.
+     *
+     * <p>A supplier reads the field at the moment of use, so the order the
+     * activity happens to build its views in cannot break this again.
+     */
+    private final Supplier<VideoView> player;
+
+    NativeVideo(Activity activity, Supplier<VideoView> player) {
         this.activity = activity;
-        this.view = view;
+        this.player = player;
+    }
+
+    /** The player, or null before the activity has built one. */
+    private VideoView view() {
+        try {
+            return player.get();
+        } catch (RuntimeException e) {
+            return null;
+        }
     }
 
     /** Whether the web app should hand video over rather than play it itself. */
@@ -57,6 +81,11 @@ public final class NativeVideo {
     @JavascriptInterface
     public void play(String url, int positionMs) {
         activity.runOnUiThread(() -> {
+            final VideoView view = view();
+            if (view == null) {
+                Log.w(TAG, "asked to play before there is a player: " + url);
+                return;
+            }
             try {
                 view.setVisibility(android.view.View.VISIBLE);
                 view.setVideoPath(url);
@@ -81,30 +110,47 @@ public final class NativeVideo {
                     }
                 });
             } catch (RuntimeException e) {
+                // Hidden again, quietly. This handler used to be the crash
+                // rather than the recovery: it touched the same null view that
+                // had just thrown, and the second throw had nothing to catch it.
                 Log.w(TAG, "could not start " + url, e);
-                view.setVisibility(android.view.View.GONE);
+                quietly(() -> view.setVisibility(android.view.View.GONE));
             }
         });
     }
 
     @JavascriptInterface
     public void pause() {
-        activity.runOnUiThread(() -> quietly(view::pause));
+        // The call is wrapped rather than the method reference: a bound
+        // reference on a null receiver throws as it is created, which is
+        // outside quietly() and so outside anything that would catch it.
+        activity.runOnUiThread(() -> quietly(() -> {
+            VideoView v = view();
+            if (v != null) v.pause();
+        }));
     }
 
     @JavascriptInterface
     public void resume() {
-        activity.runOnUiThread(() -> quietly(view::start));
+        // The call is wrapped rather than the method reference: a bound
+        // reference on a null receiver throws as it is created, which is
+        // outside quietly() and so outside anything that would catch it.
+        activity.runOnUiThread(() -> quietly(() -> {
+            VideoView v = view();
+            if (v != null) v.start();
+        }));
     }
 
     @JavascriptInterface
     public void stop() {
-        activity.runOnUiThread(() -> {
-            quietly(view::stopPlayback);
+        activity.runOnUiThread(() -> quietly(() -> {
+            VideoView v = view();
+            if (v == null) return;
+            v.stopPlayback();
             // Hidden as well as stopped: a VideoView left visible keeps a black
             // rectangle over the web app that nothing else can be seen through.
-            view.setVisibility(android.view.View.GONE);
-        });
+            v.setVisibility(android.view.View.GONE);
+        }));
     }
 
     /** Run something on the player, treating a bad state as nothing to do.
@@ -126,7 +172,8 @@ public final class NativeVideo {
     @JavascriptInterface
     public int positionMs() {
         try {
-            return view.getCurrentPosition();
+            VideoView v = view();
+            return v == null ? 0 : v.getCurrentPosition();
         } catch (RuntimeException e) {
             return 0;
         }
@@ -135,7 +182,9 @@ public final class NativeVideo {
     @JavascriptInterface
     public int durationMs() {
         try {
-            int d = view.getDuration();
+            VideoView v = view();
+            if (v == null) return 0;
+            int d = v.getDuration();
             return d > 0 ? d : 0;
         } catch (RuntimeException e) {
             return 0;
@@ -145,7 +194,8 @@ public final class NativeVideo {
     @JavascriptInterface
     public boolean isPlaying() {
         try {
-            return view.isPlaying();
+            VideoView v = view();
+            return v != null && v.isPlaying();
         } catch (RuntimeException e) {
             return false;
         }

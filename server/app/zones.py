@@ -27,6 +27,7 @@ from . import denon, lanaddr, occupancy
 from .access import can_use_zone, may_access_item, zone_scope
 from .config import get_settings
 from .db import get_engine
+from .documents import convertible
 from .people import ROOM, AudienceUpdate, apply_audience
 from .security import CurrentUser, audit, require_user
 from .signing import mint
@@ -460,13 +461,13 @@ async def play(
             text(
                 """
                 INSERT INTO play_sessions
-                    (zone_id, queue, cursor, position_ms, state,
+                    (zone_id, queue, cursor, position_ms, state, duration_ms,
                      photo_ms, transition, started_by, photo_under, photo_endless, photo_offset)
-                VALUES (:zid, CAST(:queue AS jsonb), :cursor, 0, 'buffering',
+                VALUES (:zid, CAST(:queue AS jsonb), :cursor, 0, 'buffering', :duration,
                         :photo_ms, :transition, :by, :under, :endless, :offset)
                 ON CONFLICT (zone_id) DO UPDATE
                 SET queue = EXCLUDED.queue, cursor = EXCLUDED.cursor,
-                    position_ms = 0, duration_ms = NULL,
+                    position_ms = 0, duration_ms = EXCLUDED.duration_ms,
                     photo_ms = EXCLUDED.photo_ms, transition = EXCLUDED.transition,
                     photo_under = EXCLUDED.photo_under,
                     photo_endless = EXCLUDED.photo_endless,
@@ -481,6 +482,9 @@ async def play(
                 "zid": str(zone_id),
                 "queue": json.dumps([str(i) for i in body.item_ids]),
                 "cursor": index,
+                # Seeded from the catalog so the tower can draw a bar at once,
+                # rather than only once a screen has said how long the file is.
+                "duration": _catalog_duration(item_id),
                 "photo_ms": body.photo_ms,
                 "transition": body.transition,
                 "by": str(user.id),
@@ -541,8 +545,13 @@ async def _stream_to_receiver(
 
     with get_engine().begin() as conn:
         conn.execute(
+            # The length is left alone. It was blanked here, immediately after
+            # the session had been seeded with it -- so the tower drew no
+            # progress bar even for a track whose length the catalog knew
+            # perfectly well. What the screen reports later still wins; there is
+            # nothing to be gained by first throwing away what is known.
             text("UPDATE play_sessions SET state = 'playing', position_ms = 0, "
-                 "duration_ms = NULL, updated_at = now() WHERE zone_id = :z"),
+                 "updated_at = now() WHERE zone_id = :z"),
             {"z": str(zone.id)},
         )
     occupancy.invalidate()
@@ -606,6 +615,18 @@ async def _push_to_screen(zone: Zone, item_id: UUID, user: CurrentUser) -> dict:
     ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
     if kind == "video" and needs_conversion(ext):
         media_url = f"{base}/api/videos/{item_id}/live.mp4?t={token}"
+    elif kind == "photo":
+        # A screen-sized rendition, not the original. Photographs here average
+        # 2.3 MB and reach 34 MB, and a set-top box decoding twelve megapixels
+        # every few seconds is why slideshow transitions stuttered: the box was
+        # still decoding when the animation was supposed to be running. 1920 is
+        # native on these screens and about a fortieth of the pixels.
+        shown = mint(item_id, user.id, "thumb", ttl=settings.cast_url_ttl_minutes * 60)
+        media_url = f"{base}/api/thumb/{item_id}?size=screen&t={shown}"
+    elif kind == "doc" and convertible(ext):
+        # An office document is drawn by the server and arrives as a PDF, the
+        # same way the viewer gets one. A television has no Word.
+        media_url = f"{base}/api/documents/{item_id}?t={token}"
     else:
         media_url = f"{base}/api/stream/{item_id}?t={token}"
 
@@ -1031,6 +1052,26 @@ def _refill_endless(zone_id: UUID, user: CurrentUser) -> list[str] | None:
     return fresh
 
 
+def _catalog_duration(item_id: UUID) -> int | None:
+    """How long this item runs, as the catalog knows it.
+
+    The session used to learn a length only from the screen playing it, and
+    threw that away again on every track change -- so the control tower drew no
+    progress bar for music, which is the one kind where the length is almost
+    always known. It is known for 94% of the audio here and 78% of the video,
+    extracted at scan time; asking a television for it was never necessary.
+
+    Still nullable, and deliberately: a live transcode has no length until it
+    ends, and the screen remains the only source for that. This seeds what is
+    known and leaves the rest to be reported.
+    """
+    with get_engine().connect() as conn:
+        return conn.execute(
+            text("SELECT duration_ms FROM items WHERE id = :id"),
+            {"id": str(item_id)},
+        ).scalar_one_or_none()
+
+
 async def _skip(zone_id: UUID, user: CurrentUser, delta: int) -> dict:
     zone = _load_zone(zone_id)
     _require_zone_access(zone_id, user)
@@ -1077,9 +1118,9 @@ async def _skip(zone_id: UUID, user: CurrentUser, delta: int) -> dict:
 
     with get_engine().begin() as conn:
         conn.execute(
-            text("UPDATE play_sessions SET cursor = :c, position_ms = 0, duration_ms = NULL, "
+            text("UPDATE play_sessions SET cursor = :c, position_ms = 0, duration_ms = :d, "
                  "updated_at = now() WHERE zone_id = :z"),
-            {"c": target, "z": str(zone_id)},
+            {"c": target, "d": _catalog_duration(item_id), "z": str(zone_id)},
         )
 
     if zone.renderer_kind == "tvapp":

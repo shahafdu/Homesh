@@ -146,8 +146,13 @@ export const pairDevice = (
  */
 export function zoneAccepts(zone: Zone, kind: string): boolean {
   if (!zone.renderer) return false;
+  // A receiver has no screen. Everything else is sound it cannot make.
   if (zone.renderer.kind === "heos") return kind === "audio";
-  return ["audio", "video", "photo"].includes(kind);
+  // A screen takes anything the app can draw, which now includes documents and
+  // files with no preview at all. Reading a recipe or a manual on the television
+  // in the room it is needed in is a perfectly ordinary thing to want, and it
+  // was refused by a list that simply had not been extended.
+  return ["audio", "video", "photo", "doc", "other"].includes(kind);
 }
 
 export function zoneStatus(zone: Zone): { label: string; tone: "live" | "idle" | "off" } {

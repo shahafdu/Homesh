@@ -143,7 +143,7 @@ async def signed_url(item_id: UUID, user: CurrentUser = Depends(require_user)) -
 @router.get("/thumb/{item_id}")
 async def thumbnail(
     item_id: UUID,
-    size: str = Query("small", pattern="^(small|large)$"),
+    size: str = Query("small", pattern="^(small|large|screen)$"),
     t: str | None = Query(None),
     user: CurrentUser | None = Depends(optional_user),
 ) -> Response:

@@ -257,3 +257,13 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .tv-photo { animation: none !important; }
 }
+
+/* A document on a television. Fills the screen and scrolls with the remote's
+   direction keys, which is the only input there is. */
+.tv-paper {
+  width: 100%; height: 100%;
+  overflow: auto;
+  background: #f6f3ee;
+  overscroll-behavior: contain;
+}
+.tv-paper .pdf { height: 100%; }

@@ -518,3 +518,139 @@ class TestTelevisionOccupancy:
 
         r = client.post(f"/api/zones/{zone_id}/play", json={"item_ids": _items(db)})
         assert r.status_code == 200
+
+
+class TestTheTowerKnowsHowLong:
+    """A progress bar needs a length, and the catalog nearly always has one.
+
+    The session learned a length only from the screen playing it, and threw it
+    away again on every track change -- so the control tower drew no bar for
+    music, which is the one kind where the length is almost always known. It is
+    known for 94% of the audio in this library, extracted at scan time. Asking a
+    television for it was never necessary.
+    """
+
+    def _timed_items(self, db, limit=2):
+        """Two tracks with lengths this test put there.
+
+        Stamped rather than found. The fixture's media carries no tags, so
+        looking for audio that already has a length skipped every one of these
+        tests -- and a test that skips is a test that does not exist. What is
+        being checked is that the session carries the catalog's number through,
+        so the number only has to be known, not real.
+        """
+        with db.begin() as conn:
+            found = [
+                str(r[0])
+                for r in conn.execute(
+                    text(
+                        """
+                        SELECT i.id FROM items i JOIN replicas r ON r.item_id = i.id
+                        WHERE i.kind = 'audio' ORDER BY r.filename LIMIT :n
+                        """
+                    ),
+                    {"n": limit},
+                ).all()
+            ]
+            timed = []
+            for position, item_id in enumerate(found):
+                # Distinct lengths, so a test that reads the wrong one fails
+                # rather than passing by coincidence.
+                length = 60_000 + position * 1000
+                conn.execute(
+                    text("UPDATE items SET duration_ms = :d WHERE id = :id"),
+                    {"d": length, "id": item_id},
+                )
+                timed.append((item_id, length))
+        return timed
+
+    def test_starting_a_queue_seeds_the_length(self, client, db, scanned, receiver):
+        timed = self._timed_items(db)
+        assert timed, "the fixture has audio to stamp"
+
+        zone_id = _make_zone(client, name="Timed")
+        client.post(
+            f"/api/zones/{zone_id}/play", json={"item_ids": [i for i, _ in timed]}
+        )
+
+        with db.connect() as conn:
+            stored = conn.execute(
+                text("SELECT duration_ms FROM play_sessions WHERE zone_id = :z"),
+                {"z": zone_id},
+            ).scalar_one()
+        assert stored == timed[0][1]
+
+    def test_skipping_keeps_a_length_rather_than_blanking_it(
+        self, client, db, scanned, receiver
+    ):
+        """The exact line that hid the bar: every skip set duration to NULL."""
+        timed = self._timed_items(db)
+        assert len(timed) >= 2, "the fixture has two tracks to skip between"
+
+        zone_id = _make_zone(client, name="Skipping")
+        client.post(
+            f"/api/zones/{zone_id}/play", json={"item_ids": [i for i, _ in timed]}
+        )
+        client.post(f"/api/zones/{zone_id}/next")
+
+        with db.connect() as conn:
+            stored = conn.execute(
+                text("SELECT duration_ms FROM play_sessions WHERE zone_id = :z"),
+                {"z": zone_id},
+            ).scalar_one()
+        assert stored == timed[1][1], "the second track's length, not null"
+
+    def test_the_tower_reports_it(self, client, db, scanned, receiver):
+        """End to end, because the bar reads this and not the database."""
+        timed = self._timed_items(db)
+        assert timed, "the fixture has audio to stamp"
+
+        zone_id = _make_zone(client, name="Reported")
+        client.post(
+            f"/api/zones/{zone_id}/play", json={"item_ids": [i for i, _ in timed]}
+        )
+
+        zones = client.get("/api/zones").json()
+        zone = next(z for z in zones if z["id"] == zone_id)
+        assert zone["session"]["duration_ms"] == timed[0][1]
+
+    def test_something_with_no_known_length_stays_null(self, client, db, scanned, receiver):
+        """A live transcode has no length until it ends; the screen still owns that."""
+        with db.connect() as conn:
+            untimed = conn.execute(
+                text(
+                    "SELECT i.id FROM items i WHERE i.duration_ms IS NULL "
+                    "AND i.kind = 'photo' LIMIT 1"
+                )
+            ).scalar_one_or_none()
+        if untimed is None:
+            pytest.skip("the fixture has nothing without a length")
+
+        zone_id = _make_zone(client, name="Untimed")
+        client.post(f"/api/zones/{zone_id}/play", json={"item_ids": [str(untimed)]})
+
+        with db.connect() as conn:
+            stored = conn.execute(
+                text("SELECT duration_ms FROM play_sessions WHERE zone_id = :z"),
+                {"z": zone_id},
+            ).scalar_one()
+        assert stored is None
+
+
+def test_catalog_duration_reads_the_catalog(db, scanned):
+    """The helper the session seeds itself from, on its own.
+
+    Its own test because when the session came back empty there was no way to
+    tell whether the helper was wrong or the wiring was.
+    """
+    from app.zones import _catalog_duration
+
+    with db.begin() as conn:
+        item = conn.execute(
+            text("SELECT id FROM items WHERE kind = 'audio' LIMIT 1")
+        ).scalar_one()
+        conn.execute(
+            text("UPDATE items SET duration_ms = 12345 WHERE id = :id"), {"id": item}
+        )
+
+    assert _catalog_duration(item) == 12345

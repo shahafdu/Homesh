@@ -65,6 +65,7 @@ Deployed and believed correct; not yet confirmed in use.
 | | Item | Note |
 |---|---|---|
 | 🟡 | **Any file can be opened** | Files nothing could preview were inert — a `.MSWMM` or one with no extension could not even be clicked. The viewer shows the bytes as text or hex, choosing whichever answers the question, and either can be switched to |
+| 🔴 | **Install TV app 0.5.9 on the new room** | The crash on sending a video, and on pressing stop, was one bug: the native video bridge was handed the player before it existed and held null for the life of the app. Fixed in 0.5.9 — install from `‹server›/apk` |
 | 🟡 | **Homesh Connect, the phone app** | Install from [the releases page](https://github.com/shahafdu/Homesh/releases/latest) — which works with the server unreachable, and that is the point: the app exists to fix not being able to reach the server, so it cannot be hosted only there. Also at `‹your server›/phone` when you are already connected. Checks both addresses, offers **Open Tailscale** when neither answers, then hands off to the browser |
 | 🟡 | **The logo goes home** | From four folders deep, one tap |
 | 🟡 | **Browsing this computer for a folder** | Settings browses your own storage — descend, breadcrumbs, **Add this folder** at any depth. The first attempt only listed the top of one mounted folder, which is not browsing: the folder somebody wants is three levels down |

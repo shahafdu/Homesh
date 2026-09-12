@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { randomId } from "../id";
+import PdfView from "../PdfView";
 
 /** A screen that has joined the house.
  *
@@ -17,7 +18,7 @@ interface Command {
   item_id?: string;
   filename?: string;
   tags?: string;
-  kind?: "audio" | "video" | "photo";
+  kind?: "audio" | "video" | "photo" | "doc" | "other";
   position_ms?: number;
   volume?: number;
   /** Set only for a slideshow: how long to hold this photograph.
@@ -640,6 +641,11 @@ export default function TvApp() {
     // rather than a photograph nobody displayed.
     const isVideo = now.kind === "video";
     const isPhoto = now.kind === "photo";
+    // A document or a file with no preview. Drawn rather than refused: reading
+    // a recipe or a manual on the screen in the room where it is needed is an
+    // ordinary thing to want, and it was impossible because the room picker had
+    // a list of kinds that simply had not been extended.
+    const isPaper = now.kind === "doc" || now.kind === "other";
 
     return (
       <div className="tv">
@@ -659,7 +665,18 @@ export default function TvApp() {
               />
             )}
 
-            {!isVideo && !isPhoto && (
+            {isPaper && now.url && (
+              // The server has already turned an office document into a PDF, so
+              // everything arriving here is either that or something the viewer
+              // can read as text. PdfView draws it with the same code the phone
+              // uses -- a television has no PDF viewer to hand it to, and would
+              // otherwise download the file and show nothing.
+              <div className="tv-paper">
+                <PdfView url={now.url} title={now.filename ?? "Document"} />
+              </div>
+            )}
+
+            {!isVideo && !isPhoto && !isPaper && (
               <>
                 <div className="art">♪</div>
                 {/* Audio still needs a media element; it is simply not shown. */}
@@ -675,7 +692,7 @@ export default function TvApp() {
           <div className={`meta${overlayShown ? "" : " hidden"}`}>
             <div className="title">{now.filename ?? "Playing"}</div>
             {now.tags && <div className="tags">{now.tags}</div>}
-            {!isPhoto && (
+            {!isPhoto && !isPaper && (
               <div className="scrub">
                 <span className="time">{formatTime(shownPosition)}</span>
                 <div className="bar">
