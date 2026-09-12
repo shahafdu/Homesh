@@ -14,7 +14,19 @@ export interface NowPlaying {
   artist: string | null;
   /** What a position bar is a fraction of. Null for a live stream. */
   duration_ms: number | null;
+  /** What sort of thing it is, so the room can be offered controls that mean
+   *  something. A document has no pause, no position and no volume. */
+  kind: string | null;
 }
+
+/** Whether what is playing is something you listen to or something you read.
+ *
+ * A document went to a room and the card offered pause, a seek bar, shuffle and
+ * a volume slider -- four controls that do nothing to a PDF, which made it look
+ * like a song that had broken. What a reader wants is the next one, the
+ * previous one, one picked from the list, and a way to stop. */
+export const isSilent = (kind: string | null | undefined) =>
+  kind === "doc" || kind === "other";
 
 export interface ZoneSession {
   state: "idle" | "playing" | "paused" | "buffering";

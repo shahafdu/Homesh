@@ -176,9 +176,16 @@ class TestNowPlaying:
         # The filename is the guarantee. Tags may be missing on any given file —
         # plenty of these fixtures have none — but the name always exists.
         assert now["filename"]
-        # duration_ms joined these so the tower can draw a position bar: a bar
-        # needs something to be a fraction of.
-        assert set(now) == {"filename", "title", "artist", "duration_ms"}
+        # What the tower needs, rather than the exact shape of the record. This
+        # asserted an exact key set and so failed the day "kind" was added --
+        # for a field the tower needs and nothing was wrong with. A subset says
+        # what this test is about: these are required, and adding another is
+        # not a regression.
+        #
+        # duration_ms so a position bar has something to be a fraction of, and
+        # kind so the controls offered can mean something -- a document has no
+        # pause, no position and no volume.
+        assert {"filename", "title", "artist", "duration_ms", "kind"} <= set(now)
 
     def test_the_name_follows_a_skip(self, client, db, scanned, screen):
         queue = _tracks(db)

@@ -259,11 +259,46 @@ body {
 }
 
 /* A document on a television. Fills the screen and scrolls with the remote's
-   direction keys, which is the only input there is. */
+   direction keys, which is the only input there is.
+ *
+ * Paper-coloured, and the tokens are redefined inside it. The components drawn
+ * here are shared with the phone and reach for the phone's stylesheet, which
+ * this bundle does not load -- so an error message arrived as unstyled text in
+ * whatever colour it inherited, over a pale document, and could not be read.
+ * A local palette costs four lines and makes anything drawn in here legible. */
 .tv-paper {
   width: 100%; height: 100%;
   overflow: auto;
-  background: #f6f3ee;
   overscroll-behavior: contain;
+  background: #f6f3ee;
+
+  --bg: #efeae2;
+  --surface: #ffffff;
+  --line: #d9d1c5;
+  --ink: #1f1b16;
+  --muted: #5d564c;
+  --danger: #9c2c1c;
+  color: var(--ink);
 }
 .tv-paper .pdf { height: 100%; }
+.tv-paper .pdf-pages { padding: 0; gap: 16px; }
+
+/* Whatever a shared component has to say, said legibly. */
+.tv-paper .error,
+.tv-paper-note {
+  margin: 0; padding: 24px 32px;
+  color: var(--danger); background: var(--surface);
+  border-bottom: 1px solid var(--line);
+  font-size: 22px; line-height: 1.5;
+}
+.tv-paper-note { color: var(--muted); }
+.tv-paper .muted { color: var(--muted); }
+
+/* Text, at a size that reads from across a room. Wrapped rather than scrolling
+   sideways: a remote has no horizontal scroll worth the name. */
+.tv-text {
+  margin: 0; padding: 32px 40px;
+  font-family: var(--mono); font-size: 21px; line-height: 1.6;
+  white-space: pre-wrap; word-break: break-word;
+  color: var(--ink);
+}

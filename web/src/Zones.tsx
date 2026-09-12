@@ -13,6 +13,7 @@ import {
   previousInZone,
   removeZone,
   renameZone,
+  isSilent,
   jumpInZone,
   resumeZone,
   seekZone,
@@ -289,7 +290,10 @@ function ZoneQueue(props: { zone: Zone; onChanged: () => void }) {
           {open ? "▾" : "▸"} Playing next
           <span className="muted small"> · {total}</span>
         </button>
-        {total > 1 && (
+        {/* Shuffling a folder of documents is not a thing anybody wants. The
+            list and the two arrows are; shuffle only makes sense for something
+            you are listening to rather than reading. */}
+        {total > 1 && !isSilent(zone.session?.now?.kind) && (
           <button
             className={`compact${zone.session?.shuffle ? " primary" : ""}`}
             disabled={busy}
@@ -369,6 +373,10 @@ function ZoneCard(props: {
   const { zone } = props;
   const status = zoneStatus(zone);
   const live = zone.session?.state === "playing" || zone.session?.state === "paused";
+  // Something read rather than something heard. A document has no pause, no
+  // position and no volume, and a card offering all three made a PDF on a
+  // television look like a song that had broken.
+  const silent = isSilent(zone.session?.now?.kind);
 
   return (
     <div className={`zone-card${live ? " live" : ""}`}>
@@ -442,6 +450,7 @@ function ZoneCard(props: {
 
       {live && zone.session && (
         <>
+          {/* Whether this is something you listen to or something you read. */}
           {/* The name first, the position second. Standing in the kitchen you
               want to know what is on, not that it is the second of five. */}
           <div className="now-playing">
@@ -454,38 +463,46 @@ function ZoneCard(props: {
           </div>
           {zone.session.queue_length > 1 && (
             <div className="muted small">
-              Track {zone.session.cursor + 1} of {zone.session.queue_length}
+              {silent ? "File" : "Track"} {zone.session.cursor + 1} of{" "}
+              {zone.session.queue_length}
             </div>
           )}
 
-          <ZoneSeek zone={zone} onSeek={props.onSeek} />
+          {/* Nothing to seek through in a document. */}
+          {!silent && <ZoneSeek zone={zone} onSeek={props.onSeek} />}
+
           <div className="zone-controls">
-            {/* The same four controls whatever is in the room. A phone should not
-                have to know whether it is driving a television or a receiver. */}
+            {/* Previous, next and stop whatever is in the room. Pause is only
+                offered for something that is actually running: a PDF on a
+                television was given pause, a position bar, shuffle and a volume
+                slider, which between them made a document look like a song that
+                had broken. */}
             <button
               className="compact"
               onClick={props.onPrevious}
-              aria-label={`Previous track in ${zone.name}`}
+              aria-label={`Previous in ${zone.name}`}
               title="Previous"
             >
               ⏮
             </button>
-            <button
-              className="compact"
-              onClick={props.onToggle}
-              aria-label={
-                zone.session?.state === "playing"
-                  ? `Pause ${zone.name}`
-                  : `Resume ${zone.name}`
-              }
-              title={zone.session?.state === "playing" ? "Pause" : "Play"}
-            >
-              {zone.session?.state === "playing" ? "⏸" : "▶"}
-            </button>
+            {!silent && (
+              <button
+                className="compact"
+                onClick={props.onToggle}
+                aria-label={
+                  zone.session?.state === "playing"
+                    ? `Pause ${zone.name}`
+                    : `Resume ${zone.name}`
+                }
+                title={zone.session?.state === "playing" ? "Pause" : "Play"}
+              >
+                {zone.session?.state === "playing" ? "⏸" : "▶"}
+              </button>
+            )}
             <button
               className="compact"
               onClick={props.onNext}
-              aria-label={`Next track in ${zone.name}`}
+              aria-label={`Next in ${zone.name}`}
               title="Next"
             >
               ⏭
@@ -497,7 +514,9 @@ function ZoneCard(props: {
 
           {/* Its own row beneath the buttons. Six controls on one line pushed the
               slider past the edge of the card, and the slider is the one that
-              needs the width. */}
+              needs the width. Absent entirely for a document, which makes no
+              sound to turn down. */}
+          {!silent && (
           <div className="zone-volume">
             <span className="vol-ic" aria-hidden="true">🔈</span>
             <input
@@ -511,6 +530,7 @@ function ZoneCard(props: {
             />
             <span className="muted small vol-n">{zone.session.volume ?? "–"}</span>
           </div>
+          )}
         </>
       )}
 

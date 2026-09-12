@@ -49,6 +49,75 @@ function transitionFor(cmd: Command): string {
   return (PICKABLE as readonly string[]).includes(wanted) ? wanted : "fade";
 }
 
+/** Which reader a file needs on a screen.
+ *
+ * By extension rather than by kind, because "doc" is three different things: a
+ * PDF, an office file the server has already rendered to one, and a plain
+ * .txt. They were all handed to the PDF reader, and the last of those put
+ * "invalid pdf structure" on the wall in unreadable colours.
+ */
+const RENDERED_TO_PDF = new Set([
+  "doc", "docx", "odt", "rtf", "dot", "dotx", "wpd",
+  "xls", "xlsx", "ods", "csv", "xlsm", "xlt", "xltx",
+  "ppt", "pptx", "odp", "pps", "ppsx", "pot", "potx",
+  "abw", "sxw", "fodt", "fods",
+]);
+
+function paperKind(filename: string): "pdf" | "text" {
+  const ext = filename.includes(".") ? filename.split(".").pop()!.toLowerCase() : "";
+  // A PDF arrives as itself; an office file arrives as one, converted by the
+  // server. Everything else is read as text.
+  return ext === "pdf" || RENDERED_TO_PDF.has(ext) ? "pdf" : "text";
+}
+
+/** A text file on a television.
+ *
+ * Its own small component rather than the phone's raw viewer, which pages
+ * through a file with buttons meant for a finger and draws a hex dump nobody
+ * is going to read from three metres away. This shows the beginning of the
+ * file, large, and scrolls with the remote's direction keys.
+ */
+function TvText(props: { url: string; filename: string }) {
+  const [text, setText] = useState<string | null>(null);
+  const [problem, setProblem] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setText(null);
+    setProblem(null);
+
+    void (async () => {
+      try {
+        // A bounded read. Files here reach a gigabyte, and this is a reader
+        // rather than a download.
+        const res = await fetch(props.url, { headers: { Range: "bytes=0-262143" } });
+        if (!res.ok && res.status !== 206) throw new Error(`server returned ${res.status}`);
+        const bytes = new Uint8Array(await res.arrayBuffer());
+        if (cancelled) return;
+
+        // Nulls are the giveaway: text does not contain them and almost every
+        // binary format does. Saying so is more use on a wall than a wall of
+        // replacement characters.
+        if (bytes.subarray(0, 4096).some((b) => b === 0)) {
+          setProblem("This file is not text, so there is nothing to show on a screen.");
+          return;
+        }
+        setText(new TextDecoder("utf-8", { fatal: false }).decode(bytes));
+      } catch (e) {
+        if (!cancelled) setProblem(e instanceof Error ? e.message : String(e));
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [props.url]);
+
+  if (problem) return <div className="tv-paper-note">{problem}</div>;
+  if (text === null) return <div className="tv-paper-note">Opening {props.filename}…</div>;
+  return <pre className="tv-text">{text}</pre>;
+}
+
 const STORAGE_KEY = "homesh.tv.credential";
 
 /** Seconds per press of left or right.
@@ -149,7 +218,14 @@ export default function TvApp() {
   // made these controls feel unresponsive: they worked, silently, and the
   // evidence arrived a second or two later when the stream caught up.
 
-  /** Where a seek asked to land, shown until playback actually reports it. */
+  /** Where a seek asked to land, shown until playback actually reports it.
+   *
+   * Milliseconds, like `position` and `duration`. It was seconds, and the two
+   * were compared and drawn as though they were the same unit -- so after any
+   * seek the bar read 0:00 for ever while the sound played from exactly where
+   * it had been asked to. The clock never converged either, because a value in
+   * seconds is never within two of the same value in milliseconds.
+   */
   const [seekTo, setSeekTo] = useState<number | null>(null);
   /** A short confirmation of the last press: "▸▸ 12:30", "❚❚ Paused". */
   const [gesture, setGesture] = useState<string | null>(null);
@@ -171,8 +247,9 @@ export default function TvApp() {
   const shownPosition = seekTo ?? position;
   useEffect(() => {
     if (seekTo === null) return;
-    // Landed near enough, or the stream moved on by itself.
-    if (Math.abs(position - seekTo) < 2) setSeekTo(null);
+    // Landed near enough, or the stream moved on by itself. Two seconds, in
+    // the milliseconds both of these are now measured in.
+    if (Math.abs(position - seekTo) < 2000) setSeekTo(null);
   }, [position, seekTo]);
 
   // The confirmation is a flash, not a status line.
@@ -377,7 +454,7 @@ export default function TvApp() {
         } else if (media) {
           media.currentTime = cmd.position_ms / 1000;
         }
-        setSeekTo(cmd.position_ms / 1000);
+        setSeekTo(cmd.position_ms);
         setGesture(`▸ ${formatTime(cmd.position_ms / 1000)}`);
         wake();
         break;
@@ -458,11 +535,14 @@ export default function TvApp() {
       // for. Now the bar moves per press, the total is shown, and the stream is
       // told once you stop pressing.
       const seekBy = (seconds: number) => {
+        // All of this in milliseconds. It mixed the two: `live` was seconds and
+        // `duration` milliseconds, so the clamp never bit and the confirmation
+        // on screen showed a time near zero however far you had moved.
         const live = player && now?.kind === "video"
-          ? player.positionMs() / 1000
-          : (media?.currentTime ?? 0);
+          ? player.positionMs()
+          : (media?.currentTime ?? 0) * 1000;
         const from = pendingSeek.current ?? live;
-        const to = Math.max(0, Math.min(from + seconds, duration || Infinity));
+        const to = Math.max(0, Math.min(from + seconds * 1000, duration || Infinity));
 
         pendingSeek.current = to;
         setSeekTo(to);
@@ -476,8 +556,9 @@ export default function TvApp() {
           const target = pendingSeek.current;
           pendingSeek.current = null;
           if (target == null) return;
-          if (player && now?.kind === "video") player.play(now.url ?? "", target * 1000);
-          else if (media) media.currentTime = target;
+          // The target is milliseconds; the media element wants seconds.
+          if (player && now?.kind === "video") player.play(now.url ?? "", target);
+          else if (media) media.currentTime = target / 1000;
         }, 550);
       };
 
@@ -646,6 +727,11 @@ export default function TvApp() {
     // ordinary thing to want, and it was impossible because the room picker had
     // a list of kinds that simply had not been extended.
     const isPaper = now.kind === "doc" || now.kind === "other";
+    // Which renderer this particular file needs, rather than one for the whole
+    // kind. "doc" covers a PDF, a Word file the server has already turned into
+    // a PDF, and a plain .txt -- and handing the last of those to a PDF reader
+    // produced "invalid pdf structure" on the wall, which is what happened.
+    const paper = paperKind(now.filename ?? "");
 
     return (
       <div className="tv">
@@ -666,13 +752,16 @@ export default function TvApp() {
             )}
 
             {isPaper && now.url && (
-              // The server has already turned an office document into a PDF, so
-              // everything arriving here is either that or something the viewer
-              // can read as text. PdfView draws it with the same code the phone
-              // uses -- a television has no PDF viewer to hand it to, and would
-              // otherwise download the file and show nothing.
-              <div className="tv-paper">
-                <PdfView url={now.url} title={now.filename ?? "Document"} />
+              // Keyed on the item. Without it React kept the previous
+              // document's component alive and merely changed its props, so a
+              // second file arrived on top of the first: the old pages still
+              // drawn, the old canvas underneath, and the new name over them.
+              <div className="tv-paper" key={now.item_id}>
+                {paper === "pdf" ? (
+                  <PdfView url={now.url} title={now.filename ?? "Document"} />
+                ) : (
+                  <TvText url={now.url} filename={now.filename ?? ""} />
+                )}
               </div>
             )}
 
