@@ -262,7 +262,9 @@ async def list_zones(user: CurrentUser = Depends(require_user)) -> list[dict]:
                 """
                 SELECT z.id, z.name, r.kind::text, r.state::text, r.name,
                        s.state::text, s.queue, s.cursor, s.position_ms, s.volume,
-                       s.updated_at, z.preroll, s.duration_ms, s.shuffle
+                       s.updated_at, z.preroll, s.duration_ms, s.shuffle,
+                       r.capabilities ->> 'app_version' AS app_version,
+                       s.photo_ms
                 FROM zones z
                 LEFT JOIN renderers r ON r.id = z.renderer_id
                 LEFT JOIN play_sessions s ON s.zone_id = z.id
@@ -341,7 +343,15 @@ async def list_zones(user: CurrentUser = Depends(require_user)) -> list[dict]:
                 "id": str(row[0]),
                 "name": row[1],
                 "external": external,
-                "renderer": {"kind": row[2], "state": row[3], "name": row[4]}
+                "renderer": {
+                    "kind": row[2],
+                    "state": row[3],
+                    "name": row[4],
+                    # Which build the screen is running, as it reported on
+                    # connecting. Absent until it has connected once since this
+                    # shipped, which is itself worth seeing.
+                    "app_version": row[14],
+                }
                 if row[2]
                 else None,
                 "session": {
@@ -359,6 +369,10 @@ async def list_zones(user: CurrentUser = Depends(require_user)) -> list[dict]:
                     # live transcode — the catalog has no length for one.
                     "duration_ms": row[12],
                     "shuffle": bool(row[13]),
+                    # Set only for a slideshow, and the only way to tell one
+                    # from a photograph somebody simply sent to a screen. The
+                    # two want different controls.
+                    "photo_ms": row[15],
                     "volume": row[9],
                     "updated_at": row[10].isoformat() if row[10] else None,
                 }
@@ -619,7 +633,12 @@ async def _push_to_screen(zone: Zone, item_id: UUID, user: CurrentUser) -> dict:
     # keep working — to solve on the television a problem the server has
     # already solved for the browser. This is one URL.
     ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
-    if kind == "video" and needs_conversion(ext):
+    # Whether the screen is being handed a stream still being encoded. It
+    # decides which player on the screen should take it, and the two are not
+    # interchangeable -- see the comment on the flag where it is sent below.
+    transcoded = kind == "video" and needs_conversion(ext)
+
+    if transcoded:
         media_url = f"{base}/api/videos/{item_id}/live.mp4?t={token}"
     elif kind == "photo":
         # A screen-sized rendition, not the original. Photographs here average
@@ -659,6 +678,20 @@ async def _push_to_screen(zone: Zone, item_id: UUID, user: CurrentUser) -> dict:
             # screen this is a slideshow rather than a photograph somebody sent.
             "photo_ms": photo_ms,
             "transition": transition,
+            # Still being encoded as it is sent.
+            #
+            # Which matters because the screen has two players and they are good
+            # at opposite things. The box's own decoder handles codecs the web
+            # view cannot, which is why it exists -- but it is Android's
+            # MediaPlayer, and it cannot read a fragmented stream that has no
+            # index yet. Handed one, it opened the URL, failed, and opened it
+            # again: 216 requests for a single .avi.
+            #
+            # The web view has the opposite problem and not this one. A live
+            # stream is already H.264 in a fragmented container, which Chromium
+            # plays perfectly well, so anything transcoded goes there and only
+            # direct play goes to the box.
+            "transcoded": transcoded,
         },
     )
     if not sent:

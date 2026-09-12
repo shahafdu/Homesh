@@ -438,6 +438,11 @@ async def renderer_socket(websocket: WebSocket, token: str = Query(...)) -> None
                         from .zones import advance_when_finished
 
                         await advance_when_finished(zone_id)
+            elif kind == "hello":
+                # What build the screen is running. Kept in capabilities rather
+                # than a column of its own: it is a fact the screen reports
+                # about itself, which is exactly what that field is for.
+                _remember_version(renderer_id, str(message.get("app_version", ""))[:40])
             elif kind == "ping":
                 await websocket.send_text(json.dumps({"type": "pong"}))
     except WebSocketDisconnect:
@@ -447,6 +452,26 @@ async def renderer_socket(websocket: WebSocket, token: str = Query(...)) -> None
     finally:
         await hub.remove_renderer(renderer_id)
         log.info("renderer gone: %s", name)
+
+
+def _remember_version(renderer_id: UUID, version: str) -> None:
+    """Record which build a screen is running, so the tower can show it.
+
+    Without this the only way to know whether a television had taken an update
+    was to walk to it and read the corner of its own screen -- which is how a
+    fix gets shipped, a fault persists, and nobody can tell which of the two
+    explanations is true.
+    """
+    if not version:
+        return
+    with get_engine().begin() as conn:
+        conn.execute(
+            text(
+                "UPDATE renderers SET capabilities = capabilities || "
+                "jsonb_build_object('app_version', :v) WHERE id = :id"
+            ),
+            {"v": version, "id": str(renderer_id)},
+        )
 
 
 def _zone_of(renderer_id: UUID) -> UUID | None:
