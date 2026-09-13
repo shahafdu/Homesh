@@ -111,7 +111,24 @@ export default function PdfView(props: { url: string; title: string }) {
           await import("pdfjs-dist/build/pdf.worker.mjs?url")
         ).default;
 
-        const opened = await pdfjs.getDocument({ url: props.url, withCredentials: true }).promise;
+        const opened = await pdfjs.getDocument({
+          url: props.url,
+          withCredentials: true,
+          // Fetch the parts being read, rather than the whole book.
+          //
+          // Drawing lazily was only half of it, and on its own it changed
+          // nothing for a 140 MB rulebook: pdf.js downloads the entire file in
+          // the background by default, even where the server offers ranges,
+          // so nothing could be read until all of it had arrived. Over Drive
+          // that is minutes.
+          disableAutoFetch: true,
+          // A megabyte at a time instead of the default sixty-four kilobytes.
+          // These live on Drive, where each request costs about 1.4 seconds of
+          // latency regardless of size -- so 140 MB in 64 KB pieces is two
+          // thousand round trips, and the chunk size matters far more than the
+          // bytes do.
+          rangeChunkSize: 1 << 20,
+        }).promise;
         if (cancelled) return;
 
         doc.current = opened;
@@ -134,7 +151,13 @@ export default function PdfView(props: { url: string; title: string }) {
               void draw(slot, Number(slot.dataset.page));
             }
           },
-          { root: container.closest(".pdf"), rootMargin: AHEAD },
+          // The viewport, not the .pdf box. Which element actually scrolls
+          // differs by where this is used -- in the viewer .pdf is given
+          // height:100% inside a parent with no definite height, so it does not
+          // scroll at all and its ancestor does. Watching it therefore saw
+          // nothing move: the first pages drew, and scrolling produced no more
+          // for ever. Against the viewport it works wherever it is put.
+          { rootMargin: AHEAD },
         );
 
         for (let n = 1; n <= opened.numPages; n++) {

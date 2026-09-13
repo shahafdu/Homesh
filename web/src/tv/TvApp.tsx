@@ -478,11 +478,15 @@ export default function TvApp() {
         break;
       case "pause":
         setPaused(true);
+        setGesture("❚❚ Paused");
+        wake();
         if (native()?.isPlaying()) native()!.pause();
         media?.pause();
         break;
       case "resume":
         setPaused(false);
+        setGesture("▶ Playing");
+        wake();
         if (usingNative(nowRef.current)) native()!.resume();
         // A slideshow has no media element to start; the clock above restarts
         // on its own when `paused` clears.
@@ -525,7 +529,10 @@ export default function TvApp() {
           media.currentTime = cmd.position_ms / 1000;
         }
         setSeekTo(cmd.position_ms);
-        setGesture(`▸ ${formatTime(cmd.position_ms / 1000)}`);
+        // Milliseconds, like everything else here. It was divided by a
+        // thousand and formatTime takes milliseconds, so a seek to twelve
+        // minutes flashed "0:00" on the wall.
+        setGesture(`▸ ${formatTime(cmd.position_ms)}`);
         wake();
         break;
       case "volume":

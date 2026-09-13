@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import threading
 import time
+import uuid
 from contextlib import contextmanager
 
 import pytest
@@ -698,3 +699,63 @@ class TestTheTowerKnowsWhatSortOfThing:
         zones = client.get("/api/zones").json()
         zone = next(z for z in zones if z["id"] == zone_id)
         assert zone["session"]["now"]["kind"] == "doc"
+
+
+class TestJumpingGoesWhereItWasAsked:
+    """Shuffle decides what comes next. It does not overrule a pointed finger.
+
+    Every way of moving through a queue went through one function, and that
+    function had a branch at the top: if shuffle is on and you are going
+    forward, play something at random. A jump is going forward, so tapping the
+    ninth item in the list played whatever came up. Jumping *backwards* was
+    unaffected, which made it look like a property of the file being played.
+    """
+
+    def _queued(self, client, db, count=6):
+        zone_id = _make_zone(client, name=f"Jumping {uuid.uuid4().hex[:5]}")
+        items = _items(db, limit=count)
+        client.post(f"/api/zones/{zone_id}/play", json={"item_ids": items})
+        return zone_id, items
+
+    def _cursor(self, db, zone_id):
+        with db.connect() as conn:
+            return conn.execute(
+                text("SELECT cursor FROM play_sessions WHERE zone_id = :z"), {"z": zone_id}
+            ).scalar_one()
+
+    def test_a_jump_lands_on_the_track_asked_for(self, client, db, scanned, receiver):
+        zone_id, items = self._queued(client, db)
+        assert len(items) >= 3, "needs a queue to jump about in"
+
+        client.post(f"/api/zones/{zone_id}/jump", json={"index": 2})
+        assert self._cursor(db, zone_id) == 2
+
+    def test_it_lands_there_with_shuffle_on_too(self, client, db, scanned, receiver):
+        """The bug, in one line. Repeated, because 'at random' can be right once."""
+        zone_id, items = self._queued(client, db)
+        assert len(items) >= 4, "needs somewhere wrong to land"
+
+        client.post(f"/api/zones/{zone_id}/shuffle", json={"on": True})
+        for target in (3, 1, 2, 3, 1):
+            client.post(f"/api/zones/{zone_id}/jump", json={"index": target})
+            assert self._cursor(db, zone_id) == target, (
+                "shuffle overruled a track chosen from the list"
+            )
+
+    def test_next_is_still_random_when_shuffling(self, client, db, scanned, receiver):
+        """The behaviour that branch exists for, which must survive the fix.
+
+        Over enough presses a shuffled queue has to reach somewhere other than
+        the very next track, or shuffle means nothing.
+        """
+        zone_id, items = self._queued(client, db, count=8)
+        if len(items) < 5:
+            pytest.skip("the fixture is too small for randomness to be visible")
+
+        client.post(f"/api/zones/{zone_id}/shuffle", json={"on": True})
+        seen = set()
+        for _ in range(12):
+            client.post(f"/api/zones/{zone_id}/next")
+            seen.add(self._cursor(db, zone_id))
+
+        assert len(seen) > 2, "shuffled next never left a two-track rut"

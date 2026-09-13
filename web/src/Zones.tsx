@@ -25,6 +25,7 @@ import {
   type QueueTrack,
   zoneStatus,
   type Zone,
+  type ZoneSession,
 } from "./zones";
 
 /** The control tower: every zone and what is playing where.
@@ -125,8 +126,22 @@ export default function Zones(props: { onClose: () => void }) {
     return () => window.clearInterval(timer);
   }, [refresh]);
 
-  const act = async (fn: () => Promise<unknown>) => {
+  /** Do something to a room, and show it here at once.
+   *
+   * The request travels to the server, which talks to a television across the
+   * house, which opens a file -- and only then does it answer. Waiting for all
+   * of that before the button changed made the tower feel broken even when it
+   * was working perfectly: on a screen you can see, the room reacts while the
+   * phone in your hand is still showing the old state.
+   *
+   * So the card is moved first, from what was asked for, and the poll four
+   * seconds later replaces the guess with whatever actually happened. A guess
+   * that turns out wrong is corrected within one tick; the alternative was
+   * being right and looking dead for a second and a half.
+   */
+  const act = async (fn: () => Promise<unknown>, expect?: (z: Zone) => Zone) => {
     setError(null);
+    if (expect) setZones((rooms) => rooms?.map(expect) ?? rooms);
     try {
       await fn();
     } catch (e) {
@@ -134,6 +149,10 @@ export default function Zones(props: { onClose: () => void }) {
     }
     await refresh();
   };
+
+  /** Change one room's session where it is the room being acted on. */
+  const inRoom = (id: string, patch: (s: ZoneSession) => ZoneSession) => (zone: Zone) =>
+    zone.id === id && zone.session ? { ...zone, session: patch(zone.session) } : zone;
 
   return (
     <div className="sheet" role="dialog" aria-modal="true" aria-label="Zones" onClick={props.onClose}>
@@ -158,15 +177,48 @@ export default function Zones(props: { onClose: () => void }) {
             zone={zone}
             onChanged={() => void refresh()}
             onSeek={(ms) => act(() => seekZone(zone.id, ms))}
-            onStop={() => act(() => stopZone(zone.id))}
-            onVolume={(v) => act(() => setZoneVolume(zone.id, v))}
-            onToggle={() =>
-              act(() =>
-                zone.session?.state === "playing" ? pauseZone(zone.id) : resumeZone(zone.id),
+            onStop={() =>
+              act(
+                () => stopZone(zone.id),
+                inRoom(zone.id, (session) => ({ ...session, state: "idle" })),
               )
             }
-            onNext={() => act(() => nextInZone(zone.id))}
-            onPrevious={() => act(() => previousInZone(zone.id))}
+            onVolume={(v) => act(() => setZoneVolume(zone.id, v))}
+            onToggle={() => {
+              const playing = zone.session?.state === "playing";
+              return act(
+                () => (playing ? pauseZone(zone.id) : resumeZone(zone.id)),
+                // The one people press most, and the one where a second of
+                // nothing is most obviously wrong.
+                inRoom(zone.id, (session) => ({
+                  ...session,
+                  state: playing ? "paused" : "playing",
+                })),
+              );
+            }}
+            onNext={() =>
+              act(
+                () => nextInZone(zone.id),
+                inRoom(zone.id, (session) => ({
+                  ...session,
+                  // Where it is going, which the card can show before the room
+                  // has got there. The poll corrects it if shuffle or the end
+                  // of the queue sends it somewhere else.
+                  cursor: Math.min(session.cursor + 1, session.queue_length - 1),
+                  position_ms: 0,
+                })),
+              )
+            }
+            onPrevious={() =>
+              act(
+                () => previousInZone(zone.id),
+                inRoom(zone.id, (session) => ({
+                  ...session,
+                  cursor: Math.max(session.cursor - 1, 0),
+                  position_ms: 0,
+                })),
+              )
+            }
             onRename={(name) => act(() => renameZone(zone.id, name))}
             onRemove={() => act(() => removeZone(zone.id))}
           />

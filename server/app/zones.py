@@ -979,7 +979,7 @@ async def jump(
     queue, cursor = _queue_of(zone_id)
     if body.index >= len(queue):
         raise HTTPException(status.HTTP_409_CONFLICT, "that track is not in the queue")
-    return await _skip(zone_id, user, body.index - cursor)
+    return await _skip(zone_id, user, body.index - cursor, to=body.index)
 
 
 class ShuffleRequest(BaseModel):
@@ -1178,7 +1178,9 @@ def _catalog_duration(item_id: UUID) -> int | None:
         ).scalar_one_or_none()
 
 
-async def _skip(zone_id: UUID, user: CurrentUser, delta: int) -> dict:
+async def _skip(
+    zone_id: UUID, user: CurrentUser, delta: int, *, to: int | None = None
+) -> dict:
     zone = _load_zone(zone_id)
     _require_zone_access(zone_id, user)
 
@@ -1186,7 +1188,15 @@ async def _skip(zone_id: UUID, user: CurrentUser, delta: int) -> dict:
     if not queue:
         raise HTTPException(status.HTTP_409_CONFLICT, "nothing is playing in that room")
 
-    if _shuffling(zone_id) and len(queue) > 1 and delta > 0:
+    if to is not None:
+        # Asked for by name rather than by direction. Shuffle decides what
+        # comes *next*; it has no business overruling a track somebody pointed
+        # at in a list. It did: tapping the ninth item with shuffle on played
+        # something at random, because every path went through the branch below
+        # and that branch throws the requested position away. Jumping backwards
+        # happened to work, which made it look like a property of the file.
+        target = to
+    elif _shuffling(zone_id) and len(queue) > 1 and delta > 0:
         # Anything but this one.
         target = cursor
         while target == cursor:
