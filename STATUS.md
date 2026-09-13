@@ -6,7 +6,7 @@ to reconstruct the state of a large, half-finished system from memory.
 **Legend** — ✅ built and verified · 🟡 built, needs Shahaf to confirm ·
 🔴 known broken · ⬜ not started · ⏳ waiting on Shahaf
 
-Last updated: 13 September 2026 · 409 tests · 20 migrations · CI green
+Last updated: 13 September 2026 · 415 tests · 20 migrations · CI green
 (verified with `tools/verify-ci.ps1`, not assumed)
 
 ---
@@ -65,7 +65,7 @@ Deployed and believed correct; not yet confirmed in use.
 | | Item | Note |
 |---|---|---|
 | 🟡 | **Any file can be opened** | Files nothing could preview were inert — a `.MSWMM` or one with no extension could not even be clicked. The viewer shows the bytes as text or hex, choosing whichever answers the question, and either can be switched to |
-| 🔴 | **Install TV app 0.6.1 on the boxes** | Three rounds of fixes need this APK, from `‹server›/apk`. The crash on video and on stop was one bug — the video bridge was handed the player before it existed and held null for the life of the app. The film down one edge was another: the layers were added to the frame with no layout parameters, so the player sat against the start edge, which on a Hebrew system is the right one. From 0.6.1 a screen reports its version on connecting and the room card shows it, so you can tell from your phone whether a box took an update |
+| 🔴 | **Install TV app 0.6.2 on the boxes** | Four rounds of fixes need this APK, from `‹server›/apk`. The crash on video and on stop was one bug — the video bridge was handed the player before it existed and held null for the life of the app. The film down one edge was another, and it took two goes: layout parameters were missing, and then `MATCH_PARENT` was not enough either, because a `VideoView` measures *smaller* than the frame to keep the film's shape and the leftover is aligned to the start edge — which on a Hebrew system is the right one. Centring fixed it. 0.6.2 also puts the web layer *above* the player, so the on-screen controls appear over a film rather than behind it. From 0.6.1 a screen reports its version on connecting and the room card shows it, so you can tell from your phone whether a box took an update |
 | ✅ | **Homesh Connect, the phone app** | In daily use and the only interface Shahaf goes through. Install from [the releases page](https://github.com/shahafdu/Homesh/releases/latest), which works with the server unreachable — the point of it. Checks both addresses, offers **Open Tailscale** when neither answers, then hands off to the browser |
 | 🟡 | **The logo goes home** | From four folders deep, one tap |
 | 🟡 | **Browsing this computer for a folder** | Settings browses your own storage — descend, breadcrumbs, **Add this folder** at any depth. The first attempt only listed the top of one mounted folder, which is not browsing: the folder somebody wants is three levels down |
@@ -106,6 +106,10 @@ Deployed and believed correct; not yet confirmed in use.
 | 🟡 | Seek bar usable before the track loads | Length comes from the catalog |
 | 🟡 | Send to a room with a large folder | Cap was 500; your English folder is 1,533 |
 | 🟡 | Header staying put while scrolling | |
+| 🟡 | **A 140 MB rulebook opens** | Lazy *drawing* was only half of it and changed nothing for the big books: pdf.js downloads the whole file in the background by default, ranges or not, so nothing could be read until all of it had arrived. It now fetches only the parts being read, a megabyte at a time — each request costs about 1.4s of latency whatever its size, so the chunk size matters far more than the bytes. The page-watcher was also watching a box that never scrolls, which is why exactly two pages appeared and then nothing ever again |
+| 🟡 | **The control tower answers at once** | It waited for the room before it redrew, so a command that genuinely takes a second on the television took a second to acknowledge on the phone. The button now shows what it is asking for immediately and corrects itself if the room disagrees |
+| 🟡 | **Seeking from the tower shows on the screen** | It flashed 0:00, because the time was handed over in seconds to something that reads milliseconds. Pause and resume raise the overlay too, so any command from your phone is visible on the television — not only the ones sent with the remote |
+| 🟡 | **Picking a track with shuffle on plays that track** | Choosing from the list went through the same path as *next*, which with shuffle on threw the choice away and picked at random. Nothing to do with mp4 against avi: jumping *backwards* took a different branch and worked, which is what made it look like a format problem. Shuffle decides what comes next; it does not overrule a file somebody pointed at |
 
 ---
 
