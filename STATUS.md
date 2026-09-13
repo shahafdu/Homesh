@@ -134,10 +134,16 @@ not decisions waiting on anybody.
    rebuild, then it timed out on one file at 900s and never completed. A sample
    of 20 across five formats passed
 2. 🟡 **Duration backfill** — the pass said `kind = 'audio'` and had never touched a
-   film. Extended to video with ffprobe: video went from 78% to **98%** with a
-   length, and every major format — mp4, avi, mov, wmv, m4v, mpg — is at 100%.
-   1,086 audio files still have none, where the declared bitrate cannot be
-   trusted; that is a different problem and untouched
+   film. Extended to video with ffprobe, which took it from 78% to 98%.
+   **That 98% was not worth what it looked like**, and the conga lessons are how
+   it came out: a video in a Drive folder was timed from its first 256 KB, so it
+   carried the length of its own opening rather than its own length. Those have
+   been thrown away and measured again from both ends of the file — 7,497 of
+   7,652 (**98%**), this time meaning it. The 155 without one are files nothing
+   can time: truncated recordings whose `moov` atom was never written, and DVD
+   `.VOB` fragments that carry no duration at all. 1,086 audio files also have
+   none, where the declared bitrate cannot be trusted; that is a different
+   problem and untouched
 
 ---
 
