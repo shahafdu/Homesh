@@ -198,6 +198,21 @@ async def _daily_backup() -> None:
     gone = await asyncio.to_thread(prune)
     log.info("daily backup %s written, %d old one(s) removed", made.name, len(gone))
 
+    # And a copy somewhere this house is not, which is the only kind that
+    # survives the house. Failing to send one is worth a line in the log and
+    # nothing more: the backup itself succeeded, and a folder that has not been
+    # shared yet is the ordinary case rather than a fault.
+    from .backups import offsite_ready, send_offsite
+
+    ready, why = offsite_ready()
+    if not ready:
+        log.info("no off-site copy: %s", why)
+        return
+    try:
+        await asyncio.to_thread(send_offsite, made.name)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("could not send %s off-site: %s", made.name, exc)
+
 
 def next_due(interval_hours: int) -> datetime | None:
     """When the earliest source becomes due, for showing in the UI."""

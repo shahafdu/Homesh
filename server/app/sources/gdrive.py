@@ -538,3 +538,150 @@ def revoke_link(key_path: Path, file_id: str) -> None:
         if r.status_code == 403:
             raise DrivePermissionError(r.text)
         r.raise_for_status()
+
+
+# ── Keeping a file somewhere this house is not ──────────────────────────────
+#
+# Backups go to Drive, and the direction is the whole security argument. The
+# house pushes; nothing online pulls, listens or holds a way back in. There is
+# no server of ours out there to break into — only a folder with files in it,
+# and those files are encrypted before they leave (see `app/crypt.py`), so what
+# a folder holds is ciphertext and a filename.
+#
+# What this cannot defend against, said plainly: whoever holds the service
+# account key can delete these copies as well as write them, and that key is on
+# the machine being backed up. Drive's own trash is the only thing standing
+# behind that. It protects against losing the machine, which is what backups are
+# for; it does not protect against somebody who already owns the machine.
+
+
+def _write_client(key_path: Path) -> httpx.Client:
+    """A client for the one credential allowed to write to Drive."""
+    return _client(_Credentials(key_path, SHARE_SCOPES))
+
+
+def backup_folder_id(key_path: Path, name: str) -> str:
+    """The id of the shared folder backups go into, found by name.
+
+    By name rather than by id in the configuration, because an id is a thing
+    somebody has to go and find in a URL, and the folder is one they create and
+    share by hand. A name is what they will have.
+    """
+    with _write_client(key_path) as http:
+        r = http.get(
+            f"{API}/files",
+            params={
+                "q": (
+                    "sharedWithMe and trashed = false "
+                    f"and mimeType = '{FOLDER_MIME}' and name = '{name}'"
+                ),
+                "fields": "files(id,name,capabilities/canAddChildren)",
+                "supportsAllDrives": "true",
+                "includeItemsFromAllDrives": "true",
+            },
+        )
+        r.raise_for_status()
+        files = r.json().get("files", [])
+
+    if not files:
+        raise DriveError(
+            f"no folder named {name!r} is shared with this server. "
+            "Create it in Drive and share it with the service account as Editor."
+        )
+    folder = files[0]
+    if not (folder.get("capabilities") or {}).get("canAddChildren"):
+        raise DrivePermissionError(
+            f"{name!r} is shared as a viewer, so nothing can be written to it. "
+            "Share it as Editor instead — a service account has no storage of "
+            "its own, so it cannot put a file anywhere it has not been given."
+        )
+    return folder["id"]
+
+
+def upload(key_path: Path, folder_id: str, filename: str, path: Path) -> str:
+    """Put a file in that folder, replacing one of the same name. Returns its id.
+
+    Resumable rather than multipart: a backup is tens of megabytes and growing,
+    and the simple upload endpoint wants the whole body in one request with no
+    way to recover a broken one.
+    """
+    size = path.stat().st_size
+    with _write_client(key_path) as http:
+        existing = http.get(
+            f"{API}/files",
+            params={
+                "q": f"'{folder_id}' in parents and name = '{filename}' and trashed = false",
+                "fields": "files(id)",
+                "supportsAllDrives": "true",
+            },
+        )
+        existing.raise_for_status()
+        found = existing.json().get("files", [])
+
+        if found:
+            file_id = found[0]["id"]
+            start = http.patch(
+                f"https://www.googleapis.com/upload/drive/v3/files/{file_id}",
+                params={"uploadType": "resumable", "supportsAllDrives": "true"},
+                headers={"X-Upload-Content-Length": str(size)},
+                json={},
+            )
+        else:
+            start = http.post(
+                "https://www.googleapis.com/upload/drive/v3/files",
+                params={"uploadType": "resumable", "supportsAllDrives": "true"},
+                headers={"X-Upload-Content-Length": str(size)},
+                json={"name": filename, "parents": [folder_id]},
+            )
+
+        if start.status_code in (401, 403):
+            raise DrivePermissionError(start.text[:300])
+        start.raise_for_status()
+        session = start.headers.get("location")
+        if not session:
+            raise DriveError("Drive did not open an upload session")
+
+        with path.open("rb") as body:
+            done = http.put(
+                session,
+                content=body,
+                headers={"Content-Length": str(size)},
+                timeout=httpx.Timeout(TIMEOUT, read=300.0, write=300.0),
+            )
+        done.raise_for_status()
+        return done.json().get("id", "")
+
+
+def list_backups(key_path: Path, folder_id: str) -> list[dict]:
+    """What is in the folder, newest first."""
+    with _write_client(key_path) as http:
+        r = http.get(
+            f"{API}/files",
+            params={
+                "q": f"'{folder_id}' in parents and trashed = false",
+                "fields": "files(id,name,size,modifiedTime)",
+                "orderBy": "modifiedTime desc",
+                "pageSize": PAGE,
+                "supportsAllDrives": "true",
+            },
+        )
+        r.raise_for_status()
+        return r.json().get("files", [])
+
+
+def fetch(key_path: Path, file_id: str, target: Path) -> int:
+    """Bring one back down. Returns the bytes written."""
+    written = 0
+    with _write_client(key_path) as http, target.open("wb") as out:
+        with http.stream(
+            "GET",
+            f"{API}/files/{file_id}",
+            params={"alt": "media", "supportsAllDrives": "true"},
+            timeout=httpx.Timeout(TIMEOUT, read=300.0),
+        ) as response:
+            if response.status_code != 200:
+                raise DriveError(f"download failed: {response.status_code}")
+            for chunk in response.iter_bytes(chunk_size=1024 * 1024):
+                out.write(chunk)
+                written += len(chunk)
+    return written

@@ -31,3 +31,28 @@ export const restoreBackup = (name: string) =>
  * take one away. */
 export const backupUrl = (name: string) =>
   `/api/backups/${encodeURIComponent(name)}`;
+
+/** A backup kept somewhere this house is not. */
+export interface OffsiteBackup {
+  name: string;
+  id: string;
+  size_bytes: number;
+  taken_at: string | null;
+}
+
+export interface Offsite {
+  /** False when there is no key, no credential, or no shared folder — `why`
+   *  says which, in words meant for the person who has to fix it. */
+  ready: boolean;
+  why: string;
+  backups: OffsiteBackup[];
+}
+
+export const listOffsite = () => api.get<Offsite>("/api/backups/offsite");
+
+/** Bring one back down and decrypt it onto the local shelf. It stops there:
+ *  restoring is the same button as for any other backup. */
+export const retrieveOffsite = (id: string, name: string) =>
+  api.post<{ name: string }>(
+    `/api/backups/offsite/${encodeURIComponent(id)}?name=${encodeURIComponent(name)}`,
+  );

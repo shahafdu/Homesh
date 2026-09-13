@@ -6,10 +6,13 @@ import { PALETTES, type Appearance, type Palette, type Prefs } from "./prefs";
 import {
   backupUrl,
   listBackups,
+  listOffsite,
   removeBackup,
   restoreBackup,
+  retrieveOffsite,
   takeBackup,
   type Backup,
+  type Offsite,
 } from "./backups";
 import { formatSize } from "./library";
 
@@ -187,6 +190,51 @@ function Passkeys() {
 }
 
 
+/** Backups kept somewhere this house is not.
+ *
+ * The only kind that survives the house. Encrypted here before they leave, with
+ * a key that stays here — so whoever stores them holds ciphertext and a
+ * filename, and nothing that reaches back.
+ */
+function OffsiteCopies(props: {
+  state: Offsite | null;
+  busy: boolean;
+  onChange: (label: string, work: () => Promise<unknown>) => Promise<void>;
+}) {
+  const { state } = props;
+  if (!state) return null;
+
+  return (
+    <>
+      <p className="muted small" style={{ marginTop: 14 }}>
+        <b>Off the machine.</b>{" "}
+        {state.ready
+          ? "Encrypted here and sent to Drive after each daily backup. Whoever stores them cannot read them."
+          : state.why}
+      </p>
+
+      {state.backups.map((backup) => (
+        <div key={backup.id} className="invite-row">
+          <div>
+            <b>{backup.taken_at ? formatDate(backup.taken_at) : backup.name}</b>
+            <div className="muted small">{formatSize(backup.size_bytes)} · encrypted</div>
+          </div>
+          <button
+            className="compact"
+            disabled={props.busy}
+            onClick={() =>
+              props.onChange("fetching", () => retrieveOffsite(backup.id, backup.name))
+            }
+          >
+            Bring back
+          </button>
+        </div>
+      ))}
+    </>
+  );
+}
+
+
 /** Copies of the database, and putting one back.
  *
  * Not the media: that is your own files on your own disks, and copying
@@ -200,9 +248,11 @@ function Backups() {
   const [busy, setBusy] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [confirming, setConfirming] = useState<string | null>(null);
+  const [offsite, setOffsite] = useState<Offsite | null>(null);
 
   const refresh = useCallback(() => {
     listBackups().then(setBackups).catch(() => undefined);
+    listOffsite().then(setOffsite).catch(() => undefined);
   }, []);
 
   useEffect(() => {
@@ -314,6 +364,8 @@ function Backups() {
       )}
 
       {note && <p className="muted small">{note}</p>}
+
+      <OffsiteCopies state={offsite} busy={busy !== null} onChange={run} />
     </div>
   );
 }

@@ -296,3 +296,148 @@ def test_a_backup_is_a_dataclass_not_a_dict():
     """Guards the shape the endpoints serialise."""
     one = Backup(name="x", taken_at=datetime.now(UTC), size_bytes=1, rows=2)
     assert one.name == "x"
+
+
+class TestTheCopyThatLeavesTheHouse:
+    """A backup on the same disk as the database survives a mistake and nothing
+    else. The fire, the theft and the failed drive take both copies together.
+
+    These tests stand in for Drive. What they are about is everything that
+    happens *before* the upload, because that is where the security lives: the
+    file is encrypted here, with a key that does not go with it.
+    """
+
+    @pytest.fixture
+    def keyed(self, monkeypatch, shelf):
+        from app.config import get_settings
+        from app.crypt import new_key
+
+        get_settings.cache_clear()
+        monkeypatch.setenv("BACKUP_KEY", new_key())
+        monkeypatch.setenv("BACKUP_FOLDER", "Homesh Backups")
+        yield
+        get_settings.cache_clear()
+
+    class Drive:
+        """Somewhere to put a file, and a record of what arrived."""
+
+        def __init__(self):
+            self.uploaded: dict[str, bytes] = {}
+
+        def backup_folder_id(self, _key, _name):
+            return "folder-id"
+
+        def upload(self, _key, _folder, filename, path):
+            self.uploaded[filename] = path.read_bytes()
+            return "file-id"
+
+        def list_backups(self, _key, _folder):
+            return [
+                {
+                    "id": f"id-{n}",
+                    "name": n,
+                    "size": str(len(b)),
+                    "modifiedTime": "2026-01-01T00:00:00Z",
+                }
+                for n, b in self.uploaded.items()
+            ]
+
+        def fetch(self, _key, file_id, target):
+            name = file_id.removeprefix("id-")
+            target.write_bytes(self.uploaded[name])
+            return len(self.uploaded[name])
+
+    @pytest.fixture
+    def drive(self, monkeypatch, tmp_path):
+        from app.config import get_settings
+        from app.sources import gdrive as real
+
+        fake = self.Drive()
+        for name in ("backup_folder_id", "upload", "list_backups", "fetch"):
+            monkeypatch.setattr(real, name, getattr(fake, name))
+        # The credential is only checked for existence.
+        credential = tmp_path / "gdrive.json"
+        credential.write_text("{}")
+        monkeypatch.setenv("GDRIVE_KEY_FILE", str(credential))
+        get_settings.cache_clear()
+        return fake
+
+    def test_what_leaves_is_encrypted(self, db, user, keyed, drive):
+        """The test that matters. It is the catalog, and the catalog names the
+        rooms in the house — in the clear, off-site, that is a map."""
+        _make_playlist(db, user, "The bedroom television")
+        made = make_backup()
+
+        module.send_offsite(made.name)
+
+        sent = next(iter(drive.uploaded.values()))
+        assert sent.startswith(b"homesh-enc")
+        assert b"bedroom" not in sent, "the catalog went up in the clear"
+
+    def test_the_plain_copy_stays_here(self, db, user, keyed, drive):
+        made = make_backup()
+        module.send_offsite(made.name)
+        assert resolve(made.name).is_file()
+
+    def test_the_courier_copy_is_not_kept(self, db, user, keyed, drive):
+        """Encrypting makes a second file. Keeping it would double what the disk
+        holds for nothing — it can be made again in seconds."""
+        made = make_backup()
+        module.send_offsite(made.name)
+        assert list(shelf_files(module.backup_dir())) == [made.name]
+
+    def test_it_comes_back_and_can_be_restored(self, db, user, keyed, drive):
+        """The round trip that matters when the house has gone."""
+        _make_playlist(db, user, "Before the fire")
+        made = make_backup()
+        module.send_offsite(made.name)
+
+        # The local shelf is gone, as it would be with the machine.
+        resolve(made.name).unlink()
+        assert list_backups() == []
+
+        [entry] = module.offsite_index()
+        landed = module.bring_back(entry["id"], entry["name"])
+
+        with db.begin() as conn:
+            conn.execute(text("DELETE FROM playlists"))
+        restore(landed)
+        assert _playlists(db) == ["Before the fire"]
+
+    def test_without_a_key_nothing_is_sent(self, db, monkeypatch, shelf):
+        """Rather than sending it in the clear, which is not a thing anybody
+        wants quietly done for them."""
+        from app.config import get_settings
+
+        monkeypatch.setenv("BACKUP_KEY", "")
+        get_settings.cache_clear()
+        try:
+            ready, why = module.offsite_ready()
+            assert ready is False
+            assert "BACKUP_KEY" in why
+        finally:
+            get_settings.cache_clear()
+
+    def test_a_backup_taken_through_the_api_says_whether_it_left(self, client, keyed, drive):
+        made = client.post("/api/backups")
+        assert made.status_code == 201
+        assert made.json()["offsite"] == "sent"
+
+    def test_it_still_succeeds_when_there_is_nowhere_to_send_it(self, client, monkeypatch, shelf):
+        """A backup that exists only here is worth having. It is just worth
+        less, and saying so beats failing the request."""
+        from app.config import get_settings
+
+        monkeypatch.setenv("BACKUP_KEY", "")
+        get_settings.cache_clear()
+        try:
+            made = client.post("/api/backups")
+            assert made.status_code == 201
+            assert made.json()["offsite"] is None
+            assert made.json()["offsite_note"]
+        finally:
+            get_settings.cache_clear()
+
+
+def shelf_files(directory):
+    return sorted(p.name for p in directory.glob("homesh-*"))
