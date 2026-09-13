@@ -94,6 +94,8 @@ export default function Viewer(props: {
   const [printing, setPrinting] = useState(false);
   const [printNote, setPrintNote] = useState<string | null>(null);
   const [showActions, setShowActions] = useState(false);
+  /** Whether the header is showing the whole filename or one line of it. */
+  const [wholeName, setWholeName] = useState(false);
   // Whether this browser can cast at all. Chrome in a secure context; absent
   // in Firefox, on a television, and over plain http — so the button is hidden
   // rather than shown as something that cannot work.
@@ -262,8 +264,27 @@ export default function Viewer(props: {
           there is least room for. Name above, buttons below, scope beside. */}
       <header className="v-bar">
         <div className="v-title">
-          <span className="v-name">{file.filename}</span>
+          {/* A button, because a long name is otherwise unreadable anywhere.
+              One line with an ellipsis is right for a header and wrong for the
+              only place the name appears: files here run to sixty characters
+              and the part that identifies them is often the end. Tapping shows
+              the whole thing; tapping again puts it back. */}
+          <button
+            type="button"
+            className={`v-name${wholeName ? " whole" : ""}`}
+            aria-expanded={wholeName}
+            title={wholeName ? "Show less" : "Show the whole name"}
+            onClick={() => setWholeName((shown) => !shown)}
+          >
+            {file.filename}
+          </button>
           <span className="v-meta">
+            {/* The type, said plainly. It was nowhere: the extension lives at
+                the end of a name that had been cut off, so a file whose name
+                did not fit had no discoverable type at all. Files here do turn
+                up without one, and those fall back to what the catalog made of
+                them. */}
+            {file.ext ? file.ext.toUpperCase() : kindLabel(file.kind)} ·{" "}
             {formatSize(file.size)}
             {files.length > 1 && ` · ${at + 1} of ${files.length}`}
           </span>

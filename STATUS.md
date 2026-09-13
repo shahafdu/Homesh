@@ -6,7 +6,7 @@ to reconstruct the state of a large, half-finished system from memory.
 **Legend** — ✅ built and verified · 🟡 built, needs Shahaf to confirm ·
 🔴 known broken · ⬜ not started · ⏳ waiting on Shahaf
 
-Last updated: 13 September 2026 · 429 tests · 22 migrations · CI green
+Last updated: 13 September 2026 · 445 tests · 22 migrations · CI green
 (verified with `tools/verify-ci.ps1`, not assumed)
 
 ---
@@ -113,6 +113,9 @@ Deployed and believed correct; not yet confirmed in use.
 | 🟡 | **Lesson videos know how long they are** | The progress bar on a conga lesson read 0:21 of 0:10, full, on the television and in the control tower. A video in a Drive folder is read as its first 256 KB, the same as everything else remote -- and ffprobe handed a quarter-megabyte of a film reports how long that quarter-megabyte lasts. 0.64 seconds for a 1.6 GB lesson. That is a number, so it was stored as the length. Every one of those twelve lessons had the length of its own opening. They are measured properly now -- the two ends of the file and its true size, two range requests rather than a download -- and a length that could not be true of a file that size is refused rather than written |
 | 🟡 | **Previous, with shuffle on** | Shuffle picked at random whichever button was pressed, so next and previous were the same button. Previous now goes back to what was actually playing, several steps if you keep pressing. Also found beside it: a track *ending* ignored shuffle entirely and played the one below it, so shuffle applied only while somebody was pressing next -- put the phone down and the album played in order |
 | 🟡 | **Long documents give their pages back** | Pages were released only when drawing a new one found too many held, so scrolling down a book accumulated a little more with each page -- the shape of a crash rather than of a cap. A page that leaves the screen is now released whether or not anything else is being drawn, the render is called off rather than finishing into a canvas nobody is looking at, and closing a document shuts down its reader instead of leaving one alive per book opened |
+| 🟡 | **Video from Drive starts** | It did not. A direct-play film on Drive never began at all -- not slowly, never: the response opened and no bytes followed it, for as long as anybody was willing to wait. Two causes, both on the path of every byte. The token that authorises a Drive read was minted under a mutex held across the network call, so one mint that did not come back shut the whole folder until the server was restarted; it is minted five minutes early now, off the lock, and gives up after twenty seconds. And "is this folder still shared with us" was answered with a fresh connection to Google **per range request** -- forty handshakes for one film. Measured on the real library: direct play never → **1.9s**, local video 0.45s → **0.05s**, converted video 3.1s → **1.0s** |
+| 🟡 | **Seeking an AVI or WMV in a room** | These are converted as they play, and a stream being encoded has no index to seek in -- so setting the position did nothing, the film restarted from the beginning, and the bar sat where it had been dropped. Moving through one now restarts the encoder at that point and counts from there, which is what the browser has always done with them |
+| 🟡 | **Seeing a whole filename** | Tap the name in the viewer and it opens out in full; the type is spelled out beside the size, where it used to be buried at the end of a name that had been cut off. On a television, where there is nothing to tap, the name now runs to two lines instead of ending in an ellipsis |
 
 ---
 
@@ -120,6 +123,7 @@ Deployed and believed correct; not yet confirmed in use.
 
 | | Item | What is known |
 |---|---|---|
+| 🔴 | **Everything in `music` is listed twice** | It is one folder catalogued twice: the copy on the PC and the copy on Drive are separate sources, and nothing links them -- identical counts, 9,189 songs each, and not one item shared between them. `items.content_hash` exists and **has never been filled**, for any of the 141,818 files, so the same song scanned from two places becomes two items rather than one item in two places. That also means the availability model does not yet work: playing from Drive when the PC is off depends on one item having both replicas. Your call which way to fix it -- drop the Drive copy of `music` and lose the offline fallback for it, or fill in the hashes and merge them |
 | 🟡 | **Stopping a playlist crashed the TV app** | Cause found and it was not the guess. `stop()` called a method reference on a null player, which throws as it is *created* — outside the try block meant to contain it. Same root cause as the video crash. Fixed in 0.5.9 and still in 0.6.1; needs confirming once a box has the new APK |
 
 ---
