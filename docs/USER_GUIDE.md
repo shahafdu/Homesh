@@ -301,11 +301,18 @@ about 950 photos, which is what a genuine sample of everything looks like.
 
 ## 9. Keeping the catalog current
 
-Scanning is manual for now: go to the root screen and press **Rescan** next to a source.
-A rescan never creates duplicates, and files that have disappeared are marked *offline*
-rather than deleted — so the catalog still remembers they exist and where.
+Every source is rescanned on a schedule, and you can press **Rescan** next to one in
+**Sources** to do it now. A rescan never creates duplicates, and files that have
+disappeared are marked *offline* rather than deleted — so the catalog still remembers
+they existed and where.
 
-**Not yet:** automatic rescanning on file changes.
+The same sweep also notices when the **same file exists in two places** — the copy on
+your PC and the copy on Drive — and joins them into one entry with two copies behind it,
+so the library lists it once and plays whichever copy is reachable. Drive states its own
+checksum for free; a local file has to be read, so only files that look like a duplicate
+of something elsewhere are read at all, a couple of thousand at a time.
+
+**Not yet:** noticing a change the moment it happens, rather than at the next sweep.
 
 ---
 
@@ -335,23 +342,136 @@ Press **Rescan**. Check the folder is actually mounted:
 ## 11. Playing things
 
 **Music.** Click a track and the whole folder queues, so playing one file behaves like
-an album. The player bar stays put as you browse elsewhere. It has play/pause,
-previous/next, seeking and volume.
+an album. The player bar stays put as you browse elsewhere: play/pause, previous/next,
+shuffle, seeking and volume. If a file turns out to be corrupt the player says so and
+moves on rather than stalling.
 
-If a file turns out to be corrupt, the player says so and moves to the next one rather
-than stalling on it.
+With **shuffle** on, *next* picks at random and *previous* takes you back to what was
+actually playing — not to the track above it in a list you are not listening in.
 
-**Video, photos and documents** open in a full-screen viewer. Arrow keys move between
-items of the same kind in that folder, Escape closes. Video is *direct play* — the
-original file, decoded by your browser, with nothing re-encoded in between.
+**Video, photos and documents** open in a full-screen viewer. Swipe or use the arrow
+keys to move between files; Escape closes it. A selector in the header decides what
+"next" means: only files of the same kind, or **All** — every file in the folder,
+switching the viewer as it goes, songs included.
 
-## 12. Not built yet
+Video plays two ways and the app chooses:
 
-- Google Drive and Google Photos
-- Casting to a TV or the Denon receiver; multi-room zones
-- Playlist import, AI search, metadata repair
-- Gapless playback, and durations shown in listings
+- **Direct play** for anything your browser can decode — the original file, byte for
+  byte, nothing re-encoded.
+- **Converted as it plays** for the rest: MPEG-2, WMV, AVI, VOB, the formats home
+  video actually arrives in. Nothing is stored and nothing is downloaded; the film
+  starts in a few seconds. There is a **Position** box rather than a scrub bar, because
+  a stream that is still being encoded has no index to seek in — type `12:30` and it
+  starts again from there.
+
+**Documents** are drawn page by page in the app rather than handed to the browser,
+which is what makes them work on a phone. Word, Excel and PowerPoint files are
+converted to PDF by the server first. Long books load the pages you are reading rather
+than the whole file, so a 140 MB rulebook opens in seconds.
+
+**Anything unopenable** — a `.MSWMM`, a file with no extension — can still be shown as
+text or as hex, whichever answers the question.
+
+---
+
+## 12. Rooms
+
+The **control tower** is the ◈ button. It lists the rooms, what each is playing, and
+gives you transport controls for all of them from wherever you are standing.
+
+Send something to a room from the file menu — **Send to a room** — or from the slideshow
+setup. The *server* owns the session, not your phone: the phone can run out of battery
+mid-album and the music keeps playing, and picking the room up on another phone shows the
+same state.
+
+What a room can be:
+
+- **A television with the Homesh app** (§13) — video, music, photographs, documents.
+- **The Denon receiver**, over HEOS, for music in a zone with no screen. The receiver has
+  exactly one network player, so it can do one network stream at a time; two rooms of
+  different music need two transports, which is why the main zone goes over HDMI from a
+  TV box instead.
+- **A Chromecast**, for the formats Google's receiver accepts. The cast button says when
+  a file is not one of them, and points you at a room instead.
+
+---
+
+## 13. The TV app
+
+Open `http://‹your server›/apk` on the television's browser, or side-load it with `adb`
+— [`TV_APP.md`](TV_APP.md) has the steps. It finds the server by asking every address on
+the network if broadcast does not answer, pairs with a code you approve from your phone,
+and updates itself.
+
+It shows its own version on screen while connecting, and the room card in the control
+tower shows it too, so you can tell from your phone whether a box has taken an update.
+
+The app has its own video player for the formats the web view cannot decode, which is
+most of what a camcorder produces.
+
+---
+
+## 14. Playlists
+
+The ♫ button. Create one, drag to reorder, share it with somebody in the house, or
+**import** the `.m3u` and `.pls` files you already have — including Winamp's, whose paths
+point at drive letters that no longer exist. Import repairs what it can by matching on
+filename and reports what it could not find rather than silently dropping it.
+
+---
+
+## 15. People
+
+**People** (the ◑ button, administrators only) invites somebody by link, and decides what
+they can reach: whole library or chosen folders, all rooms or chosen rooms.
+
+Two rules worth knowing:
+
+- **Every folder and room has an audience** — everyone, administrators, or named people —
+  and that applies *before* anybody's personal access. So "the whole library" means
+  everything the household can see, not everything on the disk.
+- **The owner cannot be removed**, restricted or demoted, by anyone, including themselves.
+  Administrator is something you can grant; ownership is not, so granting it is never a
+  way to lose the house.
+
+---
+
+## 16. Backups
+
+**Settings → Backups**, administrators only.
+
+What is backed up is everything the server *knows* — accounts and their passkeys, who may
+see what, playlists, where everybody had got to, and the catalog with all its tags. Not
+your media: those are your own files on your own disks, and copying terabytes is a
+different job.
+
+One is taken every day. A week of them is kept, plus one from a fortnight back and one
+from a month back. You can take one at any moment, and you should before anything
+drastic.
+
+**Restoring** replaces the catalog, the accounts and the playlists with whatever was
+there when the backup was taken. It happens in one go — either it all lands or nothing
+does — and it saves a copy of the present state first, so restoring the wrong one is
+undoable.
+
+**Download a copy.** A backup that lives on the same disk as the thing it protects is
+half a backup.
+
+---
+
+## 17. Not built yet
+
+- **AI search and tagging.** Designed and agreed — see §7 of the architecture document —
+  and deliberately behind backups, which are what make it safe to let a model write to
+  the catalog.
+- **Gapless playback and ReplayGain.** The player works; it is not gapless.
+- **Google Photos.** Its API was closed to third-party apps in March 2025, so the copy on
+  your own storage is the source. Nothing to do here but say so.
+- **Noticing file changes as they happen**, rather than at the next sweep.
+- **An always-on node.** Everything runs on the PC today. The catalog is designed to
+  outlive the storage being switched off, and the pieces for splitting it out exist; it
+  has not been deployed that way.
 
 The [architecture document](ARCHITECTURE.md) covers all of it, including *why* certain
-things work the way they do — for instance why your receiver can't play different
+things work the way they do — for instance why your receiver cannot play different
 network audio in two zones at once, and what we do about it.

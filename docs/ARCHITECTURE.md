@@ -60,15 +60,30 @@ after 7 days. You would have to re-authorize weekly — unacceptable.
 full verification including a third-party CASA security audit (expensive, slow, aimed at
 commercial apps).
 
-The clean way out: request **`drive.file`** instead of `drive.readonly` where possible, and for
-full-library access use a **Google Cloud service account with domain-wide delegation** if you
-have Workspace, or accept verification. There is a fourth path that works well for a personal
-deployment: keep the app in Testing but have the agent **re-mint tokens automatically** — this
-does not work, tokens are hard-revoked.
+**Resolved, and not by any of the options first listed.** There is no OAuth flow in Homesh at
+all. The server reads Drive as a **service account** — a robot identity with its own key — and
+you grant it folders by sharing them with its address, exactly as you would share with a person.
+Ordinary Drive sharing does the granting, so there is no consent screen, no verification, no
+seven-day clock, and no token belonging to your account for the server to hold.
 
-**Recommendation:** this needs a decision from you (see §11). It does not block any other work,
-so I will build the Drive connector against a token abstraction and we can swap the acquisition
-strategy later.
+It also gives a better answer to a question OAuth answers badly: *what can it see?* Precisely the
+folders shared with it, and nothing else. You revoke it by unsharing, in the Drive interface you
+already know, without touching Homesh.
+
+Two consequences worth stating, because both cost something:
+
+- A service account has **no storage of its own**, so it cannot be the owner of anything. Writing
+  to Drive at all — creating a share link, or putting a backup there — needs the folder shared
+  with it as **Editor** rather than Viewer. A viewer cannot grant access it does not itself have,
+  and the error message says exactly that.
+- The key is a file. It lives in `.secrets/`, mounted read-only, never in the image and never in
+  the repository. Anyone holding it can read the folders that were shared — which is the same
+  statement as for any credential, and the reason it is the one file in this project with its own
+  mount.
+
+Scopes are split rather than pooled: everything that browses or streams uses `drive.readonly`,
+and the single code path that creates a share link uses `drive` — so the scope that can alter
+your Drive is reachable from one place instead of being handed to every listing.
 
 ---
 
@@ -230,17 +245,38 @@ GPU. The target profile is a low-power mini PC — four Alder Lake-N efficiency 
 graphics, no discrete GPU — which also hosts the storage. Software transcoding on it would be
 slow.
 
-Alder Lake generally carries a Quick Sync media engine capable of H.264/HEVC hardware encode, and
-Alder Lake-N is *expected* to retain it, but Intel's published material doesn't confirm the
-N-series explicitly. **Not asserting it — we'll probe with `ffmpeg -hwaccels` and a real encode
-once the agent is on that machine, and record the measured answer here.**
+### 3.2.1 What actually happened: the server transcodes, and it had to
 
-This does not endanger anything, because transcoding is phase 8 and optional (see above). Direct
-play and remux are both nearly free and are what the fleet actually needs.
+**This section's conclusion was wrong, and it is worth leaving the reasoning above in place to
+show where.** Transcoding did not drop out of the critical path. It is on it, daily, and the
+reason is the library rather than the hardware.
 
-**Consequence for the roadmap:** transcoding drops out of the critical path entirely. It moves
-from phase 2 to phase 6 as an optional capability. Phase 2 ships direct play + remux, which is
-all your hardware actually needs.
+The argument assumed the awkward files would be rare — old Xvid, 10-bit HEVC, the odd VC-1. In
+this house the awkward files are *the home videos*: MPEG-2 from camcorders, WMV, AVI, VOB from
+DVDs a wedding was delivered on. A browser will not decode any of them, and neither will the
+web view on a set-top box. "Direct play covers nearly everything" is true of a library of
+downloaded films and false of a library that includes twenty years of family recordings, which
+is the library this was built for.
+
+So the server encodes, and three things make that affordable on four efficiency cores:
+
+- **Only when asked, and never stored.** It is a live stream down a pipe — fragmented MP4,
+  `ultrafast`, `zerolatency`, capped at 720p. Nothing is written to disk, so there is no second
+  copy of a 13 GB tape and no cache to manage.
+- **Only where the endpoint cannot decode.** Direct play is still the default and still covers
+  everything modern. The decision is by container and codec, per file.
+- **The box decodes what it can.** An Android TV box has hardware decoders the browser inside it
+  does not expose, so the app hands those files to the box's own player and the server does
+  nothing. Only what neither can read gets encoded.
+
+Measured on the real machine: a 13.6 GB HDV wedding tape plays at 720p, deinterlaced, keeping
+ahead of real time; a converted film from Drive starts in about six seconds, most of which is
+reaching into the file over the network rather than encoding.
+
+**The remaining truth in the original argument** is the important one: remux is nearly free,
+transcode is not, and the difference decides what hardware this needs. Everything above about
+delegating heavy work to the machine with the files still holds — and it is that machine which
+does the encoding here, because in Mode A it is the same machine.
 
 ### 3.3 Availability matrix
 
@@ -748,23 +784,29 @@ you what came from the file itself versus what a fingerprinting service or a mod
 
 Each phase ends in something you can actually use.
 
-| Phase | Deliverable | Your involvement |
-|---|---|---|
-| **0. Foundation** | Repo, CI (multi-arch builds), Compose stack, Postgres schema, passkey auth, web shell running in Mode A on your PC | Nothing yet |
-| **0.5. Go always-on** | Same stack deployed to Oracle Always Free, ingress + TLS, agent split out to Mode B | Create Oracle account; register your passkey |
-| **1. Sources & catalog** | Drive connector, Go agent + WireGuard, unified tree, folder browser, filename-first UI, search | Google Cloud project + OAuth consent; install agent on PC |
-| **2. Playback** | Audio player w/ gapless, video **direct play + remux** (no transcode), photo viewer, doc preview | QA on real content |
-| **3. Control tower, renderers & zones** | Server-owned sessions, WebSocket renderer protocol, multi-zone control tower UI, zone orchestration, Denon via HEOS CLI + telnet | ~~Probe~~ done; ~~Network Control~~ done; physical testing |
-| **4. TV apps** | **Android TV** — likely the only one needed, since nearly every screen has an Android box in front of it. webOS and Tizen only if a screen turns out to have none | Confirm which screens have a box |
-| **5. Playlists & music intelligence** | Winamp import w/ path repair, smart playlists, AcoustID tag repair | Point me at your `.m3u` files |
-| **6. AI** | Local CLIP/Whisper embedding pipeline, NL search, auto-tagging, doc Q&A | Anthropic API key |
-| **7. Photo availability** | RAID → Drive sync, Wake-on-LAN, optional Takeout gap-fill | Decide originals vs. compressed after I measure |
-| **8. Optional transcode** | Agent-side transcode for the edge cases in §3.2 | Only if we hit a file that needs it |
-| **9. Public release** | Docs, AGPL-3.0, security policy, install guide, screenshots | Pick a name; approve going public |
+Kept as it was written, with a column added for what actually happened — a roadmap that is
+quietly edited to match the outcome teaches nobody anything.
+
+| Phase | Deliverable | Your involvement | Where it got to |
+|---|---|---|---|
+| **0. Foundation** | Repo, CI (multi-arch builds), Compose stack, Postgres schema, passkey auth, web shell running in Mode A on your PC | Nothing yet | ✅ Done |
+| **0.5. Go always-on** | Same stack deployed to Oracle Always Free, ingress + TLS, agent split out to Mode B | Create Oracle account; register your passkey | ⬜ Not started. Runs on the PC; portability is built in and untested in anger |
+| **1. Sources & catalog** | Drive connector, Go agent + WireGuard, unified tree, folder browser, filename-first UI, search | Google Cloud project + OAuth consent; install agent on PC | ✅ Done, without the agent or OAuth — service account for Drive, granted mounts for local (§1.2) |
+| **2. Playback** | Audio player w/ gapless, video **direct play + remux** (no transcode), photo viewer, doc preview | QA on real content | ✅ Done, **plus the transcode this phase explicitly excluded** (§3.2.1). Gapless is still outstanding |
+| **3. Control tower, renderers & zones** | Server-owned sessions, WebSocket renderer protocol, multi-zone control tower UI, zone orchestration, Denon via HEOS CLI + telnet | ~~Probe~~ done; ~~Network Control~~ done; physical testing | ✅ Done and verified against the receiver |
+| **4. TV apps** | **Android TV** — likely the only one needed, since nearly every screen has an Android box in front of it. webOS and Tizen only if a screen turns out to have none | Confirm which screens have a box | ✅ Android TV only, as predicted. No Gradle: aapt2/javac/d8/apksigner, built by CI on every commit |
+| **5. Playlists & music intelligence** | Winamp import w/ path repair, smart playlists, AcoustID tag repair | Point me at your `.m3u` files | 🔨 Winamp import done — 41 lists, 98.6% matched. AcoustID repair not started |
+| **6. AI** | Local CLIP/Whisper embedding pipeline, NL search, auto-tagging, doc Q&A | Anthropic API key | ⬜ Designed and agreed, not built. Backups landed first, deliberately: they are what makes it safe |
+| **7. Photo availability** | RAID → Drive sync, Wake-on-LAN, optional Takeout gap-fill | Decide originals vs. compressed after I measure | ⬜ Not started |
+| **8. Optional transcode** | Agent-side transcode for the edge cases in §3.2 | Only if we hit a file that needs it | ❌ Overtaken — see §3.2.1. It was never optional for this library |
+| **9. Public release** | Docs, AGPL-3.0, security policy, install guide, screenshots | Pick a name; approve going public | 🔨 Public since August; docs and screenshots outstanding |
 
 Phases 0–2 give you a working replacement for Plex's core. Phases 3–4 are what make it better
-than Plex for your living room. Note that transcoding — which I originally had in phase 2 — has
-moved to phase 8 and may never be needed at all (§3.2).
+than Plex for your living room.
+
+The prediction that aged worst is in the line above this one, which used to say transcoding had
+moved to phase 8 and might never be needed at all. It was needed in week one. §3.2.1 has the
+reason and what it cost.
 
 ---
 

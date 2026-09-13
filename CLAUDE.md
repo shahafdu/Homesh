@@ -88,17 +88,17 @@ routinely breaks another, and the tracker is what makes that visible.
 | Phase | State | Notes |
 |---|---|---|
 | 0 · Foundation | ✅ done | Compose stack, schema, passkeys, CI |
-| 1 · Sources & catalog | ✅ done | Local connector, scanner, folder tree, search |
-| 2 · Playback | ✅ done | Signed URLs, range streaming, thumbnails, audio player with folder queue, video direct-play, photo and document viewer |
-| 3 · Control tower & zones | 🔨 | Denon control + zones/sessions done and verified against the real receiver; control tower UI next. 
-| 4 · TV apps | ✅ | Android TV shell built, verified end to end on an emulator (pair → socket → play → position reported). No Gradle: aapt2/javac/d8/apksigner, 21 KB, built by CI every commit. webOS dropped; Tizen only if a screen turns out to have no box |
-| 5 · Playlists & music intelligence | ⬜ | Winamp `.m3u`/`.pls` import with path repair, AcoustID tag repair |
-| 6 · AI | ⬜ | See **AI design decisions** below — agreed with Shahaf, not yet built |
+| 1 · Sources & catalog | ✅ done | Local connector **and Drive** (service account, no OAuth), scanner, folder tree, search, duplicate joining |
+| 2 · Playback | ✅ done | Signed URLs, range streaming, thumbnails, audio with folder queue, video direct-play **and live transcode**, photo and document viewer, slideshows |
+| 3 · Control tower & zones | ✅ done | Denon verified against the real receiver; rooms, sessions, transport, seek, volume, occupancy, the tower UI |
+| 4 · TV apps | ✅ done | Android TV app in daily use, **with its own video player** for what a WebView cannot decode. No Gradle: aapt2/javac/d8/apksigner, 33 KB, built by CI every commit. A phone launcher app too (`docs/PHONE_APP.md`). webOS dropped; Tizen only if a screen turns out to have no box |
+| 5 · Playlists & music intelligence | 🔨 | Winamp import done — 41 lists, 98.6% matched, sharing and reordering work. AcoustID tag repair not started |
+| 6 · AI | ⬜ | See **AI design decisions** below — agreed with Shahaf, not yet built. Backups landed first, deliberately |
 | 7 · Photo availability | ⬜ | RAID→Drive sync, Wake-on-LAN, Takeout gap-fill |
-| 8 · Optional transcode | ⬜ | May never be needed — see §3.2 of ARCHITECTURE |
-| 9 · Public release | ⬜ | Docs, screenshots, name decision |
+| 8 · Optional transcode | ❌ overtaken | It was never optional for this library — see §3.2.1 of ARCHITECTURE for what actually happened |
+| 9 · Public release | 🔨 | Public since August. Docs current as of 14 September 2026; screenshots outstanding |
 
-**Tests: 477 passing. Migrations: 023. Lint: clean. CI green.**
+**Tests: 481 passing. Migrations: 023. Lint: clean. CI green.**
 
 ### AI design decisions — agreed, not yet built
 
@@ -139,15 +139,22 @@ administrators only.
 ### Outstanding tasks
 
 - [ ] Gapless audio playback and ReplayGain (the player is functional, not yet gapless)
-- [ ] Metadata extraction — duration, artist, album (durations currently come from
-      the media element, so listings show none)
-- [ ] Automatic rescan on file change (scanning is manual)
-- [ ] Google Drive connector — **blocked on Shahaf creating the OAuth client**
+- [ ] AcoustID tag repair (phase 5's second half)
+- [ ] Automatic rescan on file change — sweeps are scheduled, but a change is noticed
+      at the next sweep rather than when it happens
 - [ ] Go agent + WireGuard (Mode B split; only needed when the core moves off the PC)
 - [ ] Deploy to Oracle Always Free (phase 0.5)
-- [ ] Install the TV app on the real boxes — `docs/TV_APP.md` has the ADB steps.
-      A box installed from a different machine must be uninstalled first, because
-      the signing key is per-machine and never committed
+- [ ] Off-site backups — encrypted, pushed outbound to storage that can never reach
+      back into the house. Local backups exist; a copy on the same disk as the thing
+      it protects is half a backup
+- [x] ~~Metadata extraction — duration, artist, album~~ — tags at scan time, durations
+      98% for video and 94% for audio. A remote video is timed from both ends of the
+      file, never from a prefix (`server/app/metadata.py` says why)
+- [x] ~~Google Drive connector~~ — service account, five folders, no OAuth and no
+      weekly expiry
+- [x] ~~Install the TV app on the real boxes~~ — in daily use. A box installed from a
+      different machine must be uninstalled first, because the signing key is
+      per-machine and never committed
 - [x] Database backups and in-app restore — daily, a week of them plus a
       fortnight and a month back, restorable from Settings by an administrator.
       Data only, in Postgres's own COPY format, with the schema coming from the
@@ -156,15 +163,16 @@ administrators only.
 
 ### Waiting on Shahaf
 
-1. **Share the three Drive folders as Editor**, not Viewer — a viewer cannot
-   grant access it does not have, so "Create a Drive link" fails with exactly
-   that message until this changes. Leave "Editors can change permissions and
-   share" enabled.
-2. **Google Cloud OAuth client** — steps are in the session history; scope is
-   `drive.file`, redirect `http://localhost:8080/api/sources/gdrive/callback`.
-   Credentials go in `.env` as `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`.
-3. **A real media folder** to point at instead of the synthetic fixture.
-4. **Repo visibility** decision (public today).
+1. **Share the Drive folders as Editor**, not Viewer — a service account owns no
+   storage, so a viewer cannot grant access it does not itself have. "Create a
+   Drive link" fails with exactly that message until this changes, and so would
+   pushing a backup to Drive. Leave "Editors can change permissions and share"
+   enabled.
+2. ~~Google Cloud OAuth client~~ — **not needed.** Solved with a service account
+   and ordinary Drive sharing; see §1.2 of ARCHITECTURE.
+3. ~~A real media folder~~ — done. Two local grants (`E:/music`, `E:/Photos`) and
+   five Drive folders, about 140,000 files.
+4. ~~Repo visibility~~ — public.
 
 ---
 
@@ -231,14 +239,19 @@ Full reasoning in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md). The load-beari
 ## Layout
 
 ```
-server/app/       config, db, main, auth, security, prefs, library, scanner,
-                  signing, stream, sources/{base,local}
-server/migrations 001_init, 002_natural_sort, 003_search_indexes, 004_user_prefs,
-                  005_renderer_pairing, 006_source_remote_id, 007_access_rules,
-                  008_invites, 009_explicit_access, 010_audience,
-                  011_device_links
-server/tests/     conftest + scanner, library, security, prefs, streaming
-web/src/          App, Browser, Settings, api, auth, library, prefs, styles.css
+server/app/       config, db, main, auth, security, people, access, prefs, library,
+                  scanner, metadata, dedup, signing, stream, transcode, documents,
+                  thumbs, sharing, playlists, zones, denon, renderers, discovery,
+                  occupancy, lanaddr, upkeep, backups, sources/{base,local,gdrive}
+server/migrations 023 of them, plain SQL, tracked in `schema_migrations` and applied at
+                  startup. `ls server/migrations` is the list; the recent ones are
+                  021 (video lengths), 022 (shuffle history), 023 (replica fingerprints)
+server/tests/     one module per surface, 477 tests
+web/src/          App, Browser, Viewer, Player, Slideshow, Zones, Playlists, People,
+                  Sources, Settings, PdfView, RawView, FileActions, PlayTo, Audience,
+                  LinkDevice, + api/auth/library/prefs/zones/playlists/backups helpers
+                  and styles.css. `web/src/tv/` is the television client, a separate
+                  entry point (`tv.html`) sharing the same build
 android/          TV shell — Manifest, java/com/homesh/tv/{MainActivity,SetupActivity,
                   Prefs,ServerAddress}, res/, test/ServerAddressTest.java
 tools/            probe-denon.ps1, configure-network.ps1, run-tests.ps1,
@@ -246,7 +259,7 @@ tools/            probe-denon.ps1, configure-network.ps1, run-tests.ps1,
                   homesh-common.ps1, verify-ci.ps1, scan-apk.py, githooks/
 (repo root)       "Start Homesh.cmd", "Add a folder to Homesh.cmd" — the two
                   jobs done by double-click rather than through a terminal
-docs/             ARCHITECTURE.md, USER_GUIDE.md, TV_APP.md
+docs/             ARCHITECTURE.md, USER_GUIDE.md, TV_APP.md, PHONE_APP.md, TLS.md
 ```
 
 ---

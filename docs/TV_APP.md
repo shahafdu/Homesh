@@ -11,6 +11,35 @@ What the shell adds is the handful of things a browser tab cannot do:
 - a screen that does not sleep in the middle of a film
 - playback that starts without somebody pressing something first
 - somewhere to put the server address
+- **a video player that is not the web view** — see below
+
+## The second player, and why there are two
+
+A WebView on one of these boxes decodes roughly H.264 and VP8/9. The box
+underneath it decodes MPEG-2, MKV and AVI in hardware, and does not expose any of
+that to the page. Since this library is largely camcorder video, a shell without
+its own player would have meant a black screen for most of what anybody wanted to
+watch.
+
+So the app puts a `VideoView` behind the web page and hands it files by a small
+JavaScript bridge. The web app decides which player gets a file, and the rule is
+narrow on purpose:
+
+- **The box's player** takes video that is being sent as the original file. That is
+  what it is for.
+- **The web view** takes everything else, *including anything the server is
+  converting as it plays*. Android's MediaPlayer cannot read a fragmented stream
+  with no index yet; handed one it opens the URL, fails, and opens it again — 216
+  requests for a single `.avi`, measured.
+
+Two things about the layering are worth knowing, because both were bugs:
+
+- The web page sits **above** the player and is transparent, so the on-screen
+  controls are drawn over the film rather than behind it.
+- A `VideoView` measures itself *smaller* than its frame to keep the film's shape,
+  and a `FrameLayout` puts the remainder against the start edge — which under a
+  Hebrew locale is the right-hand edge. The film ended up in a strip down one side
+  of the screen. It is centred explicitly now.
 
 ## Installing it on a box
 
@@ -53,7 +82,7 @@ private key in a public repository.
 The app has no third-party dependencies — no AndroidX, no leanback library, just
 `android.jar`. That makes the whole build four SDK tools, which is why
 `tools/build-tv-apk.sh` is a readable eighty lines rather than a Gradle project,
-runs on a CI runner without downloading a toolchain, and produces a 21 KB APK.
+runs on a CI runner without downloading a toolchain, and produces a 33 KB APK.
 
 If the app ever needs real leanback UI, that trade changes. It does not need it
 today: the TV shows one thing at a time and is driven from a phone.
@@ -72,7 +101,8 @@ The server hands out the APK itself, so a box needs nothing but its remote:
 
 1. On the box, install **Downloader** (by AFTVnews) from Google Play — the usual
    tool for this, since Android TV ships no browser.
-2. Enter `http://<your-server>:8080/tv.apk`
+2. Enter `http://<your-server>/apk` — the short form exists because it has to be
+   typed with a remote control onto an on-screen keyboard
 3. Allow it to install unknown apps when Android asks.
 
 The exact URL is shown in the app under **Zones → Add a device → "Nothing

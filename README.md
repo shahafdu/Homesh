@@ -7,12 +7,26 @@ control tower** for every screen and speaker in the house.
 It streams from Google Drive and from local storage through one catalog, and it keeps
 working when the machine holding your files is switched off.
 
-> **Status: early development.** Phases 0–2 are done. Passkey auth, the catalog, folder
-> browsing, search, thumbnails and playback all work — audio with a folder queue, video
-> by direct play, photos and documents. Casting to a TV or the Denon, Google Drive, and
-> AI search are still ahead.
+> **Status: in daily use, still being built.** The catalog, browsing, search, playback,
+> rooms and the TV app all work and are used every day in the house this was written
+> for — roughly 140,000 files across local disks and Google Drive. AI search and
+> gapless playback are the notable things still ahead.
 >
 > [Architecture and roadmap](docs/ARCHITECTURE.md) · [User guide](docs/USER_GUIDE.md)
+
+### What works today
+
+- **One catalog** over local folders and Google Drive, filenames indexed and searchable
+- **Everything plays** — music with a folder queue, video by direct play or converted as
+  it plays, photos, and documents rendered to PDF so they open on a phone
+- **Rooms.** Send anything to a television from your phone; the server owns the session,
+  so the phone can die and the music keeps going
+- **An Android TV app**, side-loaded from the server itself, with its own player for the
+  formats a browser cannot decode
+- **Slideshows** that run for ever, in the app or on a screen
+- **Playlists**, including Winamp `.m3u` import with path repair
+- **People** — invitations, per-folder and per-room access, an owner who cannot be removed
+- **Backups** of everything the server knows, restorable from the app
 
 ---
 
@@ -27,11 +41,14 @@ Built after living with Plex and running into eight specific walls:
 | Documents unsupported | Documents are a first-class media kind |
 | Shows metadata only — corrupt tags mean a mystery file | Filename and path are indexed, displayed and searchable; metadata records its `origin` and never overwrites |
 | Folder browsing is an afterthought | The real directory tree is a primary view |
-| No AI search over a large library | Local CLIP/text embeddings, natural-language search |
+| No AI search over a large library | Local CLIP/text embeddings, natural-language search — *designed, not yet built* |
 | Can't reach it when the server is off | Catalog and thumbnails live on an always-on node |
 | No Google Photos access | Photos ingested from your own storage, not a closed API |
 
 ## Design in one diagram
+
+The shape it is built for. Today it all runs on one machine — Mode A in §3.4 — and the
+split below is what the code is written to allow rather than what is deployed.
 
 ```
 CONTROL PLANE (always on)          DATA PLANE (intermittent)      CLIENTS
@@ -92,9 +109,13 @@ all-in-one on one box, or core-in-the-cloud with an agent at home.
 ## Security
 
 Personal data on the public internet, so this is a feature rather than a checklist:
-outbound-only home connections with no inbound ports, passkeys, envelope-encrypted
-OAuth tokens, short-lived HMAC-signed media URLs, access-controlled thumbnail cache,
-and an audit log. Details in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) §6.
+outbound-only home connections with no inbound ports, passkeys and nothing else,
+short-lived signed media URLs that are neither guessable nor shareable, an
+access-controlled thumbnail cache, read-only mounts so the server cannot alter your
+library, and access that is granted rather than assumed — an account reaches what it has
+been given and an undecided folder is closed. Drive is read through a service account
+you share folders with, so there is no token belonging to your Google account for this
+server to hold. Details in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) §6.
 
 Found a vulnerability? See [`SECURITY.md`](SECURITY.md).
 

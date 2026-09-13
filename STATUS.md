@@ -6,7 +6,7 @@ to reconstruct the state of a large, half-finished system from memory.
 **Legend** — ✅ built and verified · 🟡 built, needs Shahaf to confirm ·
 🔴 known broken · ⬜ not started · ⏳ waiting on Shahaf
 
-Last updated: 13 September 2026 · 477 tests · 23 migrations · CI green
+Last updated: 14 September 2026 · 481 tests · 23 migrations · CI green
 (verified with `tools/verify-ci.ps1`, not assumed)
 
 ---
@@ -19,6 +19,8 @@ The list to work from. Everything else can proceed without you.
 |---|---|---|
 | ✅ | **Photo slideshows** | Open a folder → **▶ Slideshow**. Recursive through subfolders. **Plays forever by default** — shuffled draws a fresh sample each time, in order pages through and wraps, and repeats are expected. 3s-1m per photo, fade/slide/zoom/cut/random transitions. Here or in a room, and a room refills its own queue. Verified on the real library: three pages cover 30,000 distinct photos of 105,162 with no overlap |
 | ✅ | **Add a folder of your own media** | **Sources → Choose a folder...** opens the Windows folder picker on the PC, via a `homesh://` protocol handler. Double-click **Add a folder to Homesh** once to register it. `E:\music` is granted; the server reaches that folder and nothing else — `/hostfs` is gone and writes into the mount are refused |
+| ⏳ | **Share a Drive folder as Editor** | Two things need it and both are blocked without it: creating a share link, and putting a backup somewhere this house is not. A service account owns no storage of its own, so a *viewer* cannot grant access it does not itself have — the error says exactly that. Sharing one folder as Editor is the whole task |
+| ⏳ | **Keep the backup key somewhere else** | Off-site backups are encrypted before they leave the house, with a key that stays here. That is what makes storing them online safe — and it means a copy of the key has to live somewhere the house does not: a password manager, a piece of paper in a drawer at work. Without it, a backup that survives the house is unreadable |
 
 ---
 
@@ -26,8 +28,9 @@ The list to work from. Everything else can proceed without you.
 
 Verified means measured or driven end to end, not merely compiled.
 
-- ✅ **Catalog** — 16,600 files across three Drive folders. Filenames indexed,
-  displayed and searchable; metadata never replaces them
+- ✅ **Catalog** — about 140,000 files across two granted folders on the PC and five
+  on Drive. Filenames indexed, displayed and searchable; metadata never replaces them.
+  A file that exists in both places is one entry with two copies behind it
 - ✅ **Scanning** — daily and automatic, with progress; manual per folder
 - ✅ **Tags** — title, artist, album read from ~70 KB per track rather than whole files
 - ✅ **Search** — typo-tolerant; results act like files and can show themselves in place
@@ -118,6 +121,8 @@ Deployed and believed correct; not yet confirmed in use.
 | 🟡 | **Seeing a whole filename** | Tap the name in the viewer and it opens out in full; the type is spelled out beside the size, where it used to be buried at the end of a name that had been cut off. On a television, where there is nothing to tap, the name now runs to two lines instead of ending in an ellipsis |
 | 🟡 | **`music` was two libraries** | One folder, catalogued twice -- the copy on the PC and the copy on Drive -- with nothing linking them: 9,189 songs on each side and not one entry in common. `items.content_hash` had been in the schema since the first migration and was empty for all 141,818 files, so nothing had ever noticed. Copies are now fingerprinted and the two become one entry with two copies behind it. Drive states its own checksum for free; local files are read, but only the ones with a lookalike elsewhere -- 53 GB rather than the whole library. **This also turns on the availability model**: playing from Drive when the PC is off needs one entry holding both copies, which is what §4 has always described and what has never once been true here |
 | 🟡 | **Backups, and putting one back** | Settings → Backups, administrators only. Daily, a week of them kept, plus one a fortnight back and one a month back. Restoring takes a copy of the present state first, so restoring the wrong one is undoable. The media is not backed up and should not be -- this is everything the server knows *about* your files, which is the part that exists nowhere else. A backup can be downloaded, and should be: one that lives on the same disk as the thing it protects is half a backup |
+| 🟡 | **The duplicates are joined** | 5,274 entries merged on the real library -- 141,818 down to 136,544, with 5,000 files now known to exist in two places. Roughly half of `music` matched; the rest are same-name, same-size and genuinely different bytes, which is what the check is for. The pass keeps running with each sweep, so it converges rather than needing to be finished in one go |
+| 🟡 | **An unplugged drive no longer breaks the fallback** | Found with your external drive actually detached, which is the first time the availability model has been tested for real -- and it failed. Asking a local source whether it is reachable does not answer False when the drive is gone; it raises, and the exception ended the search before the Drive copy was tried. A file that existed in both places became a server error rather than playing from the cloud. It answers now |
 
 ---
 
