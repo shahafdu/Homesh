@@ -210,6 +210,18 @@ def _id3_length(head: bytes) -> int | None:
     return _ID3_HEADER + size
 
 
+def _fetch_range(connector, rel_path: str, start: int, end: int) -> bytes:
+    """One slice of a remote file, inclusive of both ends."""
+    collected = bytearray()
+    want = end - start + 1
+    with closing(connector.open_range(rel_path, start, end)) as chunks:
+        for chunk in chunks:
+            collected += chunk
+            if len(collected) >= want:
+                break
+    return bytes(collected[:want])
+
+
 def _fetch_prefix(connector, rel_path: str, want: int) -> bytes:
     collected = bytearray()
     # closing(): the loop breaks as soon as enough bytes have arrived, which
@@ -294,6 +306,94 @@ def _local_copy(connector, rel_path: str, filename: str):
         tmp_path.unlink(missing_ok=True)
 
 
+# The last slice of a video, fetched along with the first.
+#
+# Every container that matters here keeps something at the end: AVI its `idx1`
+# index, MPEG program streams their final timestamp, MP4 its `moov` atom unless
+# the file was written for streaming. A megabyte reaches all of them.
+_VIDEO_TAIL = 1024 * 1024
+
+# Above this, a length is not believable for anything in this library. UHD from
+# a telephone peaks near 100 Mbit/s and a Blu-ray remux at 40; a *hundred* times
+# that is not a fast recording, it is a wrong number.
+#
+# The check matters because the wrong numbers are plausible-looking, not absurd:
+# a prefix of a film times as a second or two, which reads as a length rather
+# than as a failure. Divided into the true size it stops looking like one.
+_MAX_BITRATE = 60_000_000
+
+
+def plausible_length(duration_ms: int | None, true_size: int | None) -> bool:
+    """Could a file this big really be this short?
+
+    Nothing is asserted when the size is unknown -- the question cannot be asked
+    without both halves, and refusing every length in that case would be worse
+    than the fault this guards against.
+    """
+    if not duration_ms or duration_ms <= 0:
+        return False
+    if not true_size:
+        return True
+    return true_size * 8000 / duration_ms <= _MAX_BITRATE
+
+
+@contextmanager
+def _timeable_copy(connector, rel_path: str, filename: str, true_size: int | None):
+    """A file a remote video can be *timed* from, not merely read.
+
+    A prefix cannot be timed, and unlike audio this failed silently: ffprobe
+    handed a quarter-megabyte of a film reports how long that quarter-megabyte
+    lasts -- 0.64 seconds of a 1.6 GB lesson -- which is a number, so it was
+    stored as the length. Every video in a Drive folder ended up with the
+    duration of its own first 256 KB, and a control tower cannot draw a progress
+    bar from that: the film ran past the end of the bar in the first second.
+
+    The fix is to let ffprobe see the shape of the whole file without fetching
+    it. The head goes in at the front, the file is then extended to its true
+    length -- a hole, which costs nothing on disk and reads as zeroes -- and the
+    last megabyte is written at the end. ffprobe now finds the container's own
+    index where it expects it, and where it has to estimate instead, it
+    estimates against the real size.
+
+    Measured on the real library: a 988 MB MPEG timed as 1.5 seconds from a
+    prefix and 94.5 minutes this way, for two range requests instead of a
+    download.
+    """
+    resolve = getattr(connector, "_resolve", None)
+    if resolve is not None:
+        path = resolve(rel_path)
+        if path.is_file():
+            yield path, False
+            return
+
+    if not true_size:
+        # Nothing to shape the file to. A prefix on its own is worse than no
+        # answer, so this is left for a pass that knows how big the file is.
+        raise OSError("cannot time a remote file of unknown size")
+
+    head = _fetch_prefix(connector, rel_path, min(_PREFIX_BYTES, true_size))
+    if not head:
+        raise OSError("could not read any of the file")
+    tail = (
+        _fetch_range(connector, rel_path, max(0, true_size - _VIDEO_TAIL), true_size - 1)
+        if true_size > len(head)
+        else b""
+    )
+
+    suffix = pathlib.Path(filename).suffix or ".bin"
+    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+        tmp.write(head)
+        tmp.truncate(true_size)
+        if tail:
+            tmp.seek(true_size - len(tail))
+            tmp.write(tail)
+        tmp_path = pathlib.Path(tmp.name)
+    try:
+        yield tmp_path, True
+    finally:
+        tmp_path.unlink(missing_ok=True)
+
+
 def extract_for_source(
     source_id: UUID, connector: LocalConnector, limit: int | None = None
 ) -> ExtractResult:
@@ -335,18 +435,26 @@ def extract_for_source(
         result.processed += 1
         rel = f"{dir_path}/{filename}" if dir_path else filename
 
+        # A video is opened differently: it needs the end of the file as well as
+        # the beginning before anything can say how long it is.
+        opener = (
+            _timeable_copy(connector, rel, filename, true_size)
+            if kind == "video"
+            else _local_copy(connector, rel, filename)
+        )
         try:
-            with _local_copy(connector, rel, filename) as (path, partial):
+            with opener as (path, partial):
                 tags, duration_ms = READERS[kind](path)
-                if partial:
+                if partial and kind == "audio":
                     # What was measured is the length of the fragment, not of the
                     # track. Worked out from the declared bitrate and the real
                     # size instead of being discarded.
-                    duration_ms = (
-                        _duration_from_bitrate(path, true_size)
-                        if kind == "audio"
-                        else None
-                    )
+                    duration_ms = _duration_from_bitrate(path, true_size)
+                if kind in ("audio", "video") and not plausible_length(duration_ms, true_size):
+                    # A length that cannot be true of a file this size is a
+                    # measurement of something other than the file. No length at
+                    # all is honest; a wrong one is drawn as a progress bar.
+                    duration_ms = None
         except Exception as exc:  # noqa: BLE001 - one bad file must not stop the pass
             result.failed += 1
             log.debug("metadata failed for %s: %s", filename, exc)
@@ -437,25 +545,28 @@ def backfill_durations(source_id: UUID, connector, limit: int | None = None) -> 
     filled = 0
     for item_id, dir_path, filename, size, kind in rows:
         rel = f"{dir_path}/{filename}" if dir_path else filename
+        opener = (
+            _timeable_copy(connector, rel, filename, size)
+            if kind == "video"
+            else _local_copy(connector, rel, filename)
+        )
         try:
-            with _local_copy(connector, rel, filename) as (path, partial):
+            with opener as (path, _partial):
                 if kind == "video":
-                    # The container header carries it, and ffprobe reads one
-                    # without decoding. A prefix is usually enough, since the
-                    # header is at the front of every format that matters here.
+                    # ffprobe reads a container header without decoding, and
+                    # _timeable_copy has given it the ends of the file and the
+                    # true size to read it against.
                     _tags, duration_ms = read_video(path)
                 else:
                     duration_ms = _duration_from_bitrate(path, size)
-                if kind == "video" and duration_ms is None and partial:
-                    # Some containers keep their index at the end, so a prefix
-                    # cannot be timed at all. Left for a pass with the whole
-                    # file rather than guessed at.
-                    log.debug("length of %s is not in its first bytes", filename)
         except Exception as exc:  # noqa: BLE001 - one bad file must not stop the pass
             log.debug("no length for %s: %s", filename, exc)
             continue
 
-        if not duration_ms:
+        if not plausible_length(duration_ms, size):
+            # Includes the case of no length at all. Left unset rather than
+            # written wrong: the pass only looks at items with none, so this
+            # file is simply picked up again by a later one.
             continue
 
         with engine.begin() as conn:

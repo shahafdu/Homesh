@@ -759,3 +759,103 @@ class TestJumpingGoesWhereItWasAsked:
             seen.add(self._cursor(db, zone_id))
 
         assert len(seen) > 2, "shuffled next never left a two-track rut"
+
+
+class TestPreviousUnderShuffle:
+    """Previous means "back to what was playing", however the order was chosen.
+
+    With a random order the track sitting above this one in the queue is not the
+    track you just heard, so going there is as arbitrary as shuffling again --
+    and shuffling again is what the web player did, which left next and previous
+    doing the same thing. The room has to remember where it has been.
+    """
+
+    def _queued(self, client, db, count=8):
+        zone_id = _make_zone(client, name=f"Back {uuid.uuid4().hex[:5]}")
+        items = _items(db, limit=count)
+        client.post(f"/api/zones/{zone_id}/play", json={"item_ids": items})
+        return zone_id, items
+
+    def _cursor(self, db, zone_id):
+        with db.connect() as conn:
+            return conn.execute(
+                text("SELECT cursor FROM play_sessions WHERE zone_id = :z"), {"z": zone_id}
+            ).scalar_one()
+
+    def test_previous_returns_to_the_track_just_played(self, client, db, scanned, receiver):
+        zone_id, items = self._queued(client, db)
+        if len(items) < 5:
+            pytest.skip("the fixture is too small to shuffle meaningfully")
+
+        client.post(f"/api/zones/{zone_id}/shuffle", json={"on": True})
+
+        was = self._cursor(db, zone_id)
+        client.post(f"/api/zones/{zone_id}/next")
+        went = self._cursor(db, zone_id)
+        assert went != was
+
+        client.post(f"/api/zones/{zone_id}/previous")
+        assert self._cursor(db, zone_id) == was, "previous did not go back"
+
+    def test_it_walks_all_the_way_back(self, client, db, scanned, receiver):
+        """Several steps, in order. One step back could be luck."""
+        zone_id, items = self._queued(client, db)
+        if len(items) < 5:
+            pytest.skip("the fixture is too small to shuffle meaningfully")
+
+        client.post(f"/api/zones/{zone_id}/shuffle", json={"on": True})
+
+        visited = [self._cursor(db, zone_id)]
+        for _ in range(4):
+            client.post(f"/api/zones/{zone_id}/next")
+            visited.append(self._cursor(db, zone_id))
+
+        for expected in reversed(visited[:-1]):
+            client.post(f"/api/zones/{zone_id}/previous")
+            assert self._cursor(db, zone_id) == expected
+
+    def test_a_jump_is_somewhere_to_come_back_from(self, client, db, scanned, receiver):
+        """Choosing from the list is a move like any other."""
+        zone_id, items = self._queued(client, db)
+        if len(items) < 5:
+            pytest.skip("the fixture is too small")
+
+        client.post(f"/api/zones/{zone_id}/shuffle", json={"on": True})
+        start = self._cursor(db, zone_id)
+        target = 3 if start != 3 else 4
+
+        client.post(f"/api/zones/{zone_id}/jump", json={"index": target})
+        assert self._cursor(db, zone_id) == target
+
+        client.post(f"/api/zones/{zone_id}/previous")
+        assert self._cursor(db, zone_id) == start
+
+    def test_previous_is_still_the_track_above_without_shuffle(
+        self, client, db, scanned, receiver
+    ):
+        """In a list somebody can see, previous means up the list -- not back
+        through wherever they have been clicking."""
+        zone_id, items = self._queued(client, db)
+        if len(items) < 5:
+            pytest.skip("the fixture is too small")
+
+        client.post(f"/api/zones/{zone_id}/jump", json={"index": 4})
+        client.post(f"/api/zones/{zone_id}/previous")
+        assert self._cursor(db, zone_id) == 3
+
+    def test_a_new_queue_has_nothing_behind_it(self, client, db, scanned, receiver):
+        """Positions from the queue before this one would point anywhere."""
+        zone_id, items = self._queued(client, db)
+        if len(items) < 5:
+            pytest.skip("the fixture is too small")
+
+        client.post(f"/api/zones/{zone_id}/shuffle", json={"on": True})
+        client.post(f"/api/zones/{zone_id}/next")
+        client.post(f"/api/zones/{zone_id}/next")
+
+        # Somebody starts something else in the room.
+        client.post(f"/api/zones/{zone_id}/play", json={"item_ids": items[:3]})
+        assert self._cursor(db, zone_id) == 0
+
+        client.post(f"/api/zones/{zone_id}/previous")
+        assert self._cursor(db, zone_id) == 0, "previous escaped into the old queue"
