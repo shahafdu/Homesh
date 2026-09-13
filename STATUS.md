@@ -6,7 +6,7 @@ to reconstruct the state of a large, half-finished system from memory.
 **Legend** — ✅ built and verified · 🟡 built, needs Shahaf to confirm ·
 🔴 known broken · ⬜ not started · ⏳ waiting on Shahaf
 
-Last updated: 13 September 2026 · 415 tests · 20 migrations · CI green
+Last updated: 13 September 2026 · 429 tests · 22 migrations · CI green
 (verified with `tools/verify-ci.ps1`, not assumed)
 
 ---
@@ -110,6 +110,9 @@ Deployed and believed correct; not yet confirmed in use.
 | 🟡 | **The control tower answers at once** | It waited for the room before it redrew, so a command that genuinely takes a second on the television took a second to acknowledge on the phone. The button now shows what it is asking for immediately and corrects itself if the room disagrees |
 | 🟡 | **Seeking from the tower shows on the screen** | It flashed 0:00, because the time was handed over in seconds to something that reads milliseconds. Pause and resume raise the overlay too, so any command from your phone is visible on the television — not only the ones sent with the remote |
 | 🟡 | **Picking a track with shuffle on plays that track** | Choosing from the list went through the same path as *next*, which with shuffle on threw the choice away and picked at random. Nothing to do with mp4 against avi: jumping *backwards* took a different branch and worked, which is what made it look like a format problem. Shuffle decides what comes next; it does not overrule a file somebody pointed at |
+| 🟡 | **Lesson videos know how long they are** | The progress bar on a conga lesson read 0:21 of 0:10, full, on the television and in the control tower. A video in a Drive folder is read as its first 256 KB, the same as everything else remote -- and ffprobe handed a quarter-megabyte of a film reports how long that quarter-megabyte lasts. 0.64 seconds for a 1.6 GB lesson. That is a number, so it was stored as the length. Every one of those twelve lessons had the length of its own opening. They are measured properly now -- the two ends of the file and its true size, two range requests rather than a download -- and a length that could not be true of a file that size is refused rather than written |
+| 🟡 | **Previous, with shuffle on** | Shuffle picked at random whichever button was pressed, so next and previous were the same button. Previous now goes back to what was actually playing, several steps if you keep pressing. Also found beside it: a track *ending* ignored shuffle entirely and played the one below it, so shuffle applied only while somebody was pressing next -- put the phone down and the album played in order |
+| 🟡 | **Long documents give their pages back** | Pages were released only when drawing a new one found too many held, so scrolling down a book accumulated a little more with each page -- the shape of a crash rather than of a cap. A page that leaves the screen is now released whether or not anything else is being drawn, the render is called off rather than finishing into a canvas nobody is looking at, and closing a document shuts down its reader instead of leaving one alive per book opened |
 
 ---
 

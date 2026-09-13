@@ -493,6 +493,10 @@ async def play(
                     photo_under = EXCLUDED.photo_under,
                     photo_endless = EXCLUDED.photo_endless,
                     photo_offset = EXCLUDED.photo_offset,
+                    -- A new queue has nowhere to go back to. Left standing, the
+                    -- old positions would point into a list that no longer
+                    -- exists and previous would land anywhere.
+                    history = '[]'::jsonb,
                     -- Whoever started what is playing now, so the room can go on
                     -- advancing after they have put the phone down and left.
                     started_by = EXCLUDED.started_by,
@@ -675,6 +679,13 @@ async def _push_to_screen(zone: Zone, item_id: UUID, user: CurrentUser) -> dict:
             "filename": filename,
             "tags": tags,
             "kind": kind,
+            # How long this runs, as the catalog knows it -- which for anything
+            # being converted as it plays is the only honest answer there is. A
+            # live stream has no end yet, so the screen's own player reports a
+            # length that is short and growing, and a bar drawn from that has
+            # the film running off the end of it in the first few seconds. That
+            # is exactly what a conga lesson looked like: 0:21 of 0:10.
+            "duration_ms": _catalog_duration(item_id),
             # Absent for anything that ends by itself, which is what tells the
             # screen this is a slideshow rather than a photograph somebody sent.
             "photo_ms": photo_ms,
@@ -820,6 +831,24 @@ def _shuffling(zone_id: UUID) -> bool:
                 {"z": str(zone_id)},
             ).scalar()
         )
+
+
+# How many steps back a room remembers.
+#
+# Going back is done a few at a time, so this is generous rather than
+# calculated. It is capped at all because a slideshow left running for a week
+# would otherwise carry a week of positions in a column read on every skip.
+_HISTORY = 200
+
+
+def _history_of(zone_id: UUID) -> list[int]:
+    """Queue positions this room has already played, oldest first."""
+    with get_engine().connect() as conn:
+        raw = conn.execute(
+            text("SELECT history FROM play_sessions WHERE zone_id = :z"),
+            {"z": str(zone_id)},
+        ).scalar()
+    return [int(n) for n in (raw or []) if isinstance(n, int)]
 
 
 def _queue_of(zone_id: UUID) -> tuple[list[str], int]:
@@ -1081,8 +1110,10 @@ async def shuffle_queue(
                 j = secrets.randbelow(i + 1)
                 upcoming[i], upcoming[j] = upcoming[j], upcoming[i]
             conn.execute(
+                # History goes with the old order: it holds positions, and the
+                # positions after the cursor now name different tracks.
                 text("UPDATE play_sessions SET queue = CAST(:q AS jsonb), shuffle = :on, "
-                     "updated_at = now() WHERE zone_id = :z"),
+                     "history = '[]'::jsonb, updated_at = now() WHERE zone_id = :z"),
                 {"q": json.dumps(queue[: cursor + 1] + upcoming), "on": body.on,
                  "z": str(zone_id)},
             )
@@ -1150,8 +1181,11 @@ def _refill_endless(zone_id: UUID, user: CurrentUser) -> list[str] | None:
 
     with get_engine().begin() as conn:
         conn.execute(
+            # A fresh page of photographs is a fresh queue, so there is nothing
+            # behind the first one to go back to.
             text("UPDATE play_sessions SET queue = CAST(:q AS jsonb), cursor = 0, "
-                 "photo_offset = :off, updated_at = now() WHERE zone_id = :z"),
+                 "photo_offset = :off, history = '[]'::jsonb, updated_at = now() "
+                 "WHERE zone_id = :z"),
             {"q": json.dumps(fresh), "off": next_offset, "z": str(zone_id)},
         )
     log.info("refilled %s with %d more photographs", zone_id, len(fresh))
@@ -1188,6 +1222,12 @@ async def _skip(
     if not queue:
         raise HTTPException(status.HTTP_409_CONFLICT, "nothing is playing in that room")
 
+    shuffling = _shuffling(zone_id)
+    history = _history_of(zone_id)
+    # Whether this move is one to remember. Going back is not: it walks the
+    # history rather than adding to it, or there would be no way out.
+    record = True
+
     if to is not None:
         # Asked for by name rather than by direction. Shuffle decides what
         # comes *next*; it has no business overruling a track somebody pointed
@@ -1196,11 +1236,24 @@ async def _skip(
         # and that branch throws the requested position away. Jumping backwards
         # happened to work, which made it look like a property of the file.
         target = to
-    elif _shuffling(zone_id) and len(queue) > 1 and delta > 0:
+    elif shuffling and len(queue) > 1 and delta > 0:
         # Anything but this one.
         target = cursor
         while target == cursor:
             target = secrets.randbelow(len(queue))
+    elif shuffling and delta < 0 and history:
+        # Back to what was actually playing, which with a random order is the
+        # only thing "the one before this" can mean. The track above this one in
+        # the queue is not the track you just heard, so going there is as
+        # arbitrary as shuffling again -- and shuffling again is what the web
+        # player did, which left next and previous doing the same thing.
+        target = history[-1]
+        history = history[:-1]
+        record = False
+        if target >= len(queue):
+            # The queue was refilled underneath us, so the position no longer
+            # names the same photograph. Nothing to go back to.
+            target = cursor
     else:
         target = cursor + delta
         if target < 0:
@@ -1222,6 +1275,10 @@ async def _skip(
             if refilled:
                 queue = refilled
                 target = 0
+                # Every position in the history names a photograph in the queue
+                # that has just been replaced, this one included.
+                history = []
+                record = False
             else:
                 # Forward from the last one starts again. A list that has
                 # finished is exactly when somebody reaches for next, and
@@ -1232,11 +1289,19 @@ async def _skip(
     if not may_access_item(item_id, user.id):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "no such item")
 
+    if record and target != cursor:
+        history = (history + [cursor])[-_HISTORY:]
+
     with get_engine().begin() as conn:
         conn.execute(
             text("UPDATE play_sessions SET cursor = :c, position_ms = 0, duration_ms = :d, "
-                 "updated_at = now() WHERE zone_id = :z"),
-            {"c": target, "d": _catalog_duration(item_id), "z": str(zone_id)},
+                 "history = CAST(:h AS jsonb), updated_at = now() WHERE zone_id = :z"),
+            {
+                "c": target,
+                "d": _catalog_duration(item_id),
+                "h": json.dumps(history),
+                "z": str(zone_id),
+            },
         )
 
     if zone.renderer_kind == "tvapp":

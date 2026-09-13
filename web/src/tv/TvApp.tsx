@@ -30,6 +30,14 @@ interface Command {
   transition?: string;
   /** Still being encoded as it arrives, so the web view has to take it. */
   transcoded?: boolean;
+  /** How long this runs, as the catalog knows it.
+   *
+   * Needed because a player does not always know. A stream still being encoded
+   * has no end yet, so the element reports a length that is short and growing,
+   * and the bar drawn from it had a conga lesson twenty-one seconds into a
+   * ten-second film. The catalog knows the real answer before the first frame
+   * arrives. */
+  duration_ms?: number | null;
 }
 
 /** Which transition this photograph arrives with.
@@ -281,6 +289,22 @@ export default function TvApp() {
   }, [now?.item_id, wake]);
   const [duration, setDuration] = useState(0);
 
+  /** A length reported by whichever player has the file.
+   *
+   * Believed, except for a stream still being encoded. That one has no end yet:
+   * the element reports how much has arrived, which starts near zero and grows,
+   * and it is always shorter than the film. Taking it gave a bar the playhead
+   * ran off the end of in the first few seconds -- 0:21 of 0:10 on a conga
+   * lesson, with the bar full. The catalog already knows how long the file is,
+   * so for those the number sent with the command is the better one and this
+   * leaves it alone.
+   */
+  const takeDuration = useCallback((ms: number) => {
+    if (nowRef.current?.transcoded) return;
+    if (!isFinite(ms) || ms <= 0) return;
+    setDuration(ms);
+  }, []);
+
   const mediaRef = useRef<HTMLVideoElement | null>(null);
   const socketRef = useRef<WebSocket | null>(null);
   const tokenRef = useRef<string | null>(localStorage.getItem(STORAGE_KEY));
@@ -408,6 +432,9 @@ export default function TvApp() {
         setPaused(false);
         setNow(cmd);
         setPhase("playing");
+        // The catalog's answer, until a player offers a better one. Zero when
+        // it has none, which draws no bar rather than a wrong one.
+        setDuration(cmd.duration_ms ?? 0);
 
         // Video goes to the box's own decoder where there is one -- but only
         // when it is the original file. A stream still being encoded has no
@@ -719,11 +746,11 @@ export default function TvApp() {
       const player = native();
       if (!player) return;
       setPosition(player.positionMs());
-      setDuration(player.durationMs());
+      takeDuration(player.durationMs());
       report(player.isPlaying() ? "playing" : "paused");
     }, 2000);
     return () => window.clearInterval(timer);
-  }, [phase, now?.kind, report]);
+  }, [phase, now?.kind, report, takeDuration]);
 
   // The page becomes glass while the box's own player is decoding.
   //
@@ -751,7 +778,7 @@ export default function TvApp() {
     if (!media) return;
 
     const onTime = () => setPosition(media.currentTime * 1000);
-    const onMeta = () => setDuration(isFinite(media.duration) ? media.duration * 1000 : 0);
+    const onMeta = () => takeDuration(isFinite(media.duration) ? media.duration * 1000 : 0);
     const onPlay = () => report("playing");
     const onPause = () => report("paused");
     const onEnded = () => report("ended");
@@ -768,7 +795,7 @@ export default function TvApp() {
       media.removeEventListener("pause", onPause);
       media.removeEventListener("ended", onEnded);
     };
-  }, [phase, report]);
+  }, [phase, report, takeDuration]);
 
   useEffect(() => {
     // Position is reported on a timer rather than on every frame: the server
@@ -895,7 +922,11 @@ export default function TvApp() {
                 <div className="bar">
                   <i
                     style={{
-                      width: duration ? `${(shownPosition / duration) * 100}%` : "0%",
+                      // Clamped: a length can still be wrong, and a bar that
+                      // overflows its track is worse than one that sits full.
+                      width: duration
+                        ? `${Math.min(100, (shownPosition / duration) * 100)}%`
+                        : "0%",
                     }}
                   />
                   {/* Where a seek is heading, before the stream gets there. The

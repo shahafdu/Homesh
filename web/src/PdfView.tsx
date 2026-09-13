@@ -23,8 +23,12 @@ import { useCallback, useEffect, useRef, useState } from "react";
  *  steadily finds the next page already there rather than blank. */
 const AHEAD = "150% 0px";
 
-/** Pages kept drawn at once. Enough to scroll through without flicker, few
- *  enough that a long book costs the same as a short one. */
+/** Pages kept drawn at once.
+ *
+ * A backstop rather than the mechanism: pages are released as they leave, and
+ * this catches the case where several are in view at once on a wide screen.
+ * Enough to scroll through without flicker, few enough that a long book costs
+ * the same as a short one. */
 const KEEP = 6;
 
 export default function PdfView(props: { url: string; title: string }) {
@@ -38,6 +42,40 @@ export default function PdfView(props: { url: string; title: string }) {
   const observer = useRef<IntersectionObserver | null>(null);
   const drawn = useRef<Map<number, HTMLCanvasElement>>(new Map());
   const drawing = useRef<Set<number>>(new Set());
+  // Renders still running, so one can be called off rather than finishing into
+  // a canvas nobody is looking at any more. Scrolling fast through a long book
+  // starts more of these than it finishes.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const tasks = useRef<Map<number, any>>(new Map());
+
+  /** Give back everything one page is holding.
+   *
+   * Three things, and the obvious one is the least of them. Removing the
+   * element does nothing on its own: the canvas is still referenced until it is
+   * collected, and its backing store -- which at a television's pixel ratio is
+   * several megabytes for one page -- goes only when the dimensions are set to
+   * zero. The render task has to be called off or it draws into it anyway, and
+   * pdf.js keeps its own copy of the page's operator list until cleanup() is
+   * called.
+   */
+  const release = useCallback((n: number) => {
+    const task = tasks.current.get(n);
+    if (task) {
+      try {
+        task.cancel();
+      } catch {
+        // Already finished. Nothing to call off.
+      }
+      tasks.current.delete(n);
+    }
+    const canvas = drawn.current.get(n);
+    if (canvas) {
+      canvas.width = 0;
+      canvas.height = 0;
+      canvas.remove();
+      drawn.current.delete(n);
+    }
+  }, []);
 
   /** Draw one page into its slot, unless it is already drawn or being drawn. */
   const draw = useCallback(async (slot: HTMLElement, n: number) => {
@@ -66,33 +104,36 @@ export default function PdfView(props: { url: string; title: string }) {
 
       const context = canvas.getContext("2d");
       if (!context) return;
-      await page.render({ canvasContext: context, viewport }).promise;
+      const task = page.render({ canvasContext: context, viewport });
+      tasks.current.set(n, task);
+      await task.promise;
+      tasks.current.delete(n);
+
+      // What pdf.js built in order to draw this, which it holds on to for the
+      // next time the page is asked for. There is no next time here: the page
+      // is re-fetched if it is scrolled back to, and a book's worth of retained
+      // operator lists is the other half of the memory.
+      page.cleanup();
 
       slot.replaceChildren(canvas);
       drawn.current.set(n, canvas);
 
-      // Release whatever has drifted furthest from here. Setting width to zero
-      // frees the backing store; removing the element alone does not, because
-      // the canvas is still referenced until it is collected.
+      // A backstop, for the case where more pages are in view at once than the
+      // observer will report leaving.
       if (drawn.current.size > KEEP) {
         const furthest = [...drawn.current.keys()].sort(
           (a, b) => Math.abs(b - n) - Math.abs(a - n),
         )[0];
-        const stale = drawn.current.get(furthest);
-        if (stale && furthest !== n) {
-          stale.width = 0;
-          stale.height = 0;
-          stale.remove();
-          drawn.current.delete(furthest);
-        }
+        if (furthest !== n) release(furthest);
       }
     } catch {
       // One page that will not draw is not the document failing. It stays
       // blank at its right height rather than taking the rest down with it.
     } finally {
       drawing.current.delete(n);
+      tasks.current.delete(n);
     }
-  }, []);
+  }, [release]);
 
   useEffect(() => {
     let cancelled = false;
@@ -146,9 +187,16 @@ export default function PdfView(props: { url: string; title: string }) {
         const watcher = new IntersectionObserver(
           (entries) => {
             for (const entry of entries) {
-              if (!entry.isIntersecting) continue;
               const slot = entry.target as HTMLElement;
-              void draw(slot, Number(slot.dataset.page));
+              const n = Number(slot.dataset.page);
+              // Both directions. Drawing on the way in and waiting for a count
+              // to be exceeded on the way out meant pages were freed only as a
+              // side effect of drawing more of them -- so scrolling down a long
+              // book held a little more with every page, which is the shape of
+              // a crash rather than of a cap. A page that has left is released
+              // whether or not anything else is being drawn.
+              if (entry.isIntersecting) void draw(slot, n);
+              else release(n);
             }
           },
           // The viewport, not the .pdf box. Which element actually scrolls
@@ -184,15 +232,18 @@ export default function PdfView(props: { url: string; title: string }) {
       observer.current = null;
       // Everything drawn, released. A viewer moving between documents would
       // otherwise keep every page of every one it had opened.
-      for (const canvas of slots.values()) {
-        canvas.width = 0;
-        canvas.height = 0;
-      }
+      for (const n of [...slots.keys()]) release(n);
       slots.clear();
       pending.clear();
+      // The document itself, and the worker thread behind it. Without this a
+      // reader who opens six books has six pdf.js workers alive, each holding
+      // what it has fetched.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const held = doc.current as any;
       doc.current = null;
+      void held?.destroy?.();
     };
-  }, [props.url, draw]);
+  }, [props.url, draw, release]);
 
   return (
     <div className="pdf">

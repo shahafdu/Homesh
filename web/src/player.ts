@@ -59,6 +59,23 @@ async function signedUrl(itemId: string): Promise<string> {
   return url;
 }
 
+/** How many steps back the shuffle remembers. Going back is done a few at a
+ *  time; this is generous rather than calculated. */
+const HISTORY = 200;
+
+/** Somewhere else in the queue, at random.
+ *
+ * Deliberately not a shuffled copy of the queue: that has to be regenerated
+ * whenever the queue changes, and gets it wrong when a folder is added to
+ * mid-listen. -1 when there is nowhere else to go.
+ */
+function elsewhere(index: number, length: number): number {
+  if (length < 2) return -1;
+  let next = index;
+  while (next === index) next = Math.floor(Math.random() * length);
+  return next;
+}
+
 export function usePlayer() {
   const [state, setState] = useState<PlayerState>(INITIAL);
   /** Bumped by every load, so an overtaken one cannot report its own outcome. */
@@ -70,6 +87,16 @@ export function usePlayer() {
   // Read inside callbacks that were created before the setting changed.
   const shuffleRef = useRef(shuffle);
   shuffleRef.current = shuffle;
+  // Where shuffle has already been, so previous can go back there.
+  //
+  // Without it, previous shuffled too -- the branch below ran on any delta --
+  // and the two buttons became one: whichever you pressed, you got a track at
+  // random. What previous means under a random order is "back to what was
+  // playing", and only a record of what was playing can say.
+  const historyRef = useRef<number[]>([]);
+  const remember = useCallback((index: number) => {
+    if (index >= 0) historyRef.current = [...historyRef.current, index].slice(-HISTORY);
+  }, []);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
   // Kept in a ref as well as state so the media element's event handlers, which
@@ -235,6 +262,8 @@ export function usePlayer() {
           ? { kind: "folder" as const, id: folderPath, label: folderPath.split("/").pop() ?? "" }
           : null);
 
+      // A new queue has nowhere behind it.
+      historyRef.current = [];
       setState((s) => ({ ...s, queue, index, origin: from, error: null }));
       stateRef.current = { ...stateRef.current, queue, index };
       void loadTrack(index);
@@ -258,14 +287,22 @@ export function usePlayer() {
     (delta: number) => {
       const { index, queue } = stateRef.current;
 
-      if (shuffleRef.current && queue.length > 1) {
-        // Any track but this one. Deliberately not a shuffled copy of the queue:
-        // that has to be regenerated whenever the queue changes, and gets it
-        // wrong when a folder is added to mid-listen.
-        let next = index;
-        while (next === index) next = Math.floor(Math.random() * queue.length);
-        void loadTrack(next);
+      if (shuffleRef.current && delta < 0 && historyRef.current.length > 0) {
+        // Back to what was actually playing. Retracing rather than recording,
+        // or there would be no way out of the history.
+        const back = historyRef.current[historyRef.current.length - 1];
+        historyRef.current = historyRef.current.slice(0, -1);
+        void loadTrack(Math.min(back, Math.max(0, queue.length - 1)));
         return;
+      }
+
+      if (shuffleRef.current && delta > 0) {
+        const next = elsewhere(index, queue.length);
+        if (next >= 0) {
+          remember(index);
+          void loadTrack(next);
+          return;
+        }
       }
 
       if (queue.length === 0) return;
@@ -278,7 +315,7 @@ export function usePlayer() {
       const next = index + delta < 0 ? 0 : (index + delta) % queue.length;
       void loadTrack(next);
     },
-    [loadTrack],
+    [loadTrack, remember],
   );
 
   const seek = useCallback((seconds: number) => {
@@ -310,6 +347,19 @@ export function usePlayer() {
     const onMeta = () => setState((s) => ({ ...s, duration: audio.duration || 0 }));
     const onEnd = () => {
       const { index, queue } = stateRef.current;
+      // Shuffle belongs to the queue, not to the next button. A track ending
+      // went to the one below it however the setting was set, so shuffle
+      // applied only while somebody was pressing next -- put the phone down and
+      // the album played in order.
+      const next = shuffleRef.current ? elsewhere(index, queue.length) : -1;
+      if (next >= 0) {
+        remember(index);
+        void loadTrack(next);
+        return;
+      }
+      // A list that has reached its end stops. Deliberately unlike next, which
+      // starts it again: one is somebody asking for more, the other is nobody
+      // asking for anything.
       if (index + 1 < queue.length) void loadTrack(index + 1);
       else setState((s) => ({ ...s, playing: false, position: 0 }));
     };
@@ -358,7 +408,7 @@ export function usePlayer() {
       audio.removeEventListener("ended", onEnd);
       audio.removeEventListener("error", onError);
     };
-  }, [loadTrack]);
+  }, [loadTrack, remember]);
 
   const current = state.index >= 0 ? state.queue[state.index] : null;
   return { state, current, play, toggle, skip, seek, setVolume, stop,
