@@ -282,6 +282,7 @@ export default function App() {
         {showSettings && (
           <Settings
             prefs={prefs}
+            isAdmin={state.user.is_admin}
             onChange={(patch) => void changePrefs(patch)}
             onLinkDevice={() => {
               setShowSettings(false);

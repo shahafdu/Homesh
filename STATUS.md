@@ -6,7 +6,7 @@ to reconstruct the state of a large, half-finished system from memory.
 **Legend** — ✅ built and verified · 🟡 built, needs Shahaf to confirm ·
 🔴 known broken · ⬜ not started · ⏳ waiting on Shahaf
 
-Last updated: 13 September 2026 · 445 tests · 22 migrations · CI green
+Last updated: 13 September 2026 · 477 tests · 23 migrations · CI green
 (verified with `tools/verify-ci.ps1`, not assumed)
 
 ---
@@ -116,6 +116,8 @@ Deployed and believed correct; not yet confirmed in use.
 | 🟡 | **Video from Drive starts** | It did not. A direct-play film on Drive never began at all -- not slowly, never: the response opened and no bytes followed it, for as long as anybody was willing to wait. Two causes, both on the path of every byte. The token that authorises a Drive read was minted under a mutex held across the network call, so one mint that did not come back shut the whole folder until the server was restarted; it is minted five minutes early now, off the lock, and gives up after twenty seconds. And "is this folder still shared with us" was answered with a fresh connection to Google **per range request** -- forty handshakes for one film. Measured on the real library: direct play never → **1.9s**, local video 0.45s → **0.05s**, converted video 3.1s → **1.0s** |
 | 🟡 | **Seeking an AVI or WMV in a room** | These are converted as they play, and a stream being encoded has no index to seek in -- so setting the position did nothing, the film restarted from the beginning, and the bar sat where it had been dropped. Moving through one now restarts the encoder at that point and counts from there, which is what the browser has always done with them |
 | 🟡 | **Seeing a whole filename** | Tap the name in the viewer and it opens out in full; the type is spelled out beside the size, where it used to be buried at the end of a name that had been cut off. On a television, where there is nothing to tap, the name now runs to two lines instead of ending in an ellipsis |
+| 🟡 | **`music` was two libraries** | One folder, catalogued twice -- the copy on the PC and the copy on Drive -- with nothing linking them: 9,189 songs on each side and not one entry in common. `items.content_hash` had been in the schema since the first migration and was empty for all 141,818 files, so nothing had ever noticed. Copies are now fingerprinted and the two become one entry with two copies behind it. Drive states its own checksum for free; local files are read, but only the ones with a lookalike elsewhere -- 53 GB rather than the whole library. **This also turns on the availability model**: playing from Drive when the PC is off needs one entry holding both copies, which is what §4 has always described and what has never once been true here |
+| 🟡 | **Backups, and putting one back** | Settings → Backups, administrators only. Daily, a week of them kept, plus one a fortnight back and one a month back. Restoring takes a copy of the present state first, so restoring the wrong one is undoable. The media is not backed up and should not be -- this is everything the server knows *about* your files, which is the part that exists nowhere else. A backup can be downloaded, and should be: one that lives on the same disk as the thing it protects is half a backup |
 
 ---
 
@@ -123,7 +125,6 @@ Deployed and believed correct; not yet confirmed in use.
 
 | | Item | What is known |
 |---|---|---|
-| 🔴 | **Everything in `music` is listed twice** | It is one folder catalogued twice: the copy on the PC and the copy on Drive are separate sources, and nothing links them -- identical counts, 9,189 songs each, and not one item shared between them. `items.content_hash` exists and **has never been filled**, for any of the 141,818 files, so the same song scanned from two places becomes two items rather than one item in two places. That also means the availability model does not yet work: playing from Drive when the PC is off depends on one item having both replicas. Your call which way to fix it -- drop the Drive copy of `music` and lose the offline fallback for it, or fill in the hashes and merge them |
 | 🟡 | **Stopping a playlist crashed the TV app** | Cause found and it was not the guess. `stop()` called a method reference on a null player, which throws as it is *created* — outside the try block meant to contain it. Same root cause as the video crash. Fixed in 0.5.9 and still in 0.6.1; needs confirming once a box has the new APK |
 
 ---

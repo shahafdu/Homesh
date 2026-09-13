@@ -39,6 +39,11 @@ BETWEEN_SOURCES = timedelta(seconds=30)
 # sweep can afford and a house watching a film will not notice.
 FINGERPRINTS_PER_SWEEP = 2000
 
+# How often the database is copied. Daily, as agreed for the AI work: the thing
+# being protected against is a change nobody noticed at the time, and a day is
+# how long that takes to notice.
+BACKUP_EVERY = timedelta(days=1)
+
 
 def _due(interval: timedelta) -> list[tuple[UUID, str]]:
     """Sources that have not been scanned within the interval.
@@ -162,10 +167,36 @@ async def run_forever() -> None:
         except Exception:  # noqa: BLE001
             log.exception("scheduled sweep failed")
 
+        try:
+            await _daily_backup()
+        except asyncio.CancelledError:
+            raise
+        except Exception:  # noqa: BLE001
+            log.exception("scheduled backup failed")
+
         # Re-checked hourly rather than slept for a whole day: a source added at
         # noon should not wait until tomorrow, and a machine that suspends
         # overnight would otherwise drift a full cycle every time it woke.
         await asyncio.sleep(3600)
+
+
+async def _daily_backup() -> None:
+    """One backup a day, and throw away what is no longer worth keeping.
+
+    Hung off the hourly loop rather than given a scheduler of its own: the
+    condition is "the newest one is a day old", which survives the machine being
+    asleep at whatever hour a scheduler would have chosen. A PC that is off
+    every night would otherwise never back up at all.
+    """
+    from .backups import list_backups, make_backup, prune
+
+    newest = await asyncio.to_thread(list_backups)
+    if newest and datetime.now(UTC) - newest[0].taken_at < BACKUP_EVERY:
+        return
+
+    made = await asyncio.to_thread(make_backup)
+    gone = await asyncio.to_thread(prune)
+    log.info("daily backup %s written, %d old one(s) removed", made.name, len(gone))
 
 
 def next_due(interval_hours: int) -> datetime | None:

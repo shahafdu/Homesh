@@ -98,7 +98,7 @@ routinely breaks another, and the tracker is what makes that visible.
 | 8 · Optional transcode | ⬜ | May never be needed — see §3.2 of ARCHITECTURE |
 | 9 · Public release | ⬜ | Docs, screenshots, name decision |
 
-**Tests: 445 passing. Migrations: 022. Lint: clean. CI green.**
+**Tests: 477 passing. Migrations: 023. Lint: clean. CI green.**
 
 ### AI design decisions — agreed, not yet built
 
@@ -148,7 +148,10 @@ administrators only.
 - [ ] Install the TV app on the real boxes — `docs/TV_APP.md` has the ADB steps.
       A box installed from a different machine must be uninstalled first, because
       the signing key is per-machine and never committed
-- [ ] Database backups and in-app restore — prerequisite for the AI work
+- [x] Database backups and in-app restore — daily, a week of them plus a
+      fortnight and a month back, restorable from Settings by an administrator.
+      Data only, in Postgres's own COPY format, with the schema coming from the
+      migrations — see the note in `server/app/backups.py` on why not pg_dump
 - [ ] AI activity history, readable in the app
 
 ### Waiting on Shahaf
