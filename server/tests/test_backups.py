@@ -9,6 +9,7 @@ safety net under an AI that can write to the catalog.
 from __future__ import annotations
 
 import gzip
+import json
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -182,8 +183,11 @@ class TestKeeping:
             with gzip.open(path, "wt", encoding="utf-8") as f:
                 f.write(f"-- {module.MAGIC} {module.FORMAT}\n")
                 f.write(
-                    '-- {"taken_at": "%s", "schema_version": "x", "tables": []}\n'
-                    % when.isoformat()
+                    "-- "
+                    + json.dumps(
+                        {"taken_at": when.isoformat(), "schema_version": "x", "tables": []}
+                    )
+                    + "\n"
                 )
         return now
 
@@ -269,8 +273,11 @@ def test_the_list_is_newest_first(shelf):
         with gzip.open(shelf / f"homesh-{when:%Y%m%d-%H%M%S}.sql.gz", "wt") as f:
             f.write(f"-- {module.MAGIC} {module.FORMAT}\n")
             f.write(
-                '-- {"taken_at": "%s", "schema_version": "x", "tables": []}\n'
-                % when.isoformat()
+                "-- "
+                + json.dumps(
+                    {"taken_at": when.isoformat(), "schema_version": "x", "tables": []}
+                )
+                + "\n"
             )
     ages = [b.taken_at for b in list_backups()]
     assert ages == sorted(ages, reverse=True)
