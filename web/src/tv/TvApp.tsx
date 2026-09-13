@@ -138,6 +138,24 @@ function usingNative(cmd: Command | null): boolean {
   return Boolean(cmd && cmd.kind === "video" && !cmd.transcoded && native());
 }
 
+/** Where to fetch this file from in order to start it at a given moment.
+ *
+ * A stream still being encoded cannot be scrubbed: the file does not exist yet,
+ * so there is no index to seek in, and setting `currentTime` on one does
+ * nothing useful -- the element went back to the beginning while the bar stayed
+ * where it had been dropped, which is exactly what an AVI did when seeked from
+ * the control tower. Moving through one of these means asking the server to
+ * begin encoding from there instead, which is what `start` is for.
+ *
+ * Everything else is a real file with a real index, and is seeked normally.
+ */
+function sourceAt(cmd: Command, positionMs: number): string {
+  const url = cmd.url ?? "";
+  if (!cmd.transcoded || positionMs <= 0) return url;
+  const join = url.includes("?") ? "&" : "?";
+  return `${url}${join}start=${Math.floor(positionMs / 1000)}`;
+}
+
 const STORAGE_KEY = "homesh.tv.credential";
 
 /** Seconds per press of left or right.
@@ -289,6 +307,16 @@ export default function TvApp() {
   }, [now?.item_id, wake]);
   const [duration, setDuration] = useState(0);
 
+  /** Where the stream in the media element begins, in milliseconds.
+   *
+   * Zero for a real file, which starts at its own beginning and counts from
+   * there. For something being encoded as it plays, seeking restarts the
+   * encoder at a new point, so the element counts from zero again while the
+   * viewer is twenty minutes into the film -- everything the screen shows or
+   * reports has to be measured from here instead.
+   */
+  const base = useRef(0);
+
   /** A length reported by whichever player has the file.
    *
    * Believed, except for a stream still being encoded. That one has no end yet:
@@ -435,6 +463,8 @@ export default function TvApp() {
         // The catalog's answer, until a player offers a better one. Zero when
         // it has none, which draws no bar rather than a wrong one.
         setDuration(cmd.duration_ms ?? 0);
+        base.current = cmd.transcoded ? (cmd.position_ms ?? 0) : 0;
+        setPosition(cmd.position_ms ?? 0);
 
         // Video goes to the box's own decoder where there is one -- but only
         // when it is the original file. A stream still being encoded has no
@@ -476,8 +506,10 @@ export default function TvApp() {
             if (generation.current !== mine) return;
             const el = mediaRef.current;
             if (!el || !cmd.url) return;
-            el.src = cmd.url;
-            if (cmd.position_ms) el.currentTime = cmd.position_ms / 1000;
+            el.src = sourceAt(cmd, cmd.position_ms ?? 0);
+            // A transcode is already positioned by its URL; anything else is
+            // positioned by the element.
+            if (cmd.position_ms && !cmd.transcoded) el.currentTime = cmd.position_ms / 1000;
             void el.play().catch((e) => {
               // Superseded, not failed.
               //
@@ -552,9 +584,17 @@ export default function TvApp() {
         // this branch the tower's bar moved and the television ignored it.
         if (usingNative(nowRef.current)) {
           native()!.play(nowRef.current!.url ?? "", cmd.position_ms);
+        } else if (media && nowRef.current?.transcoded) {
+          // Not a seek at all: the encoder is started again from there. Setting
+          // currentTime on a stream with no index moved nothing and left the
+          // film at the beginning with the bar stuck where it was dropped.
+          base.current = cmd.position_ms;
+          media.src = sourceAt(nowRef.current, cmd.position_ms);
+          void media.play().catch(() => undefined);
         } else if (media) {
           media.currentTime = cmd.position_ms / 1000;
         }
+        setPosition(cmd.position_ms);
         setSeekTo(cmd.position_ms);
         // Milliseconds, like everything else here. It was divided by a
         // thousand and formatTime takes milliseconds, so a seek to twelve
@@ -589,7 +629,7 @@ export default function TvApp() {
         position_ms: player
           ? player.positionMs()
           : media
-            ? Math.round(media.currentTime * 1000)
+            ? base.current + Math.round(media.currentTime * 1000)
             : 0,
         duration_ms: player
           ? player.durationMs() || null
@@ -777,7 +817,7 @@ export default function TvApp() {
     const media = mediaRef.current;
     if (!media) return;
 
-    const onTime = () => setPosition(media.currentTime * 1000);
+    const onTime = () => setPosition(base.current + media.currentTime * 1000);
     const onMeta = () => takeDuration(isFinite(media.duration) ? media.duration * 1000 : 0);
     const onPlay = () => report("playing");
     const onPause = () => report("paused");

@@ -614,9 +614,19 @@ button.p-where:hover, button.p-where:focus-visible {
    on something that might later move. */
 .v-gap { flex: 1; }
 .v-title { display: flex; flex-direction: column; min-width: 0; }
+/* The filename, as a button that is not dressed as one: tapping it shows the
+   whole name. A header wants one line; a name sixty characters long wants all
+   of them, and this is the only place the name is written out. */
 .v-name {
   font-family: var(--mono); font-size: 13.5px;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  background: none; border: 0; padding: 0; margin: 0;
+  color: inherit; text-align: start; cursor: pointer; max-width: 100%;
+}
+.v-name.whole {
+  overflow: visible; text-overflow: clip; white-space: normal;
+  /* Long names here have no spaces to break at. */
+  overflow-wrap: anywhere;
 }
 .v-meta { font-size: 11.5px; color: var(--muted); }
 .v-close {

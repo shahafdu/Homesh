@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import logging
 import threading
+import time
 from collections.abc import Iterator
 from datetime import UTC, datetime
 from pathlib import Path
@@ -48,6 +49,41 @@ FIELDS = "id,name,mimeType,size,modifiedTime,md5Checksum,trashed"
 PAGE = 200
 TIMEOUT = 30.0
 
+# How long to wait for a free connection before giving up on a read.
+#
+# Separate from the other timeouts and much shorter, because it is not waiting
+# for Drive -- it is waiting for this server. Without it the wait is unbounded:
+# once every connection in the pool is held, a new read sits there for ever with
+# its response already begun and no bytes behind it, which on a television is a
+# film that never starts and no error anywhere. Measured: the hundredth
+# simultaneous read never returned at all, while the ninety-ninth took eight
+# seconds.
+POOL_WAIT = 20.0
+
+# Connections held open to Drive, per shared folder.
+#
+# Explicit rather than inherited, so the number that decides when reads start
+# queueing is written down beside the timeout that gives up on them.
+POOL = httpx.Limits(max_connections=64, max_keepalive_connections=16)
+
+# Minted again this long before it runs out.
+#
+# A token lasts an hour, and refreshing it takes a network round trip that every
+# read for this folder waits behind. Doing that while a film is playing is a
+# stall in the middle of the film; doing it five minutes early is free.
+REFRESH_EARLY = 300.0
+
+# A refresh that has not answered in this long has failed, whatever it thinks.
+# google-auth's own default is two minutes, which is two minutes of a house with
+# no music.
+REFRESH_TIMEOUT = 20.0
+
+# How long the answer to "is this folder still shared with us" is reused.
+#
+# Long enough that it leaves the path of an ordinary read, short enough that
+# unsharing a folder takes effect while you are still looking at the screen.
+AVAILABLE_FOR = 60.0
+
 
 class DriveError(Exception):
     pass
@@ -68,22 +104,81 @@ class _Credentials:
         self._lock = threading.Lock()
 
     def token(self) -> str:
-        from google.auth.transport.requests import Request
+        """The current access token, minted again when it is nearly out.
+
+        **The refresh does not happen under the lock**, and that is the whole
+        point of the shape below. It used to: a single mutex was held across the
+        network round trip that mints the token, and every read of every byte in
+        this folder goes through here. One refresh that did not come back
+        therefore stopped the folder -- not slowly, but completely and until the
+        server was restarted, with each waiting read sitting inside a response
+        whose headers had already been sent. From outside that is a film that
+        never starts, a folder that never opens, and nothing in any log.
+
+        Two threads may now mint at once, which costs one extra token request
+        and is the correct trade. The token they are replacing is still valid
+        for another five minutes, so neither of them is holding anything up.
+        """
+        with self._lock:
+            creds = self._creds
+
+        if creds is None:
+            creds = self._minted()
+            with self._lock:
+                # Whoever got here first wins; the loser's token is simply
+                # unused. Both are valid.
+                self._creds = self._creds or creds
+                creds = self._creds
+
+        if self._expiring(creds):
+            began = time.monotonic()
+            creds.refresh(self._request())
+            waited = time.monotonic() - began
+            if waited > 2:
+                # Named in the log, because this is the step that used to stop
+                # everything and leave nothing behind to say so.
+                log.warning("drive token took %.1fs to refresh", waited)
+
+        return creds.token
+
+    def _minted(self):
         from google.oauth2 import service_account
 
-        with self._lock:
-            if self._creds is None:
-                if not self.key_path.is_file():
-                    raise DriveError(
-                        f"no service-account key at {self.key_path}. "
-                        "Download the JSON key and place it there."
-                    )
-                self._creds = service_account.Credentials.from_service_account_file(
-                    str(self.key_path), scopes=self.scopes
-                )
-            if not self._creds.valid:
-                self._creds.refresh(Request())
-            return self._creds.token
+        if not self.key_path.is_file():
+            raise DriveError(
+                f"no service-account key at {self.key_path}. "
+                "Download the JSON key and place it there."
+            )
+        return service_account.Credentials.from_service_account_file(
+            str(self.key_path), scopes=self.scopes
+        )
+
+    @staticmethod
+    def _expiring(creds: Any) -> bool:
+        """Out of time, or close enough that a film would notice."""
+        expiry = getattr(creds, "expiry", None)
+        if expiry is None:
+            return not getattr(creds, "valid", False)
+        # google-auth keeps expiry naive and in UTC.
+        left = (expiry.replace(tzinfo=UTC) - datetime.now(UTC)).total_seconds()
+        return left < REFRESH_EARLY
+
+    @staticmethod
+    def _request():
+        """google-auth's transport, but it gives up eventually.
+
+        Its own default is two minutes per attempt, which is two minutes of a
+        house with no music -- and the caller has no way to shorten it except by
+        passing a transport that does.
+        """
+        from google.auth.transport.requests import Request
+
+        class Bounded(Request):
+            def __call__(self, url, method="GET", body=None, headers=None,
+                         timeout=REFRESH_TIMEOUT, **kwargs):
+                return super().__call__(url, method, body, headers, timeout, **kwargs)
+
+        return Bounded()
 
 
 def _client(creds: _Credentials) -> httpx.Client:
@@ -150,7 +245,11 @@ class GoogleDriveConnector:
         """
         existing = getattr(self, "_client", None)
         if existing is None:
-            existing = httpx.Client(timeout=TIMEOUT, follow_redirects=True)
+            existing = httpx.Client(
+                timeout=httpx.Timeout(TIMEOUT, pool=POOL_WAIT),
+                limits=POOL,
+                follow_redirects=True,
+            )
             self._client = existing
         return existing
 
@@ -160,19 +259,44 @@ class GoogleDriveConnector:
         # Path -> Drive id, filled during walk/list so open_range can find a file
         # again without re-walking the tree.
         self._ids: dict[str, str] = {"": root_id}
+        # Answered from memory for a moment at a time; see `available`.
+        self._available = False
+        self._available_at = 0.0
 
     @property
     def available(self) -> bool:
+        """Whether the folder is still shared with us, asked sparingly.
+
+        This is on the path of **every byte served from Drive**: a replica is
+        chosen per range request, and choosing it asks each candidate source
+        whether it is there. It was answering by opening a new TLS connection to
+        Google and making an API call, so a film that asks for forty ranges paid
+        forty handshakes and forty round trips for an answer that cannot
+        meaningfully change between them. Measured at roughly a second each,
+        which is most of the wait before a video starts.
+
+        A minute of memory removes it from the common path entirely while still
+        noticing an unshared folder within a minute -- and unsharing is not
+        something that needs to be noticed inside one second.
+        """
+        now = time.monotonic()
+        cached = getattr(self, "_available_at", 0.0)
+        if now - cached < AVAILABLE_FOR:
+            return self._available
         try:
-            with _client(self.creds) as client:
-                r = client.get(
-                    f"{API}/files/{self.root_id}",
-                    params={"fields": "id,trashed", "supportsAllDrives": "true"},
-                )
-            return r.status_code == 200
+            r = self._http().get(
+                f"{API}/files/{self.root_id}",
+                params={"fields": "id,trashed", "supportsAllDrives": "true"},
+                headers={"Authorization": f"Bearer {self.creds.token()}"},
+            )
+            answer = r.status_code == 200
         except Exception as exc:  # noqa: BLE001 - availability must never raise
             log.debug("drive unavailable: %s", exc)
-            return False
+            answer = False
+
+        self._available = answer
+        self._available_at = now
+        return answer
 
     # ── Listing ─────────────────────────────────────────────────────────────
 
@@ -306,15 +430,27 @@ class GoogleDriveConnector:
         # browser asks for several ranges to play one song — so the handshake was
         # a large share of the wait before any audio arrived.
         client = self._http()
-        with client.stream(
-            "GET",
-            f"{API}/files/{file_id}",
-            params={"alt": "media", "supportsAllDrives": "true"},
-            headers={"Authorization": f"Bearer {self.creds.token()}", **headers},
-        ) as response:
-            if response.status_code not in (200, 206):
-                raise DriveError(f"download failed: {response.status_code}")
-            yield from response.iter_bytes(chunk_size=256 * 1024)
+        began = time.monotonic()
+        try:
+            with client.stream(
+                "GET",
+                f"{API}/files/{file_id}",
+                params={"alt": "media", "supportsAllDrives": "true"},
+                headers={"Authorization": f"Bearer {self.creds.token()}", **headers},
+            ) as response:
+                if response.status_code not in (200, 206):
+                    raise DriveError(f"download failed: {response.status_code}")
+                waited = time.monotonic() - began
+                if waited > 5:
+                    log.warning("drive took %.1fs to begin %s", waited, rel)
+                yield from response.iter_bytes(chunk_size=256 * 1024)
+        except httpx.PoolTimeout as exc:
+            # Every connection to this folder is in use. Refusing is the right
+            # answer and used to be impossible: with no pool timeout the read
+            # simply waited, inside a response whose headers had already gone
+            # out, so the screen showed a film that was never going to start.
+            log.warning("too many reads at once for this folder; refused %s", rel)
+            raise DriveError("too many reads at once from this folder") from exc
 
     @staticmethod
     def is_exportable_only(mime: str | None) -> bool:
