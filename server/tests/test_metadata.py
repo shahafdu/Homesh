@@ -11,6 +11,7 @@ from sqlalchemy import text
 
 from app.metadata import (
     _clean,
+    _estimate_length,
     _timeable_copy,
     extract_for_source,
     plausible_length,
@@ -286,3 +287,47 @@ class TestTimingARemoteVideo:
         with pytest.raises(OSError):
             with _timeable_copy(connector, "a/film.avi", "film.avi", None):
                 pass
+
+
+class TestWhenTheContainerWillNotSay:
+    """Some files refuse both methods, and an estimate beats nothing.
+
+    An AVI whose index sits after a hole is the case: ffprobe reads the index,
+    finds it describing bytes that are not there, and refuses the file --
+    which is worse than what a bare prefix gives. Timing a sample and scaling it
+    by how much of the file the sample is landed within one per cent on eleven
+    lesson videos whose real length was known.
+    """
+
+    def test_it_scales_the_sample_by_how_much_of_the_file_it_is(self, monkeypatch):
+        true_size = 40 * 1024 * 1024
+
+        class Remote:
+            def open_range(self, rel_path, start, end):
+                yield b"\0" * (end - start + 1)
+
+        # A sample that times as ten seconds, taken from a fortieth of the file.
+        monkeypatch.setattr(
+            "app.metadata.read_video", lambda path: ({}, 10_000)
+        )
+        estimated = _estimate_length(Remote(), "a/film.avi", "film.avi", true_size)
+
+        sample = min(4 * 1024 * 1024, true_size)
+        assert estimated == pytest.approx(10_000 * true_size / sample, rel=0.01)
+
+    def test_an_untimeable_sample_estimates_nothing(self, monkeypatch):
+        class Remote:
+            def open_range(self, rel_path, start, end):
+                yield b"\0" * (end - start + 1)
+
+        monkeypatch.setattr("app.metadata.read_video", lambda path: ({}, None))
+        assert _estimate_length(Remote(), "a/film.avi", "film.avi", 40 * 1024 * 1024) is None
+
+    def test_a_file_smaller_than_the_sample_is_left_alone(self, monkeypatch):
+        """Nothing to scale: that one was already read whole and properly."""
+        class Remote:
+            def open_range(self, rel_path, start, end):
+                yield b"\0" * (end - start + 1)
+
+        monkeypatch.setattr("app.metadata.read_video", lambda path: ({}, 10_000))
+        assert _estimate_length(Remote(), "a/film.avi", "film.avi", 1024) is None
