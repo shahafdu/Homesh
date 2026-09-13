@@ -127,8 +127,9 @@ def scan_source(source_id: UUID, connector: LocalConnector) -> ScanResult:
                             """
                             INSERT INTO replicas
                                 (item_id, source_id, dir_path, filename, ext, mtime,
-                                 available, remote_id)
-                            VALUES (:iid, :sid, :dir, :name, :ext, :mtime, TRUE, :remote)
+                                 available, remote_id, content_md5)
+                            VALUES (:iid, :sid, :dir, :name, :ext, :mtime, TRUE, :remote,
+                                    decode(:md5, 'hex'))
                             """
                         ),
                         {
@@ -139,6 +140,7 @@ def scan_source(source_id: UUID, connector: LocalConnector) -> ScanResult:
                             "ext": row["ext"],
                             "mtime": row["mtime"],
                             "remote": row["remote_id"],
+                            "md5": row["content_md5"],
                         },
                     )
                     result.added += 1
@@ -148,12 +150,18 @@ def scan_source(source_id: UUID, connector: LocalConnector) -> ScanResult:
                             """
                             UPDATE replicas
                             SET mtime = :mtime, available = TRUE,
-                                remote_id = coalesce(:remote, remote_id)
+                                remote_id = coalesce(:remote, remote_id),
+                                -- A fingerprint the source now offers, or the
+                                -- one already worked out by reading the file.
+                                -- Never cleared by a source that does not know:
+                                -- local disk never knows, and a rescan must not
+                                -- throw away a hash that cost 53 GB of reading.
+                                content_md5 = coalesce(decode(:md5, 'hex'), content_md5)
                             WHERE id = :rid
                             """
                         ),
                         {"mtime": row["mtime"], "remote": row["remote_id"],
-                         "rid": str(existing[0])},
+                         "md5": row["content_md5"], "rid": str(existing[0])},
                     )
                     # Kind as well as size: the classifier improves over time, and
                     # a file catalogued as "other" under an older version should
@@ -191,6 +199,9 @@ def scan_source(source_id: UUID, connector: LocalConnector) -> ScanResult:
                 # already has it — and it saves translating a path into an id
                 # later, which for Drive means listing every folder on the way.
                 "remote_id": entry.remote_id,
+                # Drive hands this over with the listing; local disk cannot, and
+                # is fingerprinted later and only where it might matter.
+                "content_md5": entry.content_md5,
             }
         )
         if len(batch) >= BATCH:
