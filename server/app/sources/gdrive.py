@@ -334,6 +334,9 @@ class GoogleDriveConnector:
             size=None if is_dir or size is None else int(size),
             mtime=_parse_time(item.get("modifiedTime")),
             remote_id=item["id"],
+            # Free: it arrives with the listing. Absent for folders and for the
+            # Docs/Sheets kinds, which have no bytes to checksum.
+            content_md5=item.get("md5Checksum"),
         )
 
     def _resolve_id(self, path: str) -> str:

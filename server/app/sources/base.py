@@ -71,6 +71,11 @@ class Entry:
     mtime: datetime | None = None
     # Opaque per-source id (Drive file id, inode, …). None where a path is the identity.
     remote_id: str | None = None
+    # MD5 of the contents, where the source already knows it — Drive does, and
+    # says so in the same listing that gives the name. Local disk does not, and
+    # finding out means reading the file, which is a separate and much more
+    # expensive pass. None means "not known here", never "no fingerprint".
+    content_md5: str | None = None
 
 
 @runtime_checkable

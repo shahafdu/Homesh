@@ -32,6 +32,13 @@ FIRST_SWEEP_DELAY = timedelta(minutes=5)
 # as one burst of API calls.
 BETWEEN_SOURCES = timedelta(seconds=30)
 
+# Files fingerprinted per sweep.
+#
+# Each one is read from end to end, so this is a disk-time budget rather than a
+# count: two thousand of the shortlist here is a few gigabytes, which a scheduled
+# sweep can afford and a house watching a film will not notice.
+FINGERPRINTS_PER_SWEEP = 2000
+
 
 def _due(interval: timedelta) -> list[tuple[UUID, str]]:
     """Sources that have not been scanned within the interval.
@@ -104,7 +111,35 @@ async def sweep(interval: timedelta) -> int:
         if index:
             await asyncio.sleep(BETWEEN_SOURCES.total_seconds())
         await _scan_one(source_id, name)
+
+    await _join_duplicates()
     return len(due)
+
+
+async def _join_duplicates() -> None:
+    """Notice that a file scanned from two places is one file.
+
+    After the scans rather than inside one, because it is about what two sources
+    have in common and neither of them can see that alone.
+
+    Bounded on purpose. Fingerprinting reads whole files off the disk, and this
+    shares a machine with whatever is playing in the house -- so it takes a bite
+    each sweep and converges over a few of them rather than reading fifty
+    gigabytes in one go.
+    """
+    from .dedup import fingerprint_local, merge_duplicates
+
+    try:
+        read = await asyncio.to_thread(fingerprint_local, FINGERPRINTS_PER_SWEEP)
+        joined = await asyncio.to_thread(merge_duplicates)
+        if read.fingerprinted or joined.merged:
+            log.info(
+                "fingerprinted %d file(s), merged %d duplicate item(s)",
+                read.fingerprinted,
+                joined.merged,
+            )
+    except Exception:  # noqa: BLE001 - housekeeping must never break the sweep
+        log.exception("could not join duplicates")
 
 
 async def run_forever() -> None:

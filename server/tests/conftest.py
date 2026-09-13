@@ -75,6 +75,12 @@ def db():
         conn.execute(text("DELETE FROM zones"))
         conn.execute(text("DELETE FROM renderers"))
         conn.execute(text("DELETE FROM sources"))
+        # Items survive their sources by design — a file on a drive that is
+        # switched off is still a file — so cascading from `sources` leaves the
+        # catalog behind and the next test inherits it. Harmless until something
+        # unique is written to an item, and then it is a failure in whichever
+        # test happens to run second.
+        conn.execute(text("DELETE FROM items"))
         conn.execute(text("DELETE FROM users"))
 
 
