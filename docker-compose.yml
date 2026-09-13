@@ -36,6 +36,12 @@ services:
       # Thumbnails and previews. Access-controlled by the API, never served
       # as a public static directory (ARCHITECTURE.md §6).
       - media-cache:/var/lib/homesh/cache
+      # Database backups. A named volume rather than the cache, which is
+      # disposable by definition, and rather than a bind mount inside the
+      # repository, which is how a dump of everybody's passkeys ends up in a
+      # commit. Copies belong somewhere this machine is not -- the app can hand
+      # one to you to take away, but it cannot put it there for you.
+      - db-backups:/var/lib/homesh/backups
       # The built TV app, so a set-top box can install it over the LAN rather
       # than needing a cable or a developer machine. Read-only; absent until
       # tools/build-tv-apk.sh has been run, which the route handles.
@@ -71,5 +77,6 @@ services:
       start_period: 20s
 
 volumes:
+  db-backups:
   db-data:
   media-cache:

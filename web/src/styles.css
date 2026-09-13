@@ -817,6 +817,18 @@ button.compact:disabled { opacity: .5; cursor: not-allowed; }
 }
 
 .invite-row.column { display: block; }
+
+/* Two buttons that belong to one row, kept together when the row wraps on a
+   phone -- "Restore" and "Cancel" landing on different lines is how the wrong
+   one gets pressed. */
+.confirm { display: flex; gap: 6px; flex: none; }
+
+/* The one button here that replaces everything. Coloured because it is the
+   only place in the app where a mistake costs the catalog. */
+button.danger {
+  border-color: var(--danger);
+  color: var(--danger);
+}
 .place-head {
   display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;
 }

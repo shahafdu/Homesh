@@ -22,6 +22,7 @@ from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from . import lanaddr
 from .auth import ensure_bootstrap_code
 from .auth import router as auth_router
+from .backups import router as backups_router
 from .config import get_settings
 from .db import check_connection, run_migrations
 from .discovery import serve as serve_discovery
@@ -149,6 +150,7 @@ if not settings.secure_cookies:
 
 
 app.include_router(auth_router)
+app.include_router(backups_router)
 app.include_router(documents_router)
 app.include_router(library_router)
 app.include_router(people_router)

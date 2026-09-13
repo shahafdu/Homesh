@@ -3,6 +3,15 @@ import { useCallback, useEffect, useState } from "react";
 import { addPasskey, listPasskeys, passkeysSupported, removePasskey, type Passkey } from "./auth";
 import { formatDate } from "./library";
 import { PALETTES, type Appearance, type Palette, type Prefs } from "./prefs";
+import {
+  backupUrl,
+  listBackups,
+  removeBackup,
+  restoreBackup,
+  takeBackup,
+  type Backup,
+} from "./backups";
+import { formatSize } from "./library";
 
 const APPEARANCES: { id: Appearance; label: string }[] = [
   { id: "auto", label: "Match system" },
@@ -15,6 +24,9 @@ export default function Settings(props: {
   onChange: (patch: Partial<Prefs>) => void;
   onLinkDevice: () => void;
   onClose: () => void;
+  /** Backups are an administrator's business, and the server refuses anyone
+   *  else — so the section is simply absent rather than present and failing. */
+  isAdmin?: boolean;
 }) {
   useLockScroll();
   const { prefs, onChange, onLinkDevice, onClose } = props;
@@ -84,6 +96,8 @@ export default function Settings(props: {
             Sign in on a phone or tablet that cannot create a passkey.
           </p>
         </div>
+
+        {props.isAdmin && <Backups />}
 
         <button className="compact" style={{ marginTop: 18 }} onClick={onClose}>
           Done
@@ -167,6 +181,138 @@ function Passkeys() {
           opened on the machine it runs on.
         </p>
       )}
+      {note && <p className="muted small">{note}</p>}
+    </div>
+  );
+}
+
+
+/** Copies of the database, and putting one back.
+ *
+ * Not the media: that is your own files on your own disks, and copying
+ * terabytes somewhere else is a different job. This is everything the server
+ * knows *about* them — accounts and their passkeys, who may see what,
+ * playlists, where everybody had got to, and a catalog whose tags took hours of
+ * reading to work out. None of it exists anywhere else.
+ */
+function Backups() {
+  const [backups, setBackups] = useState<Backup[]>([]);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [note, setNote] = useState<string | null>(null);
+  const [confirming, setConfirming] = useState<string | null>(null);
+
+  const refresh = useCallback(() => {
+    listBackups().then(setBackups).catch(() => undefined);
+  }, []);
+
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+
+  const run = async (label: string, work: () => Promise<unknown>) => {
+    setBusy(label);
+    setNote(null);
+    try {
+      await work();
+    } catch (e) {
+      setNote(e instanceof Error ? e.message : String(e));
+    }
+    setBusy(null);
+    setConfirming(null);
+    refresh();
+  };
+
+  return (
+    <div className="group">
+      <label>Backups</label>
+      <p className="muted small">
+        The catalog, accounts, playlists and everything you have marked — not your
+        media files. Taken once a day and kept for a week, plus a fortnight and a
+        month back.
+      </p>
+
+      <button
+        className="compact"
+        disabled={busy !== null}
+        onClick={() =>
+          run("taking", async () => {
+            const made = await takeBackup();
+            setNote(`Backed up — ${made.name}`);
+          })
+        }
+      >
+        {busy === "taking" ? "Backing up…" : "Back up now"}
+      </button>
+
+      {backups.length === 0 && (
+        <p className="muted small">Nothing yet. The first one is taken within the hour.</p>
+      )}
+
+      {backups.map((backup) => (
+        <div key={backup.name} className="invite-row">
+          <div>
+            <b>{formatDate(backup.taken_at)}</b>
+            <div className="muted small">
+              {formatSize(backup.size_bytes)}
+              {" · "}
+              {/* A backup on the same disk as the thing it is backing up is
+                  half a backup. Nothing here can put a copy somewhere else for
+                  you, so at least it is one tap to take one away. */}
+              <a href={backupUrl(backup.name)} download>
+                Download
+              </a>
+            </div>
+          </div>
+          {confirming === backup.name ? (
+            <span className="confirm">
+              <button
+                className="compact danger"
+                disabled={busy !== null}
+                onClick={() =>
+                  run("restoring", async () => {
+                    const done = await restoreBackup(backup.name);
+                    setNote(
+                      `Restored ${done.rows.toLocaleString()} rows. What was here ` +
+                        `first was saved as ${done.previous_state_saved_as}.`,
+                    );
+                  })
+                }
+              >
+                {busy === "restoring" ? "Restoring…" : "Yes, replace everything"}
+              </button>
+              <button className="compact" onClick={() => setConfirming(null)}>
+                Cancel
+              </button>
+            </span>
+          ) : (
+            <span className="confirm">
+              <button
+                className="compact"
+                disabled={busy !== null}
+                onClick={() => setConfirming(backup.name)}
+              >
+                Restore
+              </button>
+              <button
+                className="compact"
+                disabled={busy !== null}
+                onClick={() => run("removing", () => removeBackup(backup.name))}
+              >
+                Delete
+              </button>
+            </span>
+          )}
+        </div>
+      ))}
+
+      {confirming && (
+        <p className="muted small">
+          Restoring replaces the catalog, the accounts and the playlists with
+          whatever was there when that backup was taken. A copy of the current
+          state is saved first, so this can be undone.
+        </p>
+      )}
+
       {note && <p className="muted small">{note}</p>}
     </div>
   );
