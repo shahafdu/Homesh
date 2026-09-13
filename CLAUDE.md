@@ -98,7 +98,7 @@ routinely breaks another, and the tracker is what makes that visible.
 | 8 · Optional transcode | ❌ overtaken | It was never optional for this library — see §3.2.1 of ARCHITECTURE for what actually happened |
 | 9 · Public release | 🔨 | Public since August. Docs current as of 14 September 2026; screenshots outstanding |
 
-**Tests: 481 passing. Migrations: 023. Lint: clean. CI green.**
+**Tests: 508 passing. Migrations: 023. Lint: clean. CI green.**
 
 ### AI design decisions — agreed, not yet built
 
@@ -144,9 +144,9 @@ administrators only.
       at the next sweep rather than when it happens
 - [ ] Go agent + WireGuard (Mode B split; only needed when the core moves off the PC)
 - [ ] Deploy to Oracle Always Free (phase 0.5)
-- [ ] Off-site backups — encrypted, pushed outbound to storage that can never reach
-      back into the house. Local backups exist; a copy on the same disk as the thing
-      it protects is half a backup
+- [x] ~~Off-site backups~~ — encrypted here with a key that stays here, pushed to a
+      Drive folder after each daily one. Waiting on a folder shared as Editor and on
+      `tools/new-backup-key.ps1` being run once
 - [x] ~~Metadata extraction — duration, artist, album~~ — tags at scan time, durations
       98% for video and 94% for audio. A remote video is timed from both ends of the
       file, never from a prefix (`server/app/metadata.py` says why)

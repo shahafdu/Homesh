@@ -44,6 +44,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import FileResponse, Response
 from sqlalchemy import text
 
+from . import crypt
 from .config import get_settings
 from .db import get_engine
 from .security import CurrentUser, require_user
@@ -55,6 +56,9 @@ log = logging.getLogger("homesh.backups")
 FORMAT = 1
 
 MAGIC = "homesh-backup"
+
+# What COPY writes at the end of a table's rows.
+TERMINATOR = chr(92) + '.'
 
 # Tracked by the migration runner and restored by running the migrations, not by
 # copying rows: a backup taken at schema 023 and restored into a server running
@@ -190,7 +194,7 @@ def make_backup() -> Backup:
                             block = bytes(chunk).decode("utf-8")
                             rows += block.count("\n")
                             out.write(block)
-                    out.write("\\.\n")
+                    out.write(TERMINATOR + "\n")
             partial.replace(target)
         except BaseException:
             partial.unlink(missing_ok=True)
@@ -360,7 +364,7 @@ def restore(name: str) -> dict:
                     f'COPY public."{table}" FROM STDIN'  # noqa: S608 - from the header
                 ) as copy:
                     for row in lines:
-                        if row.startswith("\."):
+                        if row.startswith(TERMINATOR):
                             break
                         copy.write(row)
                         counts[table] += 1
@@ -368,6 +372,121 @@ def restore(name: str) -> dict:
     total = sum(counts.values())
     log.warning("restored %s: %d rows across %d tables", name, total, len(counts))
     return {"restored": name, "rows": total, "tables": counts}
+
+
+# ── A copy somewhere this house is not ──────────────────────────────────────
+#
+# A backup on the same disk as the database it was taken from survives a
+# mistake and nothing else. The fire, the theft, the drive failure — the whole
+# category this is supposed to cover — take both copies together.
+#
+# The direction of travel is the security argument, and it is the same one the
+# rest of the system is built on: **the house pushes, and nothing out there
+# pulls.** There is no server of ours online to break into. There is a folder in
+# Drive with files in it, and the files are encrypted here, before they leave,
+# with a key that never goes with them. Whoever holds that folder holds
+# ciphertext and a filename, and no route back to anything.
+#
+# Encryption is not decoration on this one. A Homesh backup is not your media —
+# it is the catalog, and the catalog names the rooms in the house, the screens
+# in them, the folders on the disks and the accounts that reach them. In the
+# clear, off-site, that is a map of somebody's home.
+#
+# What this does **not** defend against, stated rather than implied: the key
+# that writes to that folder lives on the machine being backed up, so whoever
+# takes the machine can also delete what was written from it. Drive's own trash
+# is all that stands behind that. Off-site copies protect against losing the
+# machine; they do not protect against somebody who already has it.
+
+
+def offsite_ready() -> tuple[bool, str]:
+    """Whether a copy can be sent, and why not when it cannot."""
+    settings = get_settings()
+    try:
+        crypt.key_bytes(settings.backup_key)
+    except crypt.KeyError_ as exc:
+        return False, str(exc)
+    if not Path(settings.gdrive_key_file).is_file():
+        return False, "no Drive credential, so there is nowhere to send a copy"
+    return True, ""
+
+
+def _encrypted(path: Path) -> Path:
+    """Encrypt a backup beside itself, ready to be sent."""
+    key = crypt.key_bytes(get_settings().backup_key)
+    sealed = path.with_suffix(path.suffix + ".enc")
+    crypt.encrypt(path, sealed, key)
+    return sealed
+
+
+def send_offsite(name: str) -> dict:
+    """Encrypt one backup and push it to Drive."""
+    from .sources import gdrive
+
+    settings = get_settings()
+    path = resolve(name)
+    key_file = Path(settings.gdrive_key_file)
+
+    folder = gdrive.backup_folder_id(key_file, settings.backup_folder)
+    sealed = _encrypted(path)
+    try:
+        gdrive.upload(key_file, folder, sealed.name, sealed)
+        size = sealed.stat().st_size
+    finally:
+        # The encrypted copy is a courier, not a second backup. Keeping it would
+        # double what the disk holds for no gain: it can be made again from the
+        # plain one in seconds.
+        sealed.unlink(missing_ok=True)
+
+    log.info("sent %s off-site (%.1f MB encrypted)", sealed.name, size / 1e6)
+    return {"sent": sealed.name, "size_bytes": size}
+
+
+def offsite_index() -> list[dict]:
+    """What is being kept off-site."""
+    from .sources import gdrive
+
+    settings = get_settings()
+    key_file = Path(settings.gdrive_key_file)
+    folder = gdrive.backup_folder_id(key_file, settings.backup_folder)
+    return [
+        {
+            "name": f["name"],
+            "id": f["id"],
+            "size_bytes": int(f.get("size") or 0),
+            "taken_at": f.get("modifiedTime"),
+        }
+        for f in gdrive.list_backups(key_file, folder)
+    ]
+
+
+def bring_back(file_id: str, name: str) -> str:
+    """Fetch one from Drive, decrypt it, and put it on the local shelf.
+
+    Deliberately two steps: this brings the file back and stops. Restoring it is
+    the same button as for any other backup, with the same confirmation, because
+    "restore" should mean one thing regardless of where the file came from.
+    """
+    from .sources import gdrive
+
+    settings = get_settings()
+    key = crypt.key_bytes(settings.backup_key)
+    plain_name = name[: -len(".enc")] if name.endswith(".enc") else name
+    if not NAME.match(plain_name):
+        raise ValueError("that is not a Homesh backup")
+
+    with tempfile.NamedTemporaryFile(
+        dir=backup_dir(), prefix=".incoming-", delete=False
+    ) as handle:
+        sealed = Path(handle.name)
+    try:
+        gdrive.fetch(Path(settings.gdrive_key_file), file_id, sealed)
+        crypt.decrypt(sealed, backup_dir() / plain_name, key)
+    finally:
+        sealed.unlink(missing_ok=True)
+
+    log.info("brought %s back from off-site storage", plain_name)
+    return plain_name
 
 
 # ── The interface ───────────────────────────────────────────────────────────
@@ -406,7 +525,7 @@ async def index(user: CurrentUser = Depends(require_user)) -> dict:
 
 @router.post("", status_code=status.HTTP_201_CREATED)
 async def take_one(user: CurrentUser = Depends(require_user)) -> dict:
-    """Back up now.
+    """Back up now, and send a copy away if there is anywhere to send it.
 
     On a thread: it reads every row in the database, and the event loop is what
     is feeding whatever is playing in the house.
@@ -414,7 +533,55 @@ async def take_one(user: CurrentUser = Depends(require_user)) -> dict:
     _require_admin(user)
     made = await asyncio.to_thread(make_backup)
     await asyncio.to_thread(prune)
-    return _as_json(made)
+
+    sent, why = offsite_ready()
+    body = _as_json(made)
+    if not sent:
+        # Not an error. A backup that exists only here is worth having; it is
+        # just worth less, and saying so is better than failing the request.
+        body["offsite"] = None
+        body["offsite_note"] = why
+        return body
+
+    try:
+        await asyncio.to_thread(send_offsite, made.name)
+        body["offsite"] = "sent"
+    except Exception as exc:  # noqa: BLE001 - the local backup succeeded regardless
+        log.warning("could not send %s off-site: %s", made.name, exc)
+        body["offsite"] = None
+        body["offsite_note"] = str(exc)
+    return body
+
+
+@router.get("/offsite")
+async def offsite(user: CurrentUser = Depends(require_user)) -> dict:
+    """What is being kept somewhere this house is not."""
+    _require_admin(user)
+    ready, why = offsite_ready()
+    if not ready:
+        return {"ready": False, "why": why, "backups": []}
+    try:
+        return {"ready": True, "why": "", "backups": await asyncio.to_thread(offsite_index)}
+    except Exception as exc:  # noqa: BLE001 - a folder not shared yet is the common case
+        return {"ready": False, "why": str(exc), "backups": []}
+
+
+@router.post("/offsite/{file_id}")
+async def retrieve(
+    file_id: str, name: str, user: CurrentUser = Depends(require_user)
+) -> dict:
+    """Bring one back down and decrypt it onto the shelf.
+
+    It stops there. Restoring is the same button as for any other backup, with
+    the same confirmation — "restore" should mean one thing regardless of where
+    the file came from.
+    """
+    _require_admin(user)
+    try:
+        landed = await asyncio.to_thread(bring_back, file_id, name)
+    except (ValueError, crypt.KeyError_) as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
+    return {"name": landed}
 
 
 @router.get("/{name}")

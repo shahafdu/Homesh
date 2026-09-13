@@ -33,6 +33,20 @@ class Settings(BaseSettings):
     master_key: str = ""
     secret_key: str = ""
 
+    # The key backups are encrypted with before they leave the house.
+    #
+    # Separate from the two above on purpose, and the reason is the one thing
+    # that makes off-site storage safe: this key must exist somewhere the server
+    # does not. Deriving it from MASTER_KEY would mean losing the machine loses
+    # the backups too, which is the situation they are for. Empty disables
+    # off-site copies entirely rather than sending anything in the clear.
+    backup_key: str = ""
+
+    # The Drive folder encrypted backups are pushed into, by name. It must be
+    # shared with the service account as **Editor** -- a service account owns no
+    # storage of its own, so a viewer cannot be given anywhere to put a file.
+    backup_folder: str = "Homesh Backups"
+
     media_url_ttl_minutes: int = Field(default=5, ge=1, le=60)
 
     # Receivers pull for the length of a whole track or film, so the short browser
