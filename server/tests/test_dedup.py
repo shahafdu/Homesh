@@ -328,3 +328,81 @@ class TestNothingIsLostInTheMerge:
                 {"i": str(survivor)},
             ).scalar_one()
         assert artist == "Pink Floyd"
+
+
+class TestPlayingWhenTheDiskIsUnplugged:
+    """The reason for joining copies in the first place, and it did not work.
+
+    Found with the real external drive detached. Choosing which copy to play
+    asks each source whether it is reachable, and an unplugged drive does not
+    answer that question — `is_dir()` raises `OSError: [Errno 19] No such
+    device`. The exception ended the search before the Drive copy got its turn,
+    so a file that existed in two places became a server error rather than
+    playing from the one that was there.
+    """
+
+    def test_an_unplugged_drive_answers_rather_than_raises(self, tmp_path):
+        gone = tmp_path / "not-here"
+        connector = LocalConnector(gone)
+
+        class Unplugged:
+            def is_dir(self):
+                raise OSError(19, "No such device")
+
+            def resolve(self):
+                return self
+
+        connector.root = Unplugged()
+        assert connector.available is False
+
+    def test_a_folder_that_is_simply_missing_is_also_false(self, tmp_path):
+        assert LocalConnector(tmp_path / "nothing here").available is False
+
+    def test_a_folder_that_is_there_is_true(self, library):
+        assert LocalConnector(library).available is True
+
+    def test_the_other_copy_is_reached_when_the_first_is_unplugged(self, db, scanned):
+        """End to end: an item with two copies, one of them unreachable."""
+        from app.stream import resolve_playable
+
+        _, _, root = scanned
+        _, local_item, size = _local(db, SONG)
+        real = _digest(root, f"Music/Pink Floyd/The Wall/{SONG}")
+        _source, cloud_item = _elsewhere(db, SONG, size, real)
+        fingerprint_local(connectors=lambda _sid: LocalConnector(root))
+        merge_duplicates()
+
+        with db.connect() as conn:
+            survivor = conn.execute(
+                text("SELECT id FROM items WHERE id = ANY(CAST(:ids AS uuid[]))"),
+                {"ids": [str(local_item), str(cloud_item)]},
+            ).scalar_one()
+
+        class Unplugged:
+            available = False
+
+        class Reachable:
+            available = True
+
+            def remember(self, *_args):
+                pass
+
+        seen: list[str] = []
+
+        def connector_for(source_id):
+            # The local one first, as `resolve_playable` orders them.
+            if not seen:
+                seen.append("local")
+                return Unplugged()
+            return Reachable()
+
+        import app.library as library_module
+
+        original = library_module.connector_for
+        library_module.connector_for = connector_for
+        try:
+            connector, _rel, _name, _size, _ext = resolve_playable(survivor)
+        finally:
+            library_module.connector_for = original
+
+        assert isinstance(connector, Reachable), "the reachable copy was never tried"

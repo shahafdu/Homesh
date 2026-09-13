@@ -48,7 +48,23 @@ class LocalConnector:
 
     @property
     def available(self) -> bool:
-        return self.root.is_dir()
+        """Whether the folder is there — answered, never raised.
+
+        A removable drive that has been unplugged does not make `is_dir()`
+        return False. It raises `OSError: [Errno 19] No such device`, and that
+        escapes into whatever asked. Measured, with the external drive detached:
+        choosing which copy of a file to play iterates the sources asking each
+        one this question, so the first one to raise ended the search — which
+        meant an item that *also* exists on Drive became a server error instead
+        of playing from Drive.
+
+        That is the availability model failing in exactly the case it exists
+        for. It answers False now, and the next copy gets its turn.
+        """
+        try:
+            return self.root.is_dir()
+        except OSError:
+            return False
 
     def _entry(self, p: Path) -> Entry:
         st = p.stat()

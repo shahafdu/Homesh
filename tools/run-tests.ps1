@@ -56,12 +56,12 @@ if ($Filter) { $pytestArgs += @('-k', "'$Filter'") }
 #
 # This repository is public and describes a real house, so a private address in
 # a tracked file is refused. Finding that out from a red build twenty minutes
-# after pushing — which is how it was found twice — is the slowest possible way
+# after pushing -- which is how it was found twice -- is the slowest possible way
 # to learn it, and the check costs a grep.
 #
 # git grep exits 1 when it finds nothing, which is the good case here. In
 # PowerShell 5.1 a native non-zero exit sets $? false and, with the stricter
-# preference this script starts under, turns into a terminating error — so the
+# preference this script starts under, turns into a terminating error -- so the
 # preference is relaxed first and the exit code read deliberately.
 $ErrorActionPreference = 'Continue'
 # The hooks live in the repository but a clone does not use them until it is
@@ -92,7 +92,13 @@ Write-Host "Running tests against $testDb..." -ForegroundColor Cyan
 # turns into terminating error records. The exit code is the thing that matters.
 $ErrorActionPreference = 'Continue'
 
-docker compose run --rm `
+# Only the base compose file, deliberately. The override holds the folders
+# granted from this PC, and a granted folder on an external drive that is
+# unplugged makes every new container fail to start -- "mkdir <that folder>: The system
+# cannot find the path specified" -- so the suite became unrunnable
+# because a drive holding no test data was switched off. The tests build their
+# own library in a temporary directory and want none of those mounts.
+docker compose -f "${repo}/docker-compose.yml" run --rm `
     --volume "${repo}/server:/app" `
     --env "DATABASE_URL=postgresql+psycopg://homesh:$pw@db:5432/$testDb" `
     --env "MEDIA_ROOTS=" `
