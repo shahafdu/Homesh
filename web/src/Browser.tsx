@@ -626,13 +626,21 @@ function Folder(props: {
           ) : (
             <>
               <span className="ic dir">▸</span>
-              {/* Inside the name rather than beside it: the details view lays
-                  each row out on a five-column grid, and an extra child there
-                  is not a label in the same cell, it is a sixth cell wrapping
-                  onto a row of its own. */}
+              {/* Inside `.nm-text`, which is where the name itself lives, and
+                  not merely inside `.nm`.
+                  Two layouts have to be satisfied at once. In the details view
+                  the row is a grid, so a label beside the name would be a cell
+                  of its own and wrap onto a second line. And on a phone `.nm`
+                  becomes a flex *column* -- so that a long filename can wrap to
+                  two lines with its tags underneath -- which makes any child of
+                  it a stretched full-width band on a line of its own. Both were
+                  reported, in that order. A span inside the text flows with the
+                  text under either. */}
               <span className="nm">
-                {d.name}
-                {d.where && <span className="src-tag">{d.where}</span>}
+                <span className="nm-text">
+                  {d.name}
+                  {d.where && <span className="src-tag">{d.where}</span>}
+                </span>
               </span>
               {view === "details" && (
                 <>
