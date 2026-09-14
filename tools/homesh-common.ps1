@@ -35,17 +35,83 @@ function Get-HomeshGrants {
     if (-not (Test-Path $file)) { return @() }
 
     $found = @()
-    $pattern = '^\s*-\s*"(?<host>.+):' + [regex]::Escape($script:HomeshMountRoot) + '/(?<name>[^:"]+):ro"\s*$'
+    $pattern = '^(?<off>\s*#\s*OFFLINE\s*)?\s*-\s*"(?<host>.+):' +
+        [regex]::Escape($script:HomeshMountRoot) + '/(?<name>[^:"]+):ro"\s*$'
     foreach ($line in Get-Content $file) {
         if ($line -match $pattern) {
             $found += [pscustomobject]@{
-                Name = $matches['name']
-                Dir  = $matches['host'] -replace '/', '\'
+                Name   = $matches['name']
+                Dir    = $matches['host'] -replace '/', '\'
+                # A grant whose drive is not here today. Still a grant -- the
+                # line stays in the file and comes back by itself -- but not a
+                # mount Docker can make. See Sync-HomeshGrants.
+                Active = -not $matches['off']
             }
         }
     }
     return $found
 }
+
+function Sync-HomeshGrants {
+    <#
+        Leave out the folders whose drive is not here, so the server can start
+        without them.
+
+        The storage in this design is meant to be switched off -- "the catalog
+        is always up; the bytes may not be" is the first principle in the
+        architecture. It was not true. A bind mount names a path, Docker
+        resolves it when it creates the container, and a path on a powered-down
+        RAID does not resolve. So turning the RAID off did not degrade Homesh,
+        it stopped it: the container refuses to start, and with it goes the
+        catalog, the rooms and the music that lives on Drive and needed no disk
+        at all.
+
+        A grant is never forgotten here, only set aside. The line stays in the
+        file behind an OFFLINE marker, so the record of what this PC has given
+        the server is still whole and still readable, and the next start with
+        the drive present puts it back.
+
+        Returns the names it set aside.
+    #>
+    $file = Get-HomeshOverrideFile
+    if (-not (Test-Path $file)) { return @() }
+
+    $pattern = '^(?<off>\s*#\s*OFFLINE\s*)?(?<mount>\s*-\s*"(?<host>.+):' +
+        [regex]::Escape($script:HomeshMountRoot) + '/(?<name>[^:"]+):ro")\s*$'
+
+    $lines = @()
+    $setAside = @()
+    $restored = @()
+    foreach ($line in Get-Content $file) {
+        if ($line -notmatch $pattern) { $lines += $line; continue }
+
+        $dir = $matches['host'] -replace '/', '\'
+        $name = $matches['name']
+        # Trimmed because a line that has been round this loop already carries
+        # the marker and the indentation from last time.
+        $mount = $matches['mount'].Trim()
+
+        if (Test-Path -LiteralPath $dir) {
+            if ($matches['off']) { $restored += $name }
+            $lines += ('      ' + $mount)
+        } else {
+            if (-not $matches['off']) { $setAside += $name }
+            $lines += ('      # OFFLINE ' + $mount)
+        }
+    }
+
+    $utf8 = New-Object System.Text.UTF8Encoding($false)
+    [System.IO.File]::WriteAllLines($file, $lines, $utf8)
+
+    foreach ($name in $restored) {
+        Write-Host "  '$name' is back" -ForegroundColor Green
+    }
+    foreach ($name in $setAside) {
+        Write-Host "  '$name' is on a drive that is not here -- starting without it" -ForegroundColor Yellow
+    }
+    return $setAside
+}
+
 
 function Test-HomeshRemovable($folder) {
     <# Whether this folder sits on a drive Windows treats as removable. #>
@@ -79,8 +145,23 @@ function Add-HomeshRemovableMount($folder) {
 
     $letter = ($folder.Substring(0, 1)).ToUpper()
     # Mirrored at the same path inside the VM, so the bind mount resolves.
-    $inVm = '/mnt/host/' + $letter.ToLower() + ($folder.Substring(2) -replace '\\', '/')
-    $sh = "mkdir -p '$inVm' && (mountpoint -q '$inVm' || mount -t drvfs '$folder' '$inVm')"
+    $root = '/mnt/host/' + $letter.ToLower()
+    $inVm = $root + ($folder.Substring(2) -replace '\\', '/')
+
+    # Clear a mount whose transport has died before making a new one.
+    #
+    # Switching the drive off does not remove its 9p mount inside the virtual
+    # machine, it kills the connection underneath it -- so the path is still
+    # listed in /proc/mounts while every access to it returns ENODEV. Docker
+    # then cannot even create the directory it wants to bind to, and says so
+    # obscurely: "mkdir /run/desktop/mnt/host/e: file exists". Measured, with
+    # the RAID switched off and on again.
+    # Written out twice rather than as a loop, and with no double quotes in
+    # it: PowerShell rewrites quoting when it hands an argument to a native
+    # command, and a shell loop variable does not survive the journey.
+    $clear = "if grep -q ' $inVm ' /proc/mounts && ! ls '$inVm' >/dev/null 2>&1; then umount -l '$inVm'; fi; " +
+        "if grep -q ' $root ' /proc/mounts && ! ls '$root' >/dev/null 2>&1; then umount -l '$root'; fi"
+    $sh = "$clear; mkdir -p '$inVm' && (mountpoint -q '$inVm' || mount -t drvfs '$folder' '$inVm')"
 
     $strict = $ErrorActionPreference
     $ErrorActionPreference = 'Continue'

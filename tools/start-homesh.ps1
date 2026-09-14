@@ -235,6 +235,13 @@ if ($Stop) {
 
 Start-Engine
 
+# Before anything is started, settle which granted folders are actually here.
+# A folder on storage that is switched off cannot be mounted, and Docker's
+# answer to that is to refuse to start the container at all -- which takes the
+# catalog, the rooms and the music on Drive down with it, none of which needed
+# that disk. Setting it aside costs the files on that drive and keeps the rest.
+Sync-HomeshGrants | Out-Null
+
 Write-Host 'Starting Homesh...' -ForegroundColor Cyan
 $args = if ($Rebuild) { @('up', '-d', '--build') } else { @('up', '-d') }
 $code = Invoke-HomeshCompose $args
