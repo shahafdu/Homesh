@@ -50,6 +50,10 @@ export function tagLine(meta: FileMeta | undefined): string | null {
 export interface DirEntry {
   name: string;
   path: string;
+  /** Where this source lives -- "on this PC", "Google Drive". Present only at
+   *  the root, where two sources can share a name and frequently do: the same
+   *  folder kept in both places is called the same thing in both. */
+  where?: string;
 }
 
 export interface Listing {

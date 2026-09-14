@@ -52,6 +52,14 @@ def register_sources() -> None:
 # server being able to see the entire disk for the rest of its life.
 LIBRARY_MOUNTS = Path("/library")
 
+# What to call each kind of source in the interface. Plain words rather than the
+# database's own: "gdrive" is what the column says and not what anybody calls it.
+WHERE = {
+    "local": "on this PC",
+    "gdrive": "Google Drive",
+    "takeout": "Google Takeout",
+}
+
 
 def _register_mounted() -> None:
     """Register each folder mounted under /library."""
@@ -309,7 +317,9 @@ async def browse(
 
     with get_engine().connect() as conn:
         sources = conn.execute(
-            text("SELECT id, name, mount_prefix FROM sources ORDER BY mount_prefix")
+            text(
+                "SELECT id, name, mount_prefix, kind::text FROM sources ORDER BY mount_prefix"
+            )
         ).all()
 
         if path == "/":
@@ -320,7 +330,21 @@ async def browse(
                 # Absent rather than greyed out: there is nothing to be done
                 # about it, so showing it would only invite the question.
                 "dirs": [
-                    {"name": s[1], "path": s[2], "source": str(s[0])}
+                    {
+                        "name": s[1],
+                        "path": s[2],
+                        "source": str(s[0]),
+                        # Where it lives, said at the root and nowhere else.
+                        #
+                        # The same folder is frequently in two places -- the copy
+                        # on the PC and the copy on Drive -- and both are called
+                        # what the folder is called, so the root listed "music"
+                        # twice with nothing to tell them apart. Joining the
+                        # duplicate *files* underneath them did not help with
+                        # that and was never going to: two sources are two
+                        # sources however much they hold in common.
+                        "where": WHERE.get(s[3], s[3]),
+                    }
                     for s in sources
                     if visible(s[2], rules)
                 ],
@@ -336,7 +360,7 @@ async def browse(
             # confirmed to exist.
             raise HTTPException(status.HTTP_404_NOT_FOUND, "no source mounted at that path")
 
-        source_id, _name, prefix = match
+        source_id, _name, prefix, _kind = match
         rel = path[len(prefix) :].strip("/")
 
         # Immediate child directories, derived from stored paths.
