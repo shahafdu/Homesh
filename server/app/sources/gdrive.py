@@ -635,6 +635,24 @@ def upload(key_path: Path, folder_id: str, filename: str, path: Path) -> str:
             )
 
         if start.status_code in (401, 403):
+            if "storage quota" in start.text:
+                # Google's own words: "Service Accounts do not have storage
+                # quota." Sharing a folder with the robot as Editor lets it
+                # write *into* your folder, but the file it creates is owned by
+                # the robot, and a robot with no quota cannot own anything. On a
+                # personal account there is no way round it: shared drives and
+                # domain-wide delegation, the two remedies Google names, are
+                # both Workspace features.
+                #
+                # Reading is unaffected and always was. This is only about
+                # putting something new there.
+                raise DrivePermissionError(
+                    "Google does not allow a service account to create files in "
+                    "Drive: it has no storage quota of its own, and the two ways "
+                    "round that (shared drives, domain-wide delegation) both need "
+                    "Google Workspace. Reading your shared folders is unaffected. "
+                    "Backups need somewhere else to go."
+                )
             raise DrivePermissionError(start.text[:300])
         start.raise_for_status()
         session = start.headers.get("location")
