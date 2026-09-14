@@ -11,3 +11,6 @@ declare module "*?url" {
   const url: string;
   export default url;
 }
+
+/** When this bundle was built, injected at build time. See vite.config.ts. */
+declare const __BUILT__: string;

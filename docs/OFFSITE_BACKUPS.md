@@ -97,6 +97,47 @@ waiting.
 
 ---
 
+## Not being billed
+
+A worry worth taking seriously: this software takes backups by itself, on a
+timer, and will later call AI providers the same way. Software that spends money
+on its own is software that can spend it on its own when it has a bug.
+
+**The hard limit is not upgrading.** A Free Tier account that is never upgraded
+to Pay As You Go cannot be billed, because there is no payment relationship to
+bill against. When the 30-day trial credits expire:
+
+- Always Free resources — including this bucket, up to 20 GB — carry on
+  indefinitely. The account stays active as long as it is used within any 60-day
+  period.
+- Paid resources are reclaimed after a grace period.
+- **New paid resources cannot be created at all** until the account is upgraded.
+
+So the platform refuses the spend rather than charging for it. Do not press
+**Upgrade**, and there is nothing to go wrong.
+
+Two things worth knowing rather than assuming:
+
+- **Budgets in OCI alert; they do not cap.** A budget will email when a
+  threshold is passed and will not stop anything. Set one anyway — it is free
+  and it is a smoke alarm — but do not mistake it for a limit.
+- **During the trial there are $300 of credits**, so a runaway in the first 30
+  days costs credits rather than money. After that, nothing.
+
+## Which encryption to choose on the bucket
+
+**Oracle-managed keys.** The choice matters much less here than it normally
+would, because of what arrives in the bucket: the file is already encrypted
+before it leaves the house, with a key Oracle has never seen. Bucket encryption
+is a second layer underneath that, protecting against Oracle's own disks being
+mishandled — not against Oracle, who cannot read the contents either way.
+
+Customer-managed keys would mean an OCI Vault, which is a **paid** service
+rather than an Always Free one, and would add a way to lose the backups: lose
+the vault key and the bucket is unreadable, on top of the key that already has
+to be kept safe. Two keys to lose instead of one, for a layer that is already
+redundant.
+
 ## What this protects against, and what it does not
 
 **It protects against losing the machine.** Fire, theft, a dead disk, a botched

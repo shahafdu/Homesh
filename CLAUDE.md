@@ -136,6 +136,16 @@ readable in the interface — not something to go hunting for in logs on the PC.
 retained points at two weeks and a month. Restore from within the app,
 administrators only.
 
+**Spending cannot be allowed to run away.** Raised by Shahaf and load-bearing:
+software that calls a paid API on its own, on a schedule, is software that can
+bill on its own when it has a bug. The rule is that the *platform* refuses the
+spend rather than the code promising not to — an Oracle account that is never
+upgraded cannot be charged at all, because there is no payment relationship to
+charge against, and paid resources simply cannot be created. Where a paid
+provider is genuinely wanted, it needs a per-account cap that the code enforces
+before the call, not a budget alert that arrives after it. Alerts report; they
+do not stop.
+
 ### Outstanding tasks
 
 - [ ] Gapless audio playback and ReplayGain (the player is functional, not yet gapless)
