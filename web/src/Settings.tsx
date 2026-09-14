@@ -16,6 +16,18 @@ import {
 } from "./backups";
 import { formatSize } from "./library";
 
+/** "today at 14:03", or the date for anything older. Relative because the only
+ *  question being asked is "is this the build I think it is". */
+function formatBuilt(iso: string): string {
+  const at = new Date(iso);
+  if (isNaN(at.getTime())) return "at an unknown time";
+  const time = at.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+  const days = Math.floor((Date.now() - at.getTime()) / 86400000);
+  if (days < 1 && at.getDate() === new Date().getDate()) return `today at ${time}`;
+  if (days < 2) return `yesterday at ${time}`;
+  return `${at.toLocaleDateString()} at ${time}`;
+}
+
 const APPEARANCES: { id: Appearance; label: string }[] = [
   { id: "auto", label: "Match system" },
   { id: "light", label: "Light" },
@@ -102,7 +114,16 @@ export default function Settings(props: {
 
         {props.isAdmin && <Backups />}
 
-        <button className="compact" style={{ marginTop: 18 }} onClick={onClose}>
+        {/* Which build you are looking at.
+            A phone can sit on a page loaded days ago -- a tab never closed, an
+            app resumed from the background -- and a fix that is live then looks
+            like one that was never made. This turns "is it stale?" into a fact.
+            Pull down to reload if it is older than you expect. */}
+        <p className="muted small" style={{ marginTop: 18 }}>
+          This page was built {formatBuilt(__BUILT__)}.
+        </p>
+
+        <button className="compact" style={{ marginTop: 8 }} onClick={onClose}>
           Done
         </button>
       </div>
