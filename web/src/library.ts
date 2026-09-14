@@ -85,6 +85,10 @@ export interface Source {
   mount_prefix: string;
   last_seen_at: string | null;
   files: number;
+  /** Whether it can be read *right now*. The storage here is meant to be
+   *  switched off, so this is a normal state rather than a fault, and it is
+   *  asked fresh rather than remembered. */
+  online: boolean;
   scan: ScanStatus;
 }
 

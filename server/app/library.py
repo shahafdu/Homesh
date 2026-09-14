@@ -148,8 +148,19 @@ def _register_drive() -> None:
         log.info("Drive key present but no folders are shared with it yet")
         return
 
+    # The folder backups are pushed into is not a library.
+    #
+    # Discovery is deliberately indiscriminate -- share a folder and it appears
+    # -- which is right for media and wrong for the one folder this server puts
+    # things *into*. Left alone it registers as a source, gets scanned, and puts
+    # a row of encrypted backups in somebody's library.
+    reserved = get_settings().backup_folder.strip().casefold()
+
     with get_engine().begin() as conn:
         for folder_id, name in folders:
+            if reserved and name.strip().casefold() == reserved:
+                log.info("skipping %s: it is where backups go, not a library", name)
+                continue
             prefix = f"/drive/{_slug(name)}"
             conn.execute(
                 text(
@@ -219,6 +230,21 @@ def remove_source(source_id: UUID, user: CurrentUser = Depends(require_user)) ->
     log.info("removed source %s", gone)
 
 
+def _reachable(source_id) -> bool:
+    """Whether this source can be read at this moment.
+
+    Cheap for both kinds: a local folder is a stat, and the Drive connector
+    remembers its own answer for a minute. Never raises -- a drive that has been
+    switched off answers ENODEV rather than False, and this is the one place
+    that most wants an answer.
+    """
+    try:
+        connector = connector_for(source_id)
+        return bool(connector and connector.available)
+    except Exception:  # noqa: BLE001
+        return False
+
+
 @router.get("/sources")
 async def list_sources(_: CurrentUser = Depends(require_user)) -> list[dict]:
     with get_engine().connect() as conn:
@@ -248,6 +274,14 @@ async def list_sources(_: CurrentUser = Depends(require_user)) -> list[dict]:
             # Never scanned is a different state from scanned-and-empty, and the
             # two looked identical before — which is how a folder sat at zero
             # files without anybody noticing it had simply never run.
+            #
+            # Asked now rather than remembered. The storage here is meant to be
+            # switched off, and a folder on a drive that is not spinning is a
+            # different thing from a folder that is empty or gone -- the catalog
+            # keeps working either way, and only playing a file that lives only
+            # there is blocked. Saying which is the difference between "it is
+            # broken" and "the RAID is off".
+            "online": _reachable(r[0]),
             "scan": {
                 "state": r[6],
                 "seen": r[7],

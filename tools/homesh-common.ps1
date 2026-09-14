@@ -52,6 +52,30 @@ function Get-HomeshGrants {
     return $found
 }
 
+function Get-HomeshMounted {
+    <#
+        The granted folders the running server can actually read, asked of the
+        server rather than inferred.
+
+        A folder can be listed in the grant file and absent from the container
+        (the container predates the grant), or present in the container and
+        unreadable (the drive died under the mount, which answers ENODEV rather
+        than going away). Neither is visible from the Windows side, so it is
+        asked where it is true.
+    #>
+    $strict = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        # One line per readable directory. `ls` on a dead mount fails, and the
+        # name is then simply absent, which is the answer we want.
+        $out = & docker compose exec -T api sh -c 'for d in /library/*/; do ls "$d" >/dev/null 2>&1 && basename "$d"; done' 2>$null
+    } finally {
+        $ErrorActionPreference = $strict
+    }
+    if (-not $out) { return @() }
+    return @($out | ForEach-Object { "$_".Trim() } | Where-Object { $_ })
+}
+
 function Sync-HomeshGrants {
     <#
         Leave out the folders whose drive is not here, so the server can start
