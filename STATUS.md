@@ -6,7 +6,7 @@ to reconstruct the state of a large, half-finished system from memory.
 **Legend** — ✅ built and verified · 🟡 built, needs Shahaf to confirm ·
 🔴 known broken · ⬜ not started · ⏳ waiting on Shahaf
 
-Last updated: 14 September 2026 · 509 tests · 23 migrations · CI green
+Last updated: 14 September 2026 · 512 tests · 23 migrations · CI green
 (verified with `tools/verify-ci.ps1`, not assumed)
 
 ---
@@ -128,6 +128,7 @@ ew-backup-key.ps1` run once so the key exists and you can put a copy of it somew
 | 🟡 | **Switching the RAID off no longer stops Homesh** | It did, completely. A bind mount names a path and Docker resolves it when it creates the container, so a folder on a powered-down drive means the container refuses to start -- taking the catalog, the rooms, the playlists and the music on Drive with it, none of which needed that disk. A granted folder whose drive is away is now set aside before the stack starts, the grant stays written down behind an `# OFFLINE` marker, and it comes back by itself next time the drive is there. **Start Homesh** names the ones it set aside. Also fixed: switching the drive off leaves its mount inside Docker's virtual machine connected to nothing, which made the *next* start fail with `mkdir /run/desktop/mnt/host/e: file exists` -- that is cleared before remounting now |
 | 🟡 | **The drive going on and off needs nothing from you** | **Sources** says *offline -- the drive it is on is not connected* the moment it is, asked fresh rather than remembered, and browsing and searching carry on. Switch the RAID back on and Homesh picks the folder up within a couple of minutes by itself. A container is handed its folders when it is created and cannot be given one afterwards, so following the storage means rebuilding it -- the only real question was who has to notice, and it is now a scheduled task rather than you |
 | 🟡 | **The backups folder is not part of your library** | Sharing it with the server made it a source: Drive discovery is indiscriminate on purpose, so the folder this server writes *into* registered itself, got scanned, and would have sat in your library as a row of encrypted files. Skipped by name now, whatever its spacing or casing |
+| 🟡 | **Two folders called `music`, told apart** | The root now says where each one lives -- *on this PC* or *Google Drive* -- beside its name. Joining the duplicate files underneath them did not help with this and was never going to: two sources are two sources however much they hold in common, and both are called what the folder is called. Only at the root, where the ambiguity is |
 
 ---
 

@@ -621,12 +621,15 @@ function Folder(props: {
                 <span className="ic dir">▸</span>
               </div>
               <span className="nm">{d.name}</span>
-              <span className="sub">folder</span>
+              <span className="sub">{d.where ?? "folder"}</span>
             </>
           ) : (
             <>
               <span className="ic dir">▸</span>
               <span className="nm">{d.name}</span>
+              {/* Only the root has these, and only the root needs them: the
+                  same folder in two places is called the same thing twice. */}
+              {d.where && <span className="where">{d.where}</span>}
               {view === "details" && (
                 <>
                   <span className="col" />

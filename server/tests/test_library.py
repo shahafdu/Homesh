@@ -347,3 +347,59 @@ class TestTheBackupFolderIsNotALibrary:
                 ).scalars()
             )
         assert names == ["music"]
+
+
+class TestTheRootSaysWhereAFolderLives:
+    """The same folder kept on the PC and on Drive is called the same thing in
+    both, so the root listed it twice with nothing to tell the two apart.
+
+    Joining the duplicate *files* underneath them did not help with that and was
+    never going to: two sources are two sources however much they hold in
+    common.
+    """
+
+    def _twins(self, db) -> str:
+        """One folder name, catalogued from both places."""
+        name = f"twinned-{uuid.uuid4().hex[:6]}"
+        with db.begin() as conn:
+            conn.execute(
+                text(
+                    """
+                    INSERT INTO sources (kind, name, mount_prefix, audience)
+                    VALUES ('local', :n, :p, 'everyone')
+                    """
+                ),
+                {"n": name, "p": f"/local/{name}"},
+            )
+            conn.execute(
+                text(
+                    """
+                    INSERT INTO sources (kind, name, mount_prefix, audience, remote_id)
+                    VALUES ('gdrive', :n, :p, 'everyone', :r)
+                    """
+                ),
+                {"n": name, "p": f"/drive/{name}", "r": uuid.uuid4().hex},
+            )
+        return name
+
+    def test_two_sources_of_the_same_name_are_told_apart(self, client, db):
+        """The actual complaint: two folders called music, indistinguishable."""
+        name = self._twins(db)
+
+        dirs = client.get("/api/browse?path=/").json()["dirs"]
+        both = sorted(d["where"] for d in dirs if d["name"] == name)
+        assert both == ["Google Drive", "on this PC"]
+
+    def test_the_words_are_for_people_rather_than_the_column(self, client, db):
+        """'gdrive' is what the database says and not what anybody calls it."""
+        name = self._twins(db)
+        dirs = client.get("/api/browse?path=/").json()["dirs"]
+        said = {d["where"] for d in dirs if d["name"] == name}
+        assert "gdrive" not in said
+
+    def test_folders_inside_a_source_are_not_labelled(self, client, scanned):
+        """A disambiguator for the root, not a decoration for every row."""
+        _sid, prefix, _root = scanned
+        inside = client.get(f"/api/browse?path={prefix}").json()["dirs"]
+        assert inside, "the fixture library has folders in it"
+        assert all("where" not in d for d in inside)
