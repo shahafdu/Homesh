@@ -341,6 +341,13 @@ TOKEN=$(printf "protocol=https\nhost=github.com\n\n" | git credential fill | gre
 - **Commits**: explain *why*, not what. Record measurements and the reasoning behind
   thresholds.
 - **Comments**: explain decisions and non-obvious constraints; never narrate the code.
+- **Pure ASCII in anything Windows opens as a file**: `.ps1`, `.vbs`, `.cmd` and
+  `.env.example`. PowerShell 5.1 reads a `.ps1` without a byte-order mark as ANSI,
+  so a UTF-8 dash becomes three characters and one of them ends a string early.
+  `.env` has a milder version of the same problem: an editor that saves it back in
+  the local code page turns a line of box-drawing dashes into several hundred
+  characters of nonsense. Nothing breaks, and the file looks corrupt, which is
+  nearly as bad in something somebody has to edit by hand.
 
 ### Design rules the code must not violate
 
