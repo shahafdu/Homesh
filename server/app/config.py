@@ -42,9 +42,28 @@ class Settings(BaseSettings):
     # off-site copies entirely rather than sending anything in the clear.
     backup_key: str = ""
 
-    # The Drive folder encrypted backups are pushed into, by name. It must be
-    # shared with the service account as **Editor** -- a service account owns no
-    # storage of its own, so a viewer cannot be given anywhere to put a file.
+    # Where encrypted backups are sent. Empty means they stay on this disk.
+    #
+    # S3 in the protocol sense rather than the Amazon sense: Oracle Object
+    # Storage, Cloudflare R2, Backblaze and AWS all speak it, so the provider is
+    # a setting. Which matters, because the first choice was Google Drive and it
+    # turned out to be impossible -- a service account owns no storage, so it
+    # cannot create a file even in a folder shared with it as Editor.
+    offsite_provider: str = ""
+    offsite_region: str = ""
+    offsite_bucket: str = ""
+    offsite_access_key: str = ""
+    offsite_secret_key: str = ""
+    # Oracle's endpoint is per-tenancy and the tenancy is named by this. Nobody
+    # else needs it; it is on the bucket's own page in their console.
+    offsite_namespace: str = ""
+
+    # A Drive folder that is shared with the service account and is not a
+    # library. Vestigial in one sense -- backups no longer go to Drive, because
+    # Google will not let a service account create a file -- and still needed in
+    # another: the folder exists, it is still shared, and Drive discovery is
+    # indiscriminate by design, so without this it registers itself as a source
+    # and gets scanned.
     backup_folder: str = "Homesh Backups"
 
     media_url_ttl_minutes: int = Field(default=5, ge=1, le=60)

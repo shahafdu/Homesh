@@ -52,7 +52,5 @@ export const listOffsite = () => api.get<Offsite>("/api/backups/offsite");
 
 /** Bring one back down and decrypt it onto the local shelf. It stops there:
  *  restoring is the same button as for any other backup. */
-export const retrieveOffsite = (id: string, name: string) =>
-  api.post<{ name: string }>(
-    `/api/backups/offsite/${encodeURIComponent(id)}?name=${encodeURIComponent(name)}`,
-  );
+export const retrieveOffsite = (name: string) =>
+  api.post<{ name: string }>(`/api/backups/offsite/${encodeURIComponent(name)}`);

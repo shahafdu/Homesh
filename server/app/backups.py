@@ -44,7 +44,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import FileResponse, Response
 from sqlalchemy import text
 
-from . import crypt
+from . import crypt, offsite
 from .config import get_settings
 from .db import get_engine
 from .security import CurrentUser, require_user
@@ -406,9 +406,23 @@ def offsite_ready() -> tuple[bool, str]:
         crypt.key_bytes(settings.backup_key)
     except crypt.KeyError_ as exc:
         return False, str(exc)
-    if not Path(settings.gdrive_key_file).is_file():
-        return False, "no Drive credential, so there is nowhere to send a copy"
+    try:
+        store = offsite.configured(settings)
+    except offsite.OffsiteError as exc:
+        return False, str(exc)
+    if store is None:
+        return False, (
+            "no off-site store is configured, so backups stay on this disk. "
+            "See docs/OFFSITE_BACKUPS.md."
+        )
     return True, ""
+
+
+def _store():
+    store = offsite.configured(get_settings())
+    if store is None:
+        raise offsite.OffsiteError("no off-site store is configured")
+    return store
 
 
 def _encrypted(path: Path) -> Path:
@@ -420,57 +434,43 @@ def _encrypted(path: Path) -> Path:
 
 
 def send_offsite(name: str) -> dict:
-    """Encrypt one backup and push it to Drive."""
-    from .sources import gdrive
-
-    settings = get_settings()
-    path = resolve(name)
-    key_file = Path(settings.gdrive_key_file)
-
-    folder = gdrive.backup_folder_id(key_file, settings.backup_folder)
-    sealed = _encrypted(path)
+    """Encrypt one backup and push it to the store."""
+    store = _store()
+    sealed = _encrypted(resolve(name))
     try:
-        gdrive.upload(key_file, folder, sealed.name, sealed)
-        size = sealed.stat().st_size
+        size = offsite.put(store, sealed.name, sealed)
     finally:
         # The encrypted copy is a courier, not a second backup. Keeping it would
         # double what the disk holds for no gain: it can be made again from the
         # plain one in seconds.
         sealed.unlink(missing_ok=True)
 
-    log.info("sent %s off-site (%.1f MB encrypted)", sealed.name, size / 1e6)
     return {"sent": sealed.name, "size_bytes": size}
 
 
 def offsite_index() -> list[dict]:
     """What is being kept off-site."""
-    from .sources import gdrive
-
-    settings = get_settings()
-    key_file = Path(settings.gdrive_key_file)
-    folder = gdrive.backup_folder_id(key_file, settings.backup_folder)
     return [
         {
-            "name": f["name"],
-            "id": f["id"],
-            "size_bytes": int(f.get("size") or 0),
-            "taken_at": f.get("modifiedTime"),
+            # The name is the identity here. Drive had opaque ids and this does
+            # not, which removes a whole parameter from the interface.
+            "name": item.name,
+            "id": item.name,
+            "size_bytes": item.size_bytes,
+            "taken_at": item.written_at,
         }
-        for f in gdrive.list_backups(key_file, folder)
+        for item in offsite.index(_store())
     ]
 
 
-def bring_back(file_id: str, name: str) -> str:
-    """Fetch one from Drive, decrypt it, and put it on the local shelf.
+def bring_back(name: str) -> str:
+    """Fetch one from the store, decrypt it, and put it on the local shelf.
 
     Deliberately two steps: this brings the file back and stops. Restoring it is
     the same button as for any other backup, with the same confirmation, because
     "restore" should mean one thing regardless of where the file came from.
     """
-    from .sources import gdrive
-
-    settings = get_settings()
-    key = crypt.key_bytes(settings.backup_key)
+    key = crypt.key_bytes(get_settings().backup_key)
     plain_name = name[: -len(".enc")] if name.endswith(".enc") else name
     if not NAME.match(plain_name):
         raise ValueError("that is not a Homesh backup")
@@ -480,7 +480,7 @@ def bring_back(file_id: str, name: str) -> str:
     ) as handle:
         sealed = Path(handle.name)
     try:
-        gdrive.fetch(Path(settings.gdrive_key_file), file_id, sealed)
+        offsite.get(_store(), name, sealed)
         crypt.decrypt(sealed, backup_dir() / plain_name, key)
     finally:
         sealed.unlink(missing_ok=True)
@@ -554,7 +554,7 @@ async def take_one(user: CurrentUser = Depends(require_user)) -> dict:
 
 
 @router.get("/offsite")
-async def offsite(user: CurrentUser = Depends(require_user)) -> dict:
+async def offsite_listing(user: CurrentUser = Depends(require_user)) -> dict:
     """What is being kept somewhere this house is not."""
     _require_admin(user)
     ready, why = offsite_ready()
@@ -562,14 +562,12 @@ async def offsite(user: CurrentUser = Depends(require_user)) -> dict:
         return {"ready": False, "why": why, "backups": []}
     try:
         return {"ready": True, "why": "", "backups": await asyncio.to_thread(offsite_index)}
-    except Exception as exc:  # noqa: BLE001 - a folder not shared yet is the common case
+    except Exception as exc:  # noqa: BLE001 - a store not set up yet is the common case
         return {"ready": False, "why": str(exc), "backups": []}
 
 
-@router.post("/offsite/{file_id}")
-async def retrieve(
-    file_id: str, name: str, user: CurrentUser = Depends(require_user)
-) -> dict:
+@router.post("/offsite/{name}")
+async def retrieve(name: str, user: CurrentUser = Depends(require_user)) -> dict:
     """Bring one back down and decrypt it onto the shelf.
 
     It stops there. Restoring is the same button as for any other backup, with
@@ -578,8 +576,8 @@ async def retrieve(
     """
     _require_admin(user)
     try:
-        landed = await asyncio.to_thread(bring_back, file_id, name)
-    except (ValueError, crypt.KeyError_) as exc:
+        landed = await asyncio.to_thread(bring_back, name)
+    except (ValueError, crypt.KeyError_, offsite.OffsiteError) as exc:
         raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
     return {"name": landed}
 
