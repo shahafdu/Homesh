@@ -244,7 +244,7 @@ function OffsiteCopies(props: {
             className="compact"
             disabled={props.busy}
             onClick={() =>
-              props.onChange("fetching", () => retrieveOffsite(backup.id, backup.name))
+              props.onChange("fetching", () => retrieveOffsite(backup.name))
             }
           >
             Bring back

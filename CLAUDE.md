@@ -98,7 +98,7 @@ routinely breaks another, and the tracker is what makes that visible.
 | 8 · Optional transcode | ❌ overtaken | It was never optional for this library — see §3.2.1 of ARCHITECTURE for what actually happened |
 | 9 · Public release | 🔨 | Public since August. Docs current as of 14 September 2026; screenshots outstanding |
 
-**Tests: 512 passing. Migrations: 023. Lint: clean. CI green.**
+**Tests: 528 passing. Migrations: 023. Lint: clean. CI green.**
 
 ### AI design decisions — agreed, not yet built
 
@@ -154,12 +154,10 @@ do not stop.
       at the next sweep rather than when it happens
 - [ ] Go agent + WireGuard (Mode B split; only needed when the core moves off the PC)
 - [ ] Deploy to Oracle Always Free (phase 0.5)
-- [ ] Off-site backups — the encryption, scheduling and restore are done and
-      destination-agnostic; **Drive cannot be the destination** (a service account has
-      no storage quota, so it cannot create a file even in a folder shared as Editor).
-      Settled on Oracle Object Storage, S3-compatible, because the same account also
-      hosts phase 0.5 later. `docs/OFFSITE_BACKUPS.md` is the setup; the S3 client is
-      the remaining code
+- [x] ~~Off-site backups~~ — Oracle Object Storage, S3-compatible, verified end to
+      end on the real bucket. Drive could never have been the destination: a service
+      account has no storage quota, so it cannot create a file even in a folder shared
+      as Editor. `docs/OFFSITE_BACKUPS.md` is the setup
 - [x] ~~Metadata extraction — duration, artist, album~~ — tags at scan time, durations
       98% for video and 94% for audio. A remote video is timed from both ends of the
       file, never from a prefix (`server/app/metadata.py` says why)
@@ -255,7 +253,8 @@ Full reasoning in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md). The load-beari
 server/app/       config, db, main, auth, security, people, access, prefs, library,
                   scanner, metadata, dedup, signing, stream, transcode, documents,
                   thumbs, sharing, playlists, zones, denon, renderers, discovery,
-                  occupancy, lanaddr, upkeep, backups, sources/{base,local,gdrive}
+                  occupancy, lanaddr, upkeep, backups, crypt, offsite,
+                  sources/{base,local,gdrive}
 server/migrations 023 of them, plain SQL, tracked in `schema_migrations` and applied at
                   startup. `ls server/migrations` is the list; the recent ones are
                   021 (video lengths), 022 (shuffle history), 023 (replica fingerprints)
