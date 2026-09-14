@@ -53,8 +53,13 @@ COPY server/migrations ./migrations
 COPY --from=web /web/dist ./static
 
 # Never run as root.
+# Both directories exist in the image, and that is load-bearing rather than
+# tidy: Docker initialises an empty named volume from whatever is at the mount
+# point, ownership included. Without the backups directory here, the volume is
+# created owned by root and the server -- which does not run as root -- cannot
+# write a backup into it. Found by taking one.
 RUN useradd --create-home --uid 10001 homesh \
- && mkdir -p /var/lib/homesh/cache \
+ && mkdir -p /var/lib/homesh/cache /var/lib/homesh/backups \
  && chown -R homesh:homesh /app /var/lib/homesh
 USER homesh
 
