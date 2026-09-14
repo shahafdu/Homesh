@@ -278,6 +278,32 @@ transcode is not, and the difference decides what hardware this needs. Everythin
 delegating heavy work to the machine with the files still holds — and it is that machine which
 does the encoding here, because in Mode A it is the same machine.
 
+### 3.2.2 The storage being off must not take the server with it
+
+The first principle in this document is that the catalog is always up and the
+bytes may not be. It was not true, and the way it failed is worth recording
+because nothing in the code was wrong.
+
+A Docker bind mount names a host path, and Docker resolves it when it *creates*
+the container. The RAID here is an external enclosure: switching it off removes
+the drive letter entirely, so the path stops resolving, so the container refuses
+to start — and down with it go the catalog, the rooms, the playlists and the
+music that lives on Drive and needed no disk at all. Turning off the storage did
+not degrade Homesh. It stopped it.
+
+Two things were also raising where they should have answered. A folder on a
+drive that has gone away does not report itself missing: `is_dir()` raises
+`OSError: [Errno 19] No such device`. That escaped out of the check that picks a
+reachable copy of a file, ending the search before the Drive copy was tried — so
+a file that existed in both places failed rather than playing from the cloud,
+which is precisely the case §4 exists for.
+
+The mount is now settled before the stack starts: a granted folder whose drive
+is absent is set aside, with the grant left written down and restored
+automatically when the drive returns. Availability is a property of the
+deployment as much as of the code, and this is the part of it that lives in the
+start script.
+
 ### 3.3 Availability matrix
 
 | | PC + RAID up | PC down |

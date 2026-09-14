@@ -337,6 +337,21 @@ See §1 — this is nearly always WSL rather than the BIOS.
 Press **Rescan**. Check the folder is actually mounted:
 `docker compose exec api ls /media/library`
 
+**You switched the RAID off and a folder has gone quiet**
+That is expected and Homesh keeps running: the catalog, the rooms, the
+playlists and anything on Drive need no disk. The granted folders on that drive
+are set aside while it is away — `Start Homesh` says which, by name — and put
+back automatically the next time it starts with the drive present.
+
+The grant itself is never lost. It stays written down, marked `# OFFLINE`, in
+the file that records what this PC has given the server.
+
+**Homesh will not start at all after the RAID was off**
+Fixed, but worth recognising if you see it on an older build: switching the
+drive off leaves its mount inside Docker's virtual machine connected to
+nothing, and Docker then fails with `mkdir /run/desktop/mnt/host/e: file
+exists`. `Start Homesh` clears that before mounting now.
+
 ---
 
 ## 11. Playing things

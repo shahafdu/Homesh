@@ -60,7 +60,16 @@ def _register_mounted() -> None:
 
     with get_engine().begin() as conn:
         for folder in sorted(LIBRARY_MOUNTS.iterdir()):
-            if not folder.is_dir() or folder.name.startswith("."):
+            try:
+                usable = folder.is_dir()
+            except OSError:
+                # A mount whose drive went away answers ENODEV rather than
+                # False, and the exception would take the whole registration
+                # down -- including the Drive folders, which need no disk at
+                # all. Same trap as `LocalConnector.available`; it was worth
+                # finding once.
+                usable = False
+            if not usable or folder.name.startswith("."):
                 continue
             prefix = f"/local/{folder.name.lower()}"
             conn.execute(
