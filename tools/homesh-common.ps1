@@ -55,21 +55,28 @@ function Get-HomeshGrants {
 function Get-HomeshMounted {
     <#
         The granted folders the running server can actually read, asked of the
-        server rather than inferred.
+        server rather than inferred. $null when the question could not be put --
+        which is not the same answer as "none", and treating it as one was a
+        bug with teeth.
 
-        A folder can be listed in the grant file and absent from the container
-        (the container predates the grant), or present in the container and
-        unreadable (the drive died under the mount, which answers ENODEV rather
-        than going away). Neither is visible from the Windows side, so it is
-        asked where it is true.
+        Run from the repository, because `docker compose` with no compose file
+        in the working directory does not fail quietly: it says "no
+        configuration file provided: not found" and exits non-zero. From a
+        scheduled task, whose working directory is wherever Windows felt like,
+        that meant every granted folder looked unreadable, which looked like the
+        storage had changed, which recreated the container -- every two minutes,
+        for ever.
     #>
     $strict = $ErrorActionPreference
     $ErrorActionPreference = 'Continue'
+    Push-Location (Get-HomeshRepo)
     try {
         # One line per readable directory. `ls` on a dead mount fails, and the
         # name is then simply absent, which is the answer we want.
         $out = & docker compose exec -T api sh -c 'for d in /library/*/; do ls "$d" >/dev/null 2>&1 && basename "$d"; done' 2>$null
+        if ($LASTEXITCODE -ne 0) { return $null }
     } finally {
+        Pop-Location
         $ErrorActionPreference = $strict
     }
     if (-not $out) { return @() }

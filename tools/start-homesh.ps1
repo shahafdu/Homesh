@@ -230,21 +230,30 @@ function Install-Watcher {
     $existing = Get-ScheduledTask -TaskName $name -ErrorAction SilentlyContinue
     if ($existing) { return }
 
-    $script = Join-Path $PSScriptRoot 'start-homesh.ps1'
-    $action = New-ScheduledTaskAction -Execute 'powershell.exe' `
-        -Argument ('-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "{0}" -Sync' -f $script)
+    # Through a four-line script rather than straight to powershell.exe, and the
+    # reason is the only thing anybody notices about this feature: a task that
+    # launches powershell pops a console over whatever you are doing, every few
+    # minutes, for ever. -WindowStyle Hidden does not prevent that -- the
+    # console is created and then hidden, which is a flash rather than nothing.
+    # Running under an S4U principal does prevent it and needs administrator
+    # rights to register, which an ordinary start does not have.
+    $shim = Join-Path $PSScriptRoot 'follow-storage.vbs'
+    $action = New-ScheduledTaskAction -Execute 'wscript.exe' `
+        -Argument ('"{0}"' -f $shim) `
+        -WorkingDirectory (Get-HomeshRepo)
 
     # Every two minutes, for ever. The check costs a file test per granted
     # folder when nothing has changed, which is nothing at all.
     $trigger = New-ScheduledTaskTrigger -Once -At (Get-Date) `
-        -RepetitionInterval (New-TimeSpan -Minutes 2)
+        -RepetitionInterval (New-TimeSpan -Minutes 5)
     $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries `
-        -DontStopIfGoingOnBatteries -StartWhenAvailable `
+        -DontStopIfGoingOnBatteries -StartWhenAvailable -Hidden `
         -ExecutionTimeLimit (New-TimeSpan -Minutes 10)
 
     try {
         Register-ScheduledTask -TaskName $name -Action $action -Trigger $trigger `
-            -Settings $settings -Description ('Notices when the drive holding a granted folder ' +
+            -Settings $settings `
+            -Description ('Notices when the drive holding a granted folder ' +
             'is switched on or off, and points Homesh at it. Installed by Start Homesh.') | Out-Null
         Write-Host '  installed the watcher that follows your storage' -ForegroundColor DarkGray
     } catch {
@@ -282,11 +291,18 @@ if ($Sync) {
     # file is edited, a container outlives a change, a drive dies under a mount
     # that is still listed -- and the file being wrong is exactly the case where
     # doing nothing is the wrong answer. Both sides are asked directly.
-    $readable = @(Get-HomeshMounted)
+    $readable = Get-HomeshMounted
+    if ($null -eq $readable) {
+        # The server could not be asked. Not knowing is not the same as knowing
+        # that nothing is mounted, and acting on the confusion recreated the
+        # container every two minutes for as long as the mistake lasted.
+        return
+    }
+
     $changed = $false
     foreach ($g in $grants) {
         $here = Test-Path -LiteralPath $g.Dir
-        $mounted = $readable -contains $g.Name
+        $mounted = @($readable) -contains $g.Name
         if ($here -ne $mounted) { $changed = $true }
     }
     if (-not $changed) { return }

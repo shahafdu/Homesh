@@ -759,6 +759,11 @@ button.compact:disabled { opacity: .5; cursor: not-allowed; }
   display: inline-block; margin-left: 8px; vertical-align: baseline;
   font-family: var(--sans); font-size: 11px; font-weight: 400; color: var(--muted);
   border: 1px solid var(--line); border-radius: 999px; padding: 0 7px;
+  /* Never wider than its own text, wherever it ends up. A flex or grid parent
+     stretches a child to fill the space by default, and both kinds of parent
+     exist on the way to this element depending on the view and the width --
+     which is what put a full-width band under every folder on a phone. */
+  align-self: flex-start; flex: none; width: fit-content;
 }
 
 /* The per-row send button stays quiet until the row is hovered or focused,
