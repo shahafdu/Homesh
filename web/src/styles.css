@@ -749,9 +749,16 @@ button.compact:disabled { opacity: .5; cursor: not-allowed; }
 /* Where a source lives, beside its name at the root. Quiet, because it is a
    disambiguator rather than information: it only earns its place when the same
    folder is kept in two places, which here it usually is. */
-.where {
-  flex: none; font-size: 11.5px; color: var(--muted);
-  border: 1px solid var(--line); border-radius: 999px; padding: 1px 8px;
+/* Where a source lives, beside its name at the root.
+ *
+ * Named `src-tag` rather than the obvious `where`, because `.where` was already
+ * taken: in the details view it is the folder path under a search hit, and it
+ * is `display: block`. Reusing the name put the label on a line of its own and
+ * gave every folder at the root two rows instead of one. */
+.src-tag {
+  display: inline-block; margin-left: 8px; vertical-align: baseline;
+  font-family: var(--sans); font-size: 11px; font-weight: 400; color: var(--muted);
+  border: 1px solid var(--line); border-radius: 999px; padding: 0 7px;
 }
 
 /* The per-row send button stays quiet until the row is hovered or focused,

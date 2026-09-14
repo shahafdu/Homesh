@@ -626,10 +626,14 @@ function Folder(props: {
           ) : (
             <>
               <span className="ic dir">▸</span>
-              <span className="nm">{d.name}</span>
-              {/* Only the root has these, and only the root needs them: the
-                  same folder in two places is called the same thing twice. */}
-              {d.where && <span className="where">{d.where}</span>}
+              {/* Inside the name rather than beside it: the details view lays
+                  each row out on a five-column grid, and an extra child there
+                  is not a label in the same cell, it is a sixth cell wrapping
+                  onto a row of its own. */}
+              <span className="nm">
+                {d.name}
+                {d.where && <span className="src-tag">{d.where}</span>}
+              </span>
               {view === "details" && (
                 <>
                   <span className="col" />
