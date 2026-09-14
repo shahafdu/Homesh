@@ -307,3 +307,43 @@ class TestRemovingASource:
             assert client.delete(f"/api/sources/{sid}").status_code == 403
         finally:
             app.dependency_overrides.pop(require_user, None)
+
+
+class TestTheBackupFolderIsNotALibrary:
+    """Drive discovery is deliberately indiscriminate -- share a folder and it
+    appears. That is right for media and wrong for the one folder this server
+    writes *into*: left alone it registers as a source, gets scanned, and puts a
+    row of encrypted backups in somebody's library. Which it did."""
+
+    def test_the_folder_backups_go_to_is_skipped(self, db, monkeypatch, tmp_path):
+        from app.config import get_settings
+        from app.library import _register_drive
+
+        key = tmp_path / "gdrive.json"
+        key.write_text("{}")
+        monkeypatch.setenv("GDRIVE_KEY_FILE", str(key))
+        monkeypatch.setenv("BACKUP_FOLDER", "Homesh Backups")
+        get_settings.cache_clear()
+
+        monkeypatch.setattr(
+            "app.sources.gdrive.shared_folders",
+            lambda _key: [
+                ("id-music", "music"),
+                ("id-backups", "Homesh Backups"),
+                # Casing and stray spaces are how somebody actually names a
+                # folder, and neither should smuggle it back in.
+                ("id-backups-2", "  homesh backups  "),
+            ],
+        )
+        try:
+            _register_drive()
+        finally:
+            get_settings.cache_clear()
+
+        with db.connect() as conn:
+            names = sorted(
+                conn.execute(
+                    text("SELECT name FROM sources WHERE kind = 'gdrive'")
+                ).scalars()
+            )
+        assert names == ["music"]

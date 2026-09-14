@@ -339,12 +339,21 @@ Press **Rescan**. Check the folder is actually mounted:
 
 **You switched the RAID off and a folder has gone quiet**
 That is expected and Homesh keeps running: the catalog, the rooms, the
-playlists and anything on Drive need no disk. The granted folders on that drive
-are set aside while it is away — `Start Homesh` says which, by name — and put
-back automatically the next time it starts with the drive present.
+playlists and anything on Drive need no disk. **Sources** shows the folder as
+*offline — the drive it is on is not connected*, which is a different sentence
+from a scan failing, and browsing and searching it carry on working. Only
+playing a file that lives nowhere else is blocked.
 
-The grant itself is never lost. It stays written down, marked `# OFFLINE`, in
-the file that records what this PC has given the server.
+**There is nothing to do when you switch it back on.** Homesh notices within a
+couple of minutes and picks the folder up again by itself, and notices it going
+away the same way. That is a scheduled task — *Homesh - follow the storage* —
+installed the first time you start Homesh, and it exists because a container is
+handed its folders when it is created and cannot be given one afterwards. So
+following the storage means rebuilding the container, and the only real question
+was who has to notice. Not you.
+
+The grant itself is never lost either way. It stays written down, marked
+`# OFFLINE`, in the file that records what this PC has given the server.
 
 **Homesh will not start at all after the RAID was off**
 Fixed, but worth recognising if you see it on an older build: switching the

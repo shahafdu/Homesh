@@ -31,6 +31,13 @@
 .PARAMETER Status
     Say what is running and where, and stop.
 
+.PARAMETER Sync
+    Follow the storage. Compares the granted folders against what is actually
+    attached and, only if that has changed, re-attaches the drive and recreates
+    the server so it can see it. Silent and quick when nothing has changed,
+    which is almost always -- it is meant to be run on a timer, and the
+    scheduled task that does so is installed on the first ordinary start.
+
 .EXAMPLE
     .\tools\start-homesh.ps1
     Start it.
@@ -43,7 +50,8 @@
 param(
     [switch] $Rebuild,
     [switch] $Stop,
-    [switch] $Status
+    [switch] $Status,
+    [switch] $Sync
 )
 
 $ErrorActionPreference = 'Stop'
@@ -204,6 +212,100 @@ function Show-Where {
     }
 }
 
+function Install-Watcher {
+    <#
+        Register the scheduled task that follows the storage.
+
+        Windows rather than the server, and the reason is not preference: a
+        container cannot recreate itself without the Docker socket, and mounting
+        that socket into a server that faces the house would hand anything that
+        got into it root on this machine. The watcher belongs outside.
+
+        Registered on an ordinary start so nobody has to know it exists, and
+        idempotent so starting Homesh twice does not make two of them. It runs
+        as the logged-in user, because Docker Desktop is a per-user install and
+        a task running as SYSTEM cannot see it.
+    #>
+    $name = 'Homesh - follow the storage'
+    $existing = Get-ScheduledTask -TaskName $name -ErrorAction SilentlyContinue
+    if ($existing) { return }
+
+    $script = Join-Path $PSScriptRoot 'start-homesh.ps1'
+    $action = New-ScheduledTaskAction -Execute 'powershell.exe' `
+        -Argument ('-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "{0}" -Sync' -f $script)
+
+    # Every two minutes, for ever. The check costs a file test per granted
+    # folder when nothing has changed, which is nothing at all.
+    $trigger = New-ScheduledTaskTrigger -Once -At (Get-Date) `
+        -RepetitionInterval (New-TimeSpan -Minutes 2)
+    $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries `
+        -DontStopIfGoingOnBatteries -StartWhenAvailable `
+        -ExecutionTimeLimit (New-TimeSpan -Minutes 10)
+
+    try {
+        Register-ScheduledTask -TaskName $name -Action $action -Trigger $trigger `
+            -Settings $settings -Description ('Notices when the drive holding a granted folder ' +
+            'is switched on or off, and points Homesh at it. Installed by Start Homesh.') | Out-Null
+        Write-Host '  installed the watcher that follows your storage' -ForegroundColor DarkGray
+    } catch {
+        # Not fatal. Everything works; it just needs a restart when the drive
+        # comes back, which is how it worked before this existed.
+        Write-Host "  could not install the storage watcher: $($_.Exception.Message)" -ForegroundColor Yellow
+    }
+}
+
+# ---- follow the storage ---------------------------------------------------
+
+if ($Sync) {
+    <#
+        Run on a timer. Does nothing at all unless the set of reachable granted
+        folders has changed since the server was started.
+
+        This exists because a Docker bind mount is resolved when the container
+        is created, and never again. There is no way to hand a running container
+        a folder that has just appeared, and no way for it to let go of one that
+        has gone -- so following the storage means recreating the container, and
+        the only question is who notices that it needs doing. Doing it here, on
+        a timer, is the difference between "turn the RAID on and wait a moment"
+        and "turn the RAID on, then go and restart the server".
+
+        Quiet on purpose: it runs every couple of minutes for ever, and a line
+        of output each time would bury the one that matters.
+    #>
+    if (-not (Test-Engine)) { return }
+
+    $grants = @(Get-HomeshGrants)
+    if ($grants.Count -eq 0) { return }
+
+    # Compared against what the *container* actually has, rather than against
+    # what the grant file says it should have. Those two can disagree -- the
+    # file is edited, a container outlives a change, a drive dies under a mount
+    # that is still listed -- and the file being wrong is exactly the case where
+    # doing nothing is the wrong answer. Both sides are asked directly.
+    $readable = @(Get-HomeshMounted)
+    $changed = $false
+    foreach ($g in $grants) {
+        $here = Test-Path -LiteralPath $g.Dir
+        $mounted = $readable -contains $g.Name
+        if ($here -ne $mounted) { $changed = $true }
+    }
+    if (-not $changed) { return }
+
+    Write-Host 'The storage changed. Following it...' -ForegroundColor Cyan
+    foreach ($g in $grants) {
+        if (Test-Path -LiteralPath $g.Dir) { Add-HomeshRemovableMount $g.Dir | Out-Null }
+    }
+    Sync-HomeshGrants | Out-Null
+
+    # Forced, because a bind mount is read when the container is created: a
+    # container that is already running cannot be shown a folder.
+    Invoke-HomeshCompose @('up', '-d', '--force-recreate', 'api') -Quiet | Out-Null
+    if (Wait-Healthy) {
+        Write-Host 'The server is following the storage again.' -ForegroundColor Green
+    }
+    return
+}
+
 # ---- status ---------------------------------------------------------------
 
 if ($Status) {
@@ -241,6 +343,7 @@ Start-Engine
 # catalog, the rooms and the music on Drive down with it, none of which needed
 # that disk. Setting it aside costs the files on that drive and keeps the rest.
 Sync-HomeshGrants | Out-Null
+Install-Watcher
 
 Write-Host 'Starting Homesh...' -ForegroundColor Cyan
 $args = if ($Rebuild) { @('up', '-d', '--build') } else { @('up', '-d') }

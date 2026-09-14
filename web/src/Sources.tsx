@@ -246,6 +246,13 @@ function describeScan(s: Source): string {
   const scan = s.scan;
   const files = `${s.files.toLocaleString()} files`;
 
+  // Said first, because it changes what everything else means. A folder on a
+  // drive that is switched off still browses and still searches -- only playing
+  // a file that lives nowhere else is blocked -- and that is a different
+  // sentence from "scan failed".
+  if (!s.online) {
+    return `${files} · offline — the drive it is on is not connected`;
+  }
   if (scan?.state === "running") {
     return scan.seen > 0
       ? `Scanning — ${scan.seen.toLocaleString()} found so far`

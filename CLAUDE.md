@@ -98,7 +98,7 @@ routinely breaks another, and the tracker is what makes that visible.
 | 8 · Optional transcode | ❌ overtaken | It was never optional for this library — see §3.2.1 of ARCHITECTURE for what actually happened |
 | 9 · Public release | 🔨 | Public since August. Docs current as of 14 September 2026; screenshots outstanding |
 
-**Tests: 508 passing. Migrations: 023. Lint: clean. CI green.**
+**Tests: 509 passing. Migrations: 023. Lint: clean. CI green.**
 
 ### AI design decisions — agreed, not yet built
 
@@ -144,9 +144,12 @@ administrators only.
       at the next sweep rather than when it happens
 - [ ] Go agent + WireGuard (Mode B split; only needed when the core moves off the PC)
 - [ ] Deploy to Oracle Always Free (phase 0.5)
-- [x] ~~Off-site backups~~ — encrypted here with a key that stays here, pushed to a
-      Drive folder after each daily one. Waiting on a folder shared as Editor and on
-      `tools/new-backup-key.ps1` being run once
+- [ ] Off-site backups — the encryption, scheduling and restore are done and
+      destination-agnostic; **Drive cannot be the destination** (a service account has
+      no storage quota, so it cannot create a file even in a folder shared as Editor).
+      Settled on Oracle Object Storage, S3-compatible, because the same account also
+      hosts phase 0.5 later. `docs/OFFSITE_BACKUPS.md` is the setup; the S3 client is
+      the remaining code
 - [x] ~~Metadata extraction — duration, artist, album~~ — tags at scan time, durations
       98% for video and 94% for audio. A remote video is timed from both ends of the
       file, never from a prefix (`server/app/metadata.py` says why)
@@ -259,7 +262,8 @@ tools/            probe-denon.ps1, configure-network.ps1, run-tests.ps1,
                   homesh-common.ps1, verify-ci.ps1, scan-apk.py, githooks/
 (repo root)       "Start Homesh.cmd", "Add a folder to Homesh.cmd" — the two
                   jobs done by double-click rather than through a terminal
-docs/             ARCHITECTURE.md, USER_GUIDE.md, TV_APP.md, PHONE_APP.md, TLS.md
+docs/             ARCHITECTURE.md, USER_GUIDE.md, TV_APP.md, PHONE_APP.md,
+                  OFFSITE_BACKUPS.md, TLS.md
 ```
 
 ---
