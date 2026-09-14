@@ -70,12 +70,36 @@ rather than merely included in the trial.
 **3. Note the namespace.** It is on the bucket's own page, as *Namespace*. A
 short string of letters, unique to your tenancy and unchangeable.
 
-**4. Create a key the server can use.** Profile menu (top right) → **My
-profile** → **Customer secret keys** → **Generate secret key**.
+**4. Create a key the server can use.** It is called a **Customer secret key**,
+and on an older console it is called an **Amazon S3 Compatibility API key** —
+same thing, and the second name is the more descriptive one.
 
-- Name it `homesh-backups` so it is obvious later what it is for.
-- The **secret** is shown **once**. Copy it now.
-- You also get an **Access key** on the list afterwards.
+There are two routes to it, because the console moved this when it introduced
+identity domains and which one you get depends on the account:
+
+*The short way.* Profile icon (top right) → **My profile**. Then look for
+**Customer secret keys** — as a tab across the top, or in a list down the left
+under *Resources*, depending on the version.
+
+*The way that always works*, if that page does not offer it:
+
+    Menu (hamburger, top left)
+      → Identity & Security  →  Identity  →  Domains
+      → Default  (the domain)
+      → Users    (left sidebar)
+      → your own user
+      → Customer secret keys  (left sidebar, under "Resources")
+
+or go straight to <https://cloud.oracle.com/identity/domains> and start from
+**Default → Users**.
+
+Then **Generate secret key**:
+
+- Name it `homesh-backups`, so it is obvious later what it is for.
+- The **secret** is shown **once**, in a dialog. Copy it before closing it —
+  there is no way to see it again, only to delete the key and make another.
+- The **Access key** appears in the list afterwards, so that half can be fetched
+  whenever.
 
 **5. Put them in `.env`** on the machine running Homesh, and not into a chat
 window, an email or a note — this is a credential:
