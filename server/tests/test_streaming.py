@@ -32,6 +32,14 @@ def scanned(source, monkeypatch):
     get_settings.cache_clear()
 
 
+def get_settings_clear() -> None:
+    from app.config import get_settings
+    from app.library import forget_connectors
+
+    get_settings.cache_clear()
+    forget_connectors()
+
+
 def _item(db, filename: str):
     with db.connect() as conn:
         return conn.execute(
@@ -164,20 +172,79 @@ class TestStreamAuthorisation:
         assert "private" in r.headers["cache-control"]
 
 
+def _switch_off(db, monkeypatch, sid):
+    """The drive the source is on goes away, the way a RAID is powered down."""
+    from app.config import get_settings
+    from app.library import forget_connectors
+
+    monkeypatch.setenv("MEDIA_ROOTS", "Nowhere=/does/not/exist")
+    with db.begin() as conn:
+        conn.execute(
+            text("UPDATE sources SET remote_id = '/does/not/exist' WHERE id = :id"),
+            {"id": str(sid)},
+        )
+    get_settings.cache_clear()
+    forget_connectors()
+
+
 class TestOfflineSources:
     def test_unreachable_source_reports_503(self, client, db, scanned, monkeypatch):
         """The catalog still knows the file; the machine holding it is off."""
         item = _item(db, "beach.mkv")
         url = client.get(f"/api/items/{item}/url").json()["url"]
 
-        monkeypatch.setenv("MEDIA_ROOTS", "Nowhere=/does/not/exist")
-        from app.config import get_settings
-
-        get_settings.cache_clear()
+        _switch_off(db, monkeypatch, scanned[0])
         try:
             assert client.get(url).status_code == 503
         finally:
-            get_settings.cache_clear()
+            get_settings_clear()
+
+    def test_no_url_is_minted_for_a_file_on_a_drive_that_is_off(
+        self, client, db, scanned, monkeypatch
+    ):
+        """Said at once, rather than handing the player a URL that fails when
+        fetched. The player's answer to a failure is to try the next track, and
+        every track in the folder is on the same switched-off drive -- which was
+        twenty seconds of a frozen app."""
+        item = _item(db, "beach.mkv")
+        _switch_off(db, monkeypatch, scanned[0])
+        try:
+            r = client.get(f"/api/items/{item}/url")
+            assert r.status_code == 503
+            assert "not connected" in r.json()["detail"]
+        finally:
+            get_settings_clear()
+
+    def test_the_listing_says_the_folder_is_offline(self, client, db, scanned, monkeypatch):
+        sid, prefix, _root = scanned
+        before = client.get(f"/api/browse?path={prefix}/Videos/Holidays%202019").json()
+        assert before["online"] is True
+        assert all(f["available"] for f in before["files"])
+
+        _switch_off(db, monkeypatch, sid)
+        try:
+            after = client.get(f"/api/browse?path={prefix}/Videos/Holidays%202019").json()
+            assert after["online"] is False
+            assert after["files"], "an offline folder is still browsable"
+            assert not any(f["available"] for f in after["files"])
+
+            root = client.get("/api/browse?path=/").json()
+            mine = next(d for d in root["dirs"] if d["path"] == prefix)
+            assert mine["online"] is False
+
+            hits = client.get("/api/search?q=beach").json()
+            assert hits and not any(h["available"] for h in hits)
+        finally:
+            get_settings_clear()
+
+    def test_a_slideshow_of_an_offline_folder_says_why(self, client, db, scanned, monkeypatch):
+        sid, prefix, _root = scanned
+        _switch_off(db, monkeypatch, sid)
+        try:
+            r = client.get(f"/api/slideshow?under={prefix}/Photos")
+            assert r.status_code == 503
+        finally:
+            get_settings_clear()
 
     def test_unknown_item_404s(self, client, scanned):
         assert client.get(f"/api/items/{uuid.uuid4()}/url").status_code == 404

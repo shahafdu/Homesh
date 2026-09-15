@@ -459,6 +459,11 @@ button.compact:hover { color: var(--ink); }
 .status { display: flex; gap: 8px; align-items: center; }
 .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); flex: none; }
 .dot.bad { background: var(--danger); }
+.dot.standby { background: #d08b26; }
+.standby-status {
+  padding: 0; background: none; border: 0; font: inherit; color: #d08b26;
+  cursor: pointer;
+}
 
 .linklike {
   padding: 4px 8px; background: none; border: 0; color: var(--muted);
@@ -749,14 +754,13 @@ button.compact:disabled { opacity: .5; cursor: not-allowed; }
 /* Shown on the standby. Quiet enough to live with for an evening, clear
    enough that a file that will not play is already explained. */
 .standby-banner {
+  position: sticky; bottom: 45px; z-index: 18; cursor: pointer;
+  border-top: 1px solid var(--line);
   padding: 8px 16px; font-size: 13px; line-height: 1.4;
   background: color-mix(in srgb, var(--accent) 14%, var(--bg));
   border-bottom: 1px solid var(--line); color: var(--ink);
 }
 
-/* Where a source lives, beside its name at the root. Quiet, because it is a
-   disambiguator rather than information: it only earns its place when the same
-   folder is kept in two places, which here it usually is. */
 /* Where a source lives, beside its name at the root.
  *
  * Named `src-tag` rather than the obvious `where`, because `.where` was already
@@ -772,6 +776,13 @@ button.compact:disabled { opacity: .5; cursor: not-allowed; }
      exist on the way to this element depending on the view and the width --
      which is what put a full-width band under every folder on a phone. */
   align-self: flex-start; flex: none; width: fit-content;
+}
+/* A source that does not answer: the same amber as the other warnings, because
+   unlike where a folder lives this is information -- nothing in it will play. */
+.src-tag.off {
+  margin-left: 6px;
+  border-color: color-mix(in srgb, #d08b26 55%, var(--line));
+  color: #d08b26;
 }
 
 /* The per-row send button stays quiet until the row is hovered or focused,

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api } from "./api";
+import { api, ApiError } from "./api";
 import type { FileEntry } from "./library";
 
 export interface Track {
@@ -62,6 +62,12 @@ async function signedUrl(itemId: string): Promise<string> {
 /** How many steps back the shuffle remembers. Going back is done a few at a
  *  time; this is generous rather than calculated. */
 const HISTORY = 200;
+
+/** How many unplayable tracks in a row before the player stops trying. */
+const GIVE_UP_AFTER = 3;
+
+/** The server's way of saying the file is on a drive that is switched off. */
+const offline = (e: unknown): e is ApiError => e instanceof ApiError && e.status === 503;
 
 /** Somewhere else in the queue, at random.
  *
@@ -150,6 +156,8 @@ export function usePlayer() {
   // One renewal attempt per track. Without this, a genuinely broken file would
   // loop forever between the error handler and a fresh URL.
   const renewedFor = useRef<string | null>(null);
+  /** Tracks that failed one after another; any track that plays resets it. */
+  const failures = useRef(0);
 
   /** Start playing, giving the browser a second chance before complaining.
    *
@@ -223,6 +231,10 @@ export function usePlayer() {
       // played perfectly on the second.
       if (e instanceof Error && (e.name === "NotAllowedError" || e.name === "AbortError")) {
         setState((s) => ({ ...s, playing: false }));
+      } else if (offline(e)) {
+        // Said, and stopped. The next track in the folder is on the same drive,
+        // and trying each in turn is the twenty-second freeze this replaced.
+        setState((s) => ({ ...s, playing: false, error: `Cannot play ${track.filename}: ${e.message}` }));
       } else {
         setState((s) => ({ ...s, error: `Could not play ${track.filename}` }));
       }
@@ -236,7 +248,10 @@ export function usePlayer() {
   useEffect(() => {
     const audio = audioRef.current;
     if (!audio) return;
-    const clear = () => setState((s) => (s.error ? { ...s, error: null } : s));
+    const clear = () => {
+      failures.current = 0;
+      setState((s) => (s.error ? { ...s, error: null } : s));
+    };
     audio.addEventListener("playing", clear);
     return () => audio.removeEventListener("playing", clear);
   }, []);
@@ -384,12 +399,30 @@ export function usePlayer() {
           audio.currentTime = position;
           await audio.play();
           return;
-        } catch {
-          /* fall through to skipping */
+        } catch (e) {
+          if (offline(e)) {
+            // The drive went off mid-track. Nothing after it will play either.
+            setState((s) => ({ ...s, playing: false, error: `Stopped: ${e.message}` }));
+            return;
+          }
+          /* otherwise fall through to skipping */
         }
       }
 
-      // Unplayable. Move on rather than stalling the queue on one bad file.
+      // Unplayable. Move on rather than stalling the queue on one bad file --
+      // but not for ever. One corrupt file is worth skipping; several in a row
+      // means the problem is not the files, and walking the rest of the queue
+      // one failure at a time freezes the app for as long as the queue is long.
+      failures.current += 1;
+      if (failures.current >= GIVE_UP_AFTER) {
+        failures.current = 0;
+        setState((s) => ({
+          ...s,
+          playing: false,
+          error: `Stopped — ${GIVE_UP_AFTER} tracks in a row would not play`,
+        }));
+        return;
+      }
       if (index + 1 < queue.length) {
         setState((s) => ({ ...s, error: `Skipped ${track.filename} — cannot play it` }));
         void loadTrack(index + 1);

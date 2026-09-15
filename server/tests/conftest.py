@@ -216,10 +216,13 @@ def source(db, library: Path):
         sid = conn.execute(
             text(
                 """
-                INSERT INTO sources (kind, name, mount_prefix, audience)
-                VALUES ('local', 'Test', :p, 'everyone') RETURNING id
+                INSERT INTO sources (kind, name, mount_prefix, remote_id, audience)
+                VALUES ('local', 'Test', :p, :root, 'everyone') RETURNING id
                 """
             ),
-            {"p": prefix},
+            # With its root, as a folder granted from the PC is stored: whether a
+            # file can be played is asked of the source live, so a source the
+            # server cannot find reads as a drive that is switched off.
+            {"p": prefix, "root": str(library)},
         ).scalar_one()
     return sid, prefix, library

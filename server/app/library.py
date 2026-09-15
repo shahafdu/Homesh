@@ -253,6 +253,40 @@ def _reachable(source_id) -> bool:
         return False
 
 
+def playable_now(conn, item_ids) -> set:
+    """Which of these items have a copy that can actually be read at this moment.
+
+    `replicas.available` is not that. It says the file was there at the last
+    scan, and a scan of a switched-off RAID is refused rather than run -- so a
+    whole folder on a powered-down drive kept saying available, the interface
+    offered every file in it, and pressing play set the player walking through
+    the queue one failure at a time, which from the sofa was twenty seconds of
+    a frozen app.
+
+    A file is playable when any copy of it is available on a source that answers
+    now. Something that is on the RAID *and* on Drive still plays with the RAID
+    off, which is the point of having joined them.
+    """
+    ids = [str(i) for i in item_ids]
+    if not ids:
+        return set()
+    rows = conn.execute(
+        text(
+            "SELECT item_id, source_id FROM replicas "
+            "WHERE item_id = ANY(CAST(:ids AS uuid[])) AND available"
+        ),
+        {"ids": ids},
+    ).all()
+    answers: dict = {}
+    playable = set()
+    for item_id, source_id in rows:
+        if source_id not in answers:
+            answers[source_id] = _reachable(source_id)
+        if answers[source_id]:
+            playable.add(str(item_id))
+    return playable
+
+
 @router.get("/sources")
 async def list_sources(_: CurrentUser = Depends(require_user)) -> list[dict]:
     with get_engine().connect() as conn:
@@ -344,6 +378,10 @@ async def browse(
                         # that and was never going to: two sources are two
                         # sources however much they hold in common.
                         "where": WHERE.get(s[3], s[3]),
+                        # Asked now. A folder on a drive that is switched off is
+                        # still browsable and searchable; it says so, rather than
+                        # looking identical to one that works.
+                        "online": _reachable(s[0]),
                     }
                     for s in sources
                     if visible(s[2], rules)
@@ -422,6 +460,9 @@ async def browse(
             {"sid": str(source_id), "rel": rel},
         ).all()
 
+        playable = playable_now(conn, [f[4] for f in files])
+    online = _reachable(source_id)
+
     # Up from a source root goes to the namespace root, not to a phantom "/local"
     # that nothing is mounted at.
     parent = "/" if path == prefix else (path.rsplit("/", 1)[0] or "/")
@@ -431,6 +472,9 @@ async def browse(
     return {
         "path": path,
         "parent": parent,
+        # Whether the drive this folder is on is connected. The folder is shown
+        # either way; this is what lets the interface say why nothing plays.
+        "online": online,
         "dirs": [
             {"name": d[0], "path": f"{path}/{d[0]}"}
             for d in dirs
@@ -449,7 +493,9 @@ async def browse(
                 # Additive only: the filename above is never replaced by these.
                 "meta": f[8] or {},
                 "mtime": f[2].isoformat() if f[2] else None,
-                "available": f[3],
+                # Can it be played now -- not whether it was there at the last
+                # scan. See playable_now.
+                "available": str(f[4]) in playable,
             }
             for f in files
         ],
@@ -562,6 +608,14 @@ def gather_photos(
 
     source_id, prefix = match
     rel = path[len(prefix) :].strip("/")
+
+    if not _reachable(source_id):
+        # Said plainly rather than answered with photographs that will not load:
+        # a slideshow of a switched-off drive is a black screen with a timer.
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            "those photographs are on a drive that is not connected right now",
+        )
 
     # Generous enough that nobody meets it in a sitting, small enough to send.
     LIMIT = 10_000
@@ -687,6 +741,8 @@ async def search(
             {"q": q, "lim": limit, "under": scope_prefix},
         ).all()
 
+        playable = playable_now(conn, [r[4] for r in rows])
+
     # Filtered after the query rather than inside it: a result someone cannot
     # open must not appear, or search becomes a way to learn what exists.
     rules = library_scope(user.id)
@@ -697,7 +753,7 @@ async def search(
             "path": f"{r[2]}/{r[1]}".rstrip("/"),
             "kind": r[5],
             "size": r[6],
-            "available": r[3],
+            "available": str(r[4]) in playable,
         }
         for r in rows
         if can_read(f"{r[2]}/{r[1]}".rstrip("/"), rules)

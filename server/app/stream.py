@@ -133,6 +133,18 @@ async def signed_url(item_id: UUID, user: CurrentUser = Depends(require_user)) -
     if not may_access_item(item_id, user.id):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "no such item")
 
+    # Refused here, before a player is handed a URL that cannot work. Handed one,
+    # the player tried it, failed, moved to the next track, and did the same with
+    # every track in a switched-off folder -- twenty seconds of a frozen app.
+    from .library import playable_now
+
+    with get_engine().connect() as conn:
+        if str(item_id) not in playable_now(conn, [item_id]):
+            raise HTTPException(
+                status.HTTP_503_SERVICE_UNAVAILABLE,
+                "this file is on a drive that is not connected right now",
+            )
+
     ttl = get_settings().media_url_ttl_minutes * 60
     return {
         "url": f"/api/stream/{item_id}?t={mint(item_id, user.id, 'stream')}",

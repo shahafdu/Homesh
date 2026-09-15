@@ -253,6 +253,18 @@ export default function Browser(props: {
                 {i < all.length - 1 && <span className="sep">/</span>}
               </span>
             ))}
+            {/* Beside the path, where the eye already is. The files below are
+                greyed too, but greyed files alone do not say why, and the
+                usual reason -- the drive is switched off -- is the one thing
+                worth knowing before pressing anything. */}
+            {listing.online === false && (
+              <span
+                className="badge warn"
+                title="The drive this folder is on is not connected. You can browse it; nothing in it plays until it is back."
+              >
+                offline folder
+              </span>
+            )}
           </nav>
         ) : (
           <span className="muted small">
@@ -621,7 +633,9 @@ function Folder(props: {
                 <span className="ic dir">▸</span>
               </div>
               <span className="nm">{d.name}</span>
-              <span className="sub">{d.where ?? "folder"}</span>
+              <span className="sub">
+                {d.online === false ? `offline · ${d.where ?? "folder"}` : (d.where ?? "folder")}
+              </span>
             </>
           ) : (
             <>
@@ -640,6 +654,7 @@ function Folder(props: {
                 <span className="nm-text">
                   {d.name}
                   {d.where && <span className="src-tag">{d.where}</span>}
+                  {d.online === false && <span className="src-tag off">offline</span>}
                 </span>
               </span>
               {view === "details" && (

@@ -284,47 +284,63 @@ def resolve(name: str) -> Path:
     return path
 
 
-# Kept: every day for a week, then a fortnight back, then a month back.
+# Kept: everything from the last day, one a day for a week, one a week for five.
 #
 # The shape matters more than the numbers. A week of dailies catches "something
-# went wrong yesterday"; the older two catch "something went wrong a while ago
+# went wrong yesterday"; the weeklies catch "something went wrong a while ago
 # and nobody noticed", which is the failure a daily-only scheme quietly loses.
-DAILY_DAYS = 7
-# Everything from the last day is kept: backups are taken hourly on the PC, so
-# that the standby is never more than an hour behind it. Older than that, one a
-# day is plenty.
+#
+# Weeklies, not the "a fortnight back and a month back" this used to aim for.
+# Those were picked from whatever backups sat near the fourteen- and thirty-day
+# marks -- and there never were any, because a daily was deleted the day it
+# turned eight days old. The landmarks could only ever have been kept by a
+# backup that had already been thrown away. One per calendar week is stable
+# instead: the newest of a week stays the newest of it, so it is never deleted
+# on the way to becoming the one kept, and at any moment there is one about two
+# weeks old and one about a month old.
+#
+# About 35 backups at roughly 19 MB is under 700 MB, here and in the bucket.
+#
+# Everything from the last day is kept because backups are taken hourly on the
+# PC, so that the standby is never more than an hour behind it.
 HOURLY = timedelta(days=1)
-LANDMARKS = (timedelta(days=14), timedelta(days=30))
-# How far from a landmark a backup may be and still count as that landmark.
-NEAR = timedelta(days=3)
+DAILY_DAYS = 7
+WEEKLY_DAYS = 35
+
+
+def worth_keeping(taken: list[tuple[datetime, str]], now: datetime) -> set[str]:
+    """Which of these backups the keeping rule keeps. `taken` is (when, name).
+
+    One rule for the shelf here and for the bucket, so they cannot drift apart.
+    """
+    newest_first = sorted(taken, reverse=True)
+    kept: set[str] = set()
+    per_day: dict = {}
+    per_week: dict = {}
+    for when, name in newest_first:
+        age = now - when
+        if age <= HOURLY:
+            kept.add(name)
+        # Newest first, so the first of each day or week seen is its newest.
+        if age <= timedelta(days=DAILY_DAYS):
+            per_day.setdefault(when.date(), name)
+        if age <= timedelta(days=WEEKLY_DAYS):
+            per_week.setdefault(when.isocalendar()[:2], name)
+    kept.update(per_day.values())
+    kept.update(per_week.values())
+
+    # Never leave nothing behind. If everything is old enough to go, the newest
+    # stays: a pruning that empties the shelf is worse than a stale backup.
+    if newest_first and not kept:
+        kept.add(newest_first[0][1])
+    return kept
 
 
 def prune(now: datetime | None = None) -> list[str]:
     """Delete what is no longer worth keeping. Returns what went."""
     now = now or datetime.now(UTC)
-    kept: set[str] = set()
     backups = list_backups()
-
-    newest_per_day: dict = {}
-    for backup in backups:
-        age = now - backup.taken_at
-        if age <= HOURLY:
-            kept.add(backup.name)
-        elif age <= timedelta(days=DAILY_DAYS):
-            # `backups` is newest first, so the first of each day is its newest.
-            newest_per_day.setdefault(backup.taken_at.date(), backup.name)
-    kept.update(newest_per_day.values())
-
-    for landmark in LANDMARKS:
-        near = [b for b in backups if abs((now - b.taken_at) - landmark) <= NEAR]
-        if near:
-            # The one closest to the mark.
-            kept.add(min(near, key=lambda b: abs((now - b.taken_at) - landmark)).name)
-
-    # Never leave nothing behind. If everything is old enough to go, the newest
-    # stays: a pruning that empties the shelf is worse than a stale backup.
-    if backups and not kept:
-        kept.add(backups[0].name)
+    kept = worth_keeping([(b.taken_at, b.name) for b in backups], now)
 
     removed = []
     for backup in backups:
@@ -555,23 +571,7 @@ def prune_offsite(now: datetime | None = None) -> list[str]:
             continue
         taken = datetime.strptime("".join(match.groups()), "%Y%m%d%H%M%S").replace(tzinfo=UTC)
         copies.append((taken, item.name))
-    copies.sort(reverse=True)
-
-    kept: set[str] = set()
-    newest_per_day: dict = {}
-    for taken, name in copies:
-        age = now - taken
-        if age <= HOURLY:
-            kept.add(name)
-        elif age <= timedelta(days=DAILY_DAYS):
-            newest_per_day.setdefault(taken.date(), name)
-    kept.update(newest_per_day.values())
-    for landmark in LANDMARKS:
-        near = [(t, n) for t, n in copies if abs((now - t) - landmark) <= NEAR]
-        if near:
-            kept.add(min(near, key=lambda c: abs((now - c[0]) - landmark))[1])
-    if copies and not kept:
-        kept.add(copies[0][1])
+    kept = worth_keeping(copies, now)
 
     removed = []
     for _taken, name in copies:

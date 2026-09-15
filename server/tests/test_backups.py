@@ -22,8 +22,10 @@ from app.backups import (
     list_backups,
     make_backup,
     prune,
+    prune_offsite,
     resolve,
     restore,
+    worth_keeping,
 )
 
 
@@ -170,8 +172,8 @@ class TestRefusals:
 
 
 class TestKeeping:
-    """Every day for a week, then a fortnight back, then a month back. The
-    older two are what catch a change nobody noticed at the time, which a
+    """Everything from the last day, a day for a week, a week for five. The
+    weeklies are what catch a change nobody noticed at the time, which a
     daily-only shelf quietly loses."""
 
     def _shelf(self, shelf, ages_in_days):
@@ -196,24 +198,86 @@ class TestKeeping:
         assert prune() == []
         assert len(list_backups()) == DAILY_DAYS
 
-    def test_the_middle_is_thrown_away(self, shelf):
-        """Between the week and the fortnight there is nothing worth keeping."""
-        self._shelf(shelf, [0, 9, 10, 11, 14])
-        gone = prune()
-        left = {b.name for b in list_backups()}
-        assert len(gone) == 3
-        assert len(left) == 2, "today and the fortnight mark"
+    def test_every_hour_of_the_last_day_is_kept(self):
+        now = datetime(2026, 9, 15, 12, tzinfo=UTC)
+        taken = [(now - timedelta(hours=h), f"h{h}") for h in range(24)]
+        assert worth_keeping(taken, now) == {name for _, name in taken}
 
-    def test_the_landmarks_are_kept(self, shelf):
-        self._shelf(shelf, [0, 14, 30])
-        assert prune() == []
-        assert len(list_backups()) == 3
+    def test_an_older_day_keeps_only_its_newest(self):
+        now = datetime(2026, 9, 15, 12, tzinfo=UTC)
+        day = datetime(2026, 9, 12, tzinfo=UTC)
+        taken = [(day + timedelta(hours=h), f"h{h}") for h in (1, 9, 23)]
+        assert worth_keeping(taken, now) == {"h23"}
+
+    def test_an_older_week_keeps_only_its_newest(self):
+        """Wednesday 19 August to Sunday 23 August 2026 are one ISO week."""
+        now = datetime(2026, 9, 15, 12, tzinfo=UTC)
+        taken = [
+            (datetime(2026, 8, 19, tzinfo=UTC), "wed"),
+            (datetime(2026, 8, 21, tzinfo=UTC), "fri"),
+            (datetime(2026, 8, 23, 22, tzinfo=UTC), "sun"),
+        ]
+        assert worth_keeping(taken, now) == {"sun"}
+
+    def test_beyond_five_weeks_nothing_is_kept_but_the_rest(self):
+        now = datetime(2026, 9, 15, 12, tzinfo=UTC)
+        taken = [(now, "today"), (now - timedelta(days=60), "old")]
+        assert worth_keeping(taken, now) == {"today"}
+
+    def test_a_fortnight_and_a_month_back_always_exist(self):
+        """Hourly backups for three months, pruned after every one, the way the
+        server does it -- then checked on every day of a whole week, so that
+        whichever weekday it is, there is a point about two weeks old and one
+        about a month old.
+
+        The rule before this aimed at the fourteen- and thirty-day marks
+        directly, and was wrong in a way no test of a hand-picked shelf could
+        show: a daily was deleted at eight days old, so by the fourteenth day
+        there was never anything left to keep.
+        """
+        start = datetime(2026, 6, 1, tzinfo=UTC)
+        shelf: list = []
+        checked = 0
+        for hour in range(24 * 92):
+            now = start + timedelta(hours=hour)
+            shelf.append((now, now.isoformat()))
+            kept = worth_keeping(shelf, now)
+            shelf = [entry for entry in shelf if entry[1] in kept]
+
+            if hour >= 24 * 85 and hour % 24 == 13:
+                ages = [(now - when).total_seconds() / 86400 for when, _ in shelf]
+                assert any(10 <= a <= 18 for a in ages), ages
+                assert any(26 <= a <= 35 for a in ages), ages
+                # And it stays small: a day of hourlies, a week, five weeks.
+                assert len(shelf) <= 40, len(shelf)
+                checked += 1
+        assert checked == 7
 
     def test_it_never_empties_the_shelf(self, shelf):
         """Everything is ancient. Keeping a stale backup beats keeping none."""
         self._shelf(shelf, [400, 500])
         prune()
         assert len(list_backups()) == 1
+
+    def test_the_bucket_is_kept_by_the_same_rule(self, monkeypatch):
+        now = datetime(2026, 9, 15, 12, tzinfo=UTC)
+        names = {
+            "homesh-20260915-110000.sql.gz.enc": True,  # within the day
+            "homesh-20260912-010000.sql.gz.enc": False,  # not its day's newest
+            "homesh-20260912-230000.sql.gz.enc": True,
+            "homesh-20260819-000000.sql.gz.enc": False,  # not its week's newest
+            "homesh-20260823-220000.sql.gz.enc": True,
+            "homesh-20260601-000000.sql.gz.enc": False,  # beyond five weeks
+            "outbox/20260601-000000-x.json.enc": True,  # not a backup at all
+        }
+        stored = [module.offsite.Stored(n, 1, None) for n in names]
+        removed: list[str] = []
+        monkeypatch.setattr(module, "_store", lambda: object())
+        monkeypatch.setattr(module.offsite, "index", lambda store: stored)
+        monkeypatch.setattr(module.offsite, "remove", lambda store, n: removed.append(n))
+
+        prune_offsite(now)
+        assert sorted(removed) == sorted(n for n, keep in names.items() if not keep)
 
 
 class TestWhoMayDoThis:
