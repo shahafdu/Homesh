@@ -143,6 +143,9 @@ function Repair-RemovableGrants {
 
     $repaired = @()
     foreach ($g in $grants) {
+        # A folder set aside because its drive is not here is not "empty", and
+        # saying so right after "starting without it" read as a second fault.
+        if (-not $g.Active) { continue }
         $strict = $ErrorActionPreference
         $ErrorActionPreference = 'Continue'
         try {
