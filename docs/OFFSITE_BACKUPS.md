@@ -12,8 +12,9 @@ written out rather than assumed.
 
 ## What is already true
 
-- Backups are taken daily and kept locally: a week of them, plus a fortnight and
-  a month back. **Settings → Backups.**
+- Backups are taken hourly and kept locally: everything from the last day, one a
+  day for a week, and one a week for five weeks -- so there is always a point
+  about two weeks back and one about a month back. **Settings → Backups.**
 - They are **encrypted here, before they leave**, with a key that never goes
   with them. `tools/new-backup-key.ps1` generates it and prints it once.
 - The database is the whole of it — accounts and their passkeys, who may see

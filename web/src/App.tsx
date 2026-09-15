@@ -62,6 +62,7 @@ export default function App() {
   const [sendTo, setSendTo] = useState<{ file: FileEntry; siblings: FileEntry[] } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [aboutStandby, setAboutStandby] = useState(false);
 
   const refresh = useCallback(async () => {
     const [s, h] = await Promise.all([
@@ -129,19 +130,6 @@ export default function App() {
   if (state.authenticated && state.user) {
     return (
       <div className="app">
-        {health?.role === "standby" && (
-          /* Said before anything is attempted rather than after something is
-             refused. On the standby playlists and settings still change and are
-             carried back; accounts, access, rooms and folders wait. Files that
-             live only on the PC or the RAID will not play, and that is the most
-             likely surprise, so it is the one named. */
-          <div className="standby-banner" role="status">
-            <b>The main server is off.</b> You are on the standby: browsing,
-            searching, Drive files and playlists all work, and changes to
-            playlists and your settings are carried back. Files kept only on the
-            PC will not play until it is on.
-          </div>
-        )}
         <Browser
           view={prefs.view}
           onViewChange={(view) => void changePrefs({ view })}
@@ -327,11 +315,39 @@ export default function App() {
           }}
         />
 
+        {health?.role === "standby" && aboutStandby && (
+          /* On the standby playlists and settings still change and are carried
+             back; accounts, access, rooms and folders wait. Files that live only
+             on the PC or the RAID will not play, and that is the most likely
+             surprise, so it is the one named. */
+          <div className="standby-banner" role="status" onClick={() => setAboutStandby(false)}>
+            <b>The PC is off.</b> You are on the standby: browsing, searching,
+            Drive files and playlists all work, and changes to playlists and your
+            settings are carried back. Files kept only on the PC will not play
+            until it is on.
+          </div>
+        )}
+
         <footer className="footer">
-          <span className="status">
-            <span className={`dot${health?.status === "ok" ? "" : " bad"}`} />
-            {state.user.display_name} · server {health?.version} · db {health?.database}
-          </span>
+          {/* In the status bar, where the state of the server already is. It was
+              a banner across the top, which is the place for something to act
+              on; this is something to be aware of, and it is there all the time
+              the PC is off. Pressing it says what that means. */}
+          {health?.role === "standby" ? (
+            <button
+              className="status standby-status"
+              onClick={() => setAboutStandby((v) => !v)}
+              title="The PC is off; this is the standby. Press for what that means."
+            >
+              <span className="dot standby" />
+              PC offline · on standby
+            </button>
+          ) : (
+            <span className="status">
+              <span className={`dot${health?.status === "ok" ? "" : " bad"}`} />
+              {state.user.display_name} · server {health?.version} · db {health?.database}
+            </span>
+          )}
 
           {/* Clickable, because the next thing anybody wants after reading it is
               to see which room — and pressing the text that told you is the

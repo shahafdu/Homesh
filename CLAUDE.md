@@ -98,7 +98,7 @@ routinely breaks another, and the tracker is what makes that visible.
 | 8 · Optional transcode | ❌ overtaken | It was never optional for this library — see §3.2.1 of ARCHITECTURE for what actually happened |
 | 9 · Public release | 🔨 | Public since August. Docs current as of 14 September 2026; screenshots outstanding |
 
-**Tests: 578 passing. Migrations: 024. Lint: clean. CI green.**
+**Tests: 585 passing. Migrations: 024. Lint: clean. CI green.**
 
 ### AI design decisions — agreed, not yet built
 
@@ -132,8 +132,10 @@ access — enforced by the tool list and the API, never by prompt.
 **Every action is auditable from inside the app.** A history of what the AI did,
 readable in the interface — not something to go hunting for in logs on the PC.
 
-**Backups, because the AI can change the database.** Daily, a week back, plus
-retained points at two weeks and a month. Restore from within the app,
+**Backups, because the AI can change the database.** Hourly for a day, daily
+for a week, weekly for five weeks -- which is what guarantees the points at two
+weeks and a month (aiming at those marks directly never kept anything: the
+dailies near them had already been pruned). Restore from within the app,
 administrators only.
 
 **Spending cannot be allowed to run away.** Raised by Shahaf and load-bearing:

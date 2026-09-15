@@ -298,8 +298,8 @@ function Backups() {
       <label>Backups</label>
       <p className="muted small">
         The catalog, accounts, playlists and everything you have marked — not your
-        media files. Taken once a day and kept for a week, plus a fortnight and a
-        month back.
+        media files. Taken every hour; the last day of them is kept, then one a day
+        for a week and one a week for five weeks.
       </p>
 
       <button

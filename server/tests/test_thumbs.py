@@ -132,13 +132,23 @@ class TestOfflineSource:
         """A source being off is temporary; recording 'no artwork' would be wrong."""
         import os
 
+        from sqlalchemy import text as sql
+
         from app.config import get_settings
+        from app.library import forget_connectors
 
         item = _item(db, "real.png")
         working_roots = os.environ["MEDIA_ROOTS"]
 
+        # Both ways a root is found -- the environment and the stored grant.
         monkeypatch.setenv("MEDIA_ROOTS", "Nowhere=/does/not/exist")
+        with db.begin() as conn:
+            conn.execute(
+                sql("UPDATE sources SET remote_id = '/does/not/exist' WHERE id = :id"),
+                {"id": str(scanned[0])},
+            )
         get_settings.cache_clear()
+        forget_connectors()
 
         assert client.get(f"/api/thumb/{item}").status_code == 503
         assert not cache_path(item, "small").exists(), "offline was cached as 'no artwork'"
@@ -146,6 +156,12 @@ class TestOfflineSource:
         # Restore explicitly: monkeypatch does not undo until teardown, so clearing
         # the settings cache alone would just reload the broken value.
         monkeypatch.setenv("MEDIA_ROOTS", working_roots)
+        with db.begin() as conn:
+            conn.execute(
+                sql("UPDATE sources SET remote_id = :r WHERE id = :id"),
+                {"r": str(scanned[2]), "id": str(scanned[0])},
+            )
         get_settings.cache_clear()
+        forget_connectors()
 
         assert client.get(f"/api/thumb/{item}").status_code == 200

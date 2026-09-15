@@ -54,11 +54,15 @@ export interface DirEntry {
    *  the root, where two sources can share a name and frequently do: the same
    *  folder kept in both places is called the same thing in both. */
   where?: string;
+  /** Root only: whether the source answers right now. */
+  online?: boolean;
 }
 
 export interface Listing {
   path: string;
   parent: string | null;
+  /** Whether the drive this folder is on is connected. Absent at the root. */
+  online?: boolean;
   dirs: DirEntry[];
   files: FileEntry[];
 }
