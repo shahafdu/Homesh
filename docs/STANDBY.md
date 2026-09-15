@@ -45,9 +45,8 @@ home.
 | Play anything that lives on Drive | ✅ it reads Drive itself |
 | Thumbnails already generated | ✅ synced alongside |
 | Play a file that exists only on the PC or the RAID | ❌ the bytes are on a switched-off disk |
-| Playlists — make, rename, reorder, add, remove | ✅ kept, and carried back to the PC |
-| Where you stopped in a film or an album | ✅ kept, and carried back |
-| Your own settings | ✅ kept, and carried back |
+| Playlists — make, rename, reorder, add, remove, copy, share | ✅ kept, and carried back to the PC |
+| Your own settings — colour, appearance, view | ✅ kept, and carried back |
 | Accounts, invitations, who may see what, rooms, folders, backups | ❌ refused on the standby |
 
 ## How changes made on the standby get back
@@ -58,9 +57,9 @@ places, a track removed on one side and moved on the other — and that is where
 this kind of system quietly loses data.
 
 **By replaying what you did.** Every change on the standby is recorded as the
-request that made it: *add this track to that playlist*, *position 41:07 in this
-film*. When the PC is back it fetches that list and performs each one itself,
-through its own code, as the person who did it, in the order they happened.
+request that made it: *make a playlist called this*, *add this track to it*.
+When the PC is back it fetches that list and performs each one itself, through
+its own code, as the person who did it, in the order they happened.
 
 What that buys:
 
@@ -72,15 +71,20 @@ What that buys:
   failed, and is reported rather than resurrecting the playlist.
 - **Replaying twice does nothing twice.** Each change carries an identity and the
   PC remembers which it has applied, so a crash half way through is harmless.
-- **Where you stopped: the latest wins.** Positions are the one thing it is
-  reasonable to overwrite, so the most recent one is kept whichever side it came
-  from.
+- **Something made on the standby keeps its name.** A playlist is named by an
+  id in every later change to it, so the standby chooses the id and the PC
+  creates it with the same one. Otherwise "add a track to this playlist" would
+  arrive at the PC naming a playlist it had given a different id.
 
 **Why accounts, access and rooms are refused rather than replayed.** They are
 rare, they are the changes that matter most if they go wrong, and none of them is
 something anybody needs to do while the PC happens to be off. Refusing them keeps
 the part that has to be carried back to the ordinary, personal things — and those
 are the changes that make a standby worth having.
+
+**When the refresh happens.** A new backup only appears while the PC is on, so
+the standby replaces its catalog precisely when nobody is using it. It is never
+refreshed out from under somebody browsing it with the PC off.
 
 **What stays on the standby and is never replaced.** Its own passkeys (a passkey
 belongs to an address, and the standby has a different one), who is signed in,
@@ -219,12 +223,13 @@ chat window. I copy it from there to the machine and delete it afterwards.
 
 ## Setting it up — my part
 
-- The machine: Docker, the stack, Tailscale with HTTPS, the public SSH rule
-  closed once Tailscale answers.
-- Hourly backups on the PC, pruned.
-- The standby's hourly restore, which waits until a backup contains every change
+- ✅ Hourly backups on the PC, pruned — here and in the bucket.
+- ✅ The standby's refresh, which waits until a backup contains every change
   the standby made.
-- The outbox on the standby, and its replay on the PC.
-- Refusing accounts, access, rooms and folders on the standby, clearly.
-- Thumbnails synced alongside.
-- Homesh Connect trying the standby third.
+- ✅ The record of changes on the standby, and their replay on the PC.
+- ✅ Refusing accounts, access, rooms and folders on the standby, with a banner
+  that says so before anything is attempted.
+- ⬜ The machine itself: Docker, the stack, Tailscale with HTTPS, the public SSH
+  rule closed once Tailscale answers — once it exists.
+- ⬜ Thumbnails synced alongside.
+- ⬜ Homesh Connect trying the standby third.

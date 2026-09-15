@@ -66,6 +66,14 @@ class Settings(BaseSettings):
     # and gets scanned.
     backup_folder: str = "Homesh Backups"
 
+    # "primary" on the PC, "standby" on the Oracle machine. See docs/STANDBY.md.
+    #
+    # Primary is the default because it is the safe mistake: a machine that
+    # wrongly believes it is the primary behaves exactly as Homesh always has,
+    # while one that wrongly believes it is a standby refuses most changes and
+    # replaces its own database with somebody else's backup every hour.
+    homesh_role: str = "primary"
+
     media_url_ttl_minutes: int = Field(default=5, ge=1, le=60)
 
     # Receivers pull for the length of a whole track or film, so the short browser

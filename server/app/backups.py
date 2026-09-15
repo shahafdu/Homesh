@@ -230,6 +230,24 @@ def _read_header(path: Path) -> dict:
     return header
 
 
+def column_values(name: str, table: str) -> set[str]:
+    """The first column of one table in a backup, without restoring it.
+
+    For the standby, which has to know whether a backup already contains every
+    change it made before it lets that backup replace them.
+    """
+    found: set[str] = set()
+    marker = f"-- table: {table}\n"
+    with gzip.open(resolve(name), "rt", encoding="utf-8") as source:
+        for line in source:
+            if line == marker:
+                for row in source:
+                    if row.startswith(TERMINATOR):
+                        return found
+                    found.add(row.split("\t", 1)[0].strip())
+    return found
+
+
 def list_backups() -> list[Backup]:
     """Newest first. A file that cannot be read is left out rather than raising:
     the list is how somebody finds a good backup, and one bad file must not be
@@ -272,6 +290,10 @@ def resolve(name: str) -> Path:
 # went wrong yesterday"; the older two catch "something went wrong a while ago
 # and nobody noticed", which is the failure a daily-only scheme quietly loses.
 DAILY_DAYS = 7
+# Everything from the last day is kept: backups are taken hourly on the PC, so
+# that the standby is never more than an hour behind it. Older than that, one a
+# day is plenty.
+HOURLY = timedelta(days=1)
 LANDMARKS = (timedelta(days=14), timedelta(days=30))
 # How far from a landmark a backup may be and still count as that landmark.
 NEAR = timedelta(days=3)
@@ -283,9 +305,15 @@ def prune(now: datetime | None = None) -> list[str]:
     kept: set[str] = set()
     backups = list_backups()
 
+    newest_per_day: dict = {}
     for backup in backups:
-        if now - backup.taken_at <= timedelta(days=DAILY_DAYS):
+        age = now - backup.taken_at
+        if age <= HOURLY:
             kept.add(backup.name)
+        elif age <= timedelta(days=DAILY_DAYS):
+            # `backups` is newest first, so the first of each day is its newest.
+            newest_per_day.setdefault(backup.taken_at.date(), backup.name)
+    kept.update(newest_per_day.values())
 
     for landmark in LANDMARKS:
         near = [b for b in backups if abs((now - b.taken_at) - landmark) <= NEAR]
@@ -308,8 +336,15 @@ def prune(now: datetime | None = None) -> list[str]:
     return removed
 
 
-def restore(name: str) -> dict:
+def restore(name: str, keep: tuple[str, ...] = ()) -> dict:
     """Put a backup back, replacing what is there now.
+
+    `keep` names tables whose current rows survive the restore, for the standby.
+    Its passkeys belong to its own address and would be useless replaced by the
+    PC's; who is signed in there is its own business; and its list of changes not
+    yet carried back is the one thing a restore must never throw away. Kept rows
+    that belong to an account the backup no longer has are dropped, since a
+    passkey for somebody who does not exist is not something to keep.
 
     Everything happens in one transaction: either the whole catalog is the
     backup's or it is untouched. A half-restored database is the one outcome
@@ -338,9 +373,23 @@ def restore(name: str) -> dict:
 
     with engine.begin() as conn:
         raw = conn.connection.driver_connection
+        present = set(_ordered_tables(conn))
+        kept = [t for t in keep if t in present]
+        # Set aside first: deleting `users` below cascades into several of them.
+        for table in kept:
+            conn.execute(
+                text(
+                    f'CREATE TEMP TABLE "keep_{table}" ON COMMIT DROP '  # noqa: S608 - fixed names
+                    f'AS SELECT * FROM public."{table}"'
+                )
+            )
+
         # Children first, so nothing is deleted out from under a reference.
         for table in reversed(tables):
             conn.execute(text(f'DELETE FROM public."{table}"'))  # noqa: S608 - from the header
+        for table in kept:
+            if table not in tables:
+                conn.execute(text(f'DELETE FROM public."{table}"'))  # noqa: S608 - fixed names
 
         # One pass, one line iterator, shared between the two loops: the outer
         # one finds a table's header and the inner one feeds that table's rows
@@ -360,6 +409,13 @@ def restore(name: str) -> dict:
                 if table not in tables:
                     raise ValueError(f"{name} contains an unexpected table: {table}")
                 counts[table] = 0
+                if table in kept:
+                    # Its rows in the file are the PC's; this machine's own are
+                    # put back below instead.
+                    for row in lines:
+                        if row.startswith(TERMINATOR):
+                            break
+                    continue
                 with cursor.copy(
                     f'COPY public."{table}" FROM STDIN'  # noqa: S608 - from the header
                 ) as copy:
@@ -368,6 +424,22 @@ def restore(name: str) -> dict:
                             break
                         copy.write(row)
                         counts[table] += 1
+
+        for table in kept:
+            owned = conn.execute(
+                text(
+                    "SELECT 1 FROM information_schema.columns "
+                    "WHERE table_schema = 'public' AND table_name = :t AND column_name = 'user_id'"
+                ),
+                {"t": table},
+            ).first()
+            condition = " WHERE user_id IN (SELECT id FROM users)" if owned else ""
+            conn.execute(
+                text(
+                    f'INSERT INTO public."{table}" '  # noqa: S608 - fixed names
+                    f'SELECT * FROM "keep_{table}"{condition}'
+                )
+            )
 
     total = sum(counts.values())
     log.warning("restored %s: %d rows across %d tables", name, total, len(counts))
@@ -461,6 +533,54 @@ def offsite_index() -> list[dict]:
         }
         for item in offsite.index(_store())
     ]
+
+
+def prune_offsite(now: datetime | None = None) -> list[str]:
+    """Apply the same keeping rule to the copies in the bucket.
+
+    Hourly backups would otherwise put about 450 MB a day into a 20 GB free
+    allowance. Only backups are considered; the standby's outboxes live under
+    their own prefix and are removed by whoever replays them.
+
+    Fails loudly rather than quietly when the key is not allowed to delete —
+    which is the stronger arrangement worth moving to, and at that point the
+    bucket's own lifecycle rule should do this job instead.
+    """
+    now = now or datetime.now(UTC)
+    store = _store()
+    copies = []
+    for item in offsite.index(store):
+        match = re.match(r"^homesh-(\d{8})-(\d{6})", item.name)
+        if not match:
+            continue
+        taken = datetime.strptime("".join(match.groups()), "%Y%m%d%H%M%S").replace(tzinfo=UTC)
+        copies.append((taken, item.name))
+    copies.sort(reverse=True)
+
+    kept: set[str] = set()
+    newest_per_day: dict = {}
+    for taken, name in copies:
+        age = now - taken
+        if age <= HOURLY:
+            kept.add(name)
+        elif age <= timedelta(days=DAILY_DAYS):
+            newest_per_day.setdefault(taken.date(), name)
+    kept.update(newest_per_day.values())
+    for landmark in LANDMARKS:
+        near = [(t, n) for t, n in copies if abs((now - t) - landmark) <= NEAR]
+        if near:
+            kept.add(min(near, key=lambda c: abs((now - c[0]) - landmark))[1])
+    if copies and not kept:
+        kept.add(copies[0][1])
+
+    removed = []
+    for _taken, name in copies:
+        if name not in kept:
+            offsite.remove(store, name)
+            removed.append(name)
+    if removed:
+        log.info("pruned %d off-site backup(s)", len(removed))
+    return removed
 
 
 def bring_back(name: str) -> str:

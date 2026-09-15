@@ -41,6 +41,8 @@ export const api = {
 };
 
 export interface Health {
+  /** Which machine answered: the PC, or the standby that serves while it is off. */
+  role?: "primary" | "standby";
   status: string;
   version: string;
   database: string;

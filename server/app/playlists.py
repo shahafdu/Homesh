@@ -16,7 +16,7 @@ from __future__ import annotations
 import logging
 import re
 from contextlib import closing
-from uuid import UUID
+from uuid import UUID, uuid4, uuid5
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
@@ -39,6 +39,15 @@ PLAYLIST_EXTS = {"m3u", "m3u8", "pls"}
 class PlaylistCreate(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     item_ids: list[UUID] = Field(default_factory=list, max_length=2000)
+    # Chosen by the caller rather than by the database, when given.
+    #
+    # For the standby: a playlist made there while the PC is off is replayed on
+    # the PC later, and every later change to it names it by id -- "add a track
+    # to this playlist". If the PC gave it a new id on replay, every one of those
+    # would name a playlist that does not exist. So the standby picks the ids and
+    # the PC uses the same ones, and the replay needs no translation table.
+    id: UUID | None = None
+    entry_ids: list[UUID] | None = Field(default=None, max_length=2000)
 
 
 class PlaylistRename(BaseModel):
@@ -51,10 +60,16 @@ class ShareUpdate(BaseModel):
 
 class CopyRequest(BaseModel):
     name: str | None = Field(default=None, max_length=120)
+    # See PlaylistCreate.id. The copy's entries are then named from it, so they
+    # come out the same on both machines too.
+    id: UUID | None = None
 
 
 class AddItems(BaseModel):
     item_ids: list[UUID] = Field(min_length=1, max_length=2000)
+    # See PlaylistCreate.id. Removing a track names the entry, so an entry added
+    # on the standby must have the same id once it reaches the PC.
+    entry_ids: list[UUID] | None = Field(default=None, max_length=2000)
 
 
 class Reorder(BaseModel):
@@ -279,22 +294,26 @@ async def get_playlist(playlist_id: UUID, user: CurrentUser = Depends(require_us
 async def create_playlist(
     body: PlaylistCreate, user: CurrentUser = Depends(require_user)
 ) -> dict:
+    entry_ids = _matching_entry_ids(body.entry_ids, body.item_ids)
+
     with get_engine().begin() as conn:
+        if body.id is not None:
+            existing = _existing_playlist(conn, body.id, user)
+            if existing is not None:
+                # Already made -- by an earlier replay of this same change. Doing
+                # nothing is the right answer, and the only safe one.
+                return existing
+
         playlist_id = conn.execute(
-            text("INSERT INTO playlists (name, owner_id) VALUES (:n, :o) RETURNING id"),
-            {"n": body.name.strip(), "o": str(user.id)},
+            text(
+                "INSERT INTO playlists (id, name, owner_id) "
+                "VALUES (coalesce(CAST(:id AS uuid), gen_random_uuid()), :n, :o) RETURNING id"
+            ),
+            {"id": str(body.id) if body.id else None, "n": body.name.strip(), "o": str(user.id)},
         ).scalar_one()
 
         for position, item_id in enumerate(body.item_ids):
-            conn.execute(
-                text(
-                    """
-                    INSERT INTO playlist_items (playlist_id, position, item_id)
-                    VALUES (:p, :pos, :i)
-                    """
-                ),
-                {"p": str(playlist_id), "pos": position, "i": str(item_id)},
-            )
+            _insert_entry(conn, playlist_id, position, item_id, entry_ids[position])
 
     return {"id": str(playlist_id), "name": body.name.strip()}
 
@@ -336,16 +355,14 @@ async def add_items(
             {"p": str(playlist_id)},
         ).scalar_one()
 
+        entry_ids = _matching_entry_ids(body.entry_ids, body.item_ids)
+        if body.entry_ids and _entries_exist(conn, body.entry_ids, playlist_id):
+            # Every one of these is already in this playlist: an earlier replay
+            # of the same change. Adding them again would duplicate the tracks.
+            return {"added": 0}
+
         for offset, item_id in enumerate(body.item_ids):
-            conn.execute(
-                text(
-                    """
-                    INSERT INTO playlist_items (playlist_id, position, item_id)
-                    VALUES (:p, :pos, :i)
-                    """
-                ),
-                {"p": str(playlist_id), "pos": next_position + offset, "i": str(item_id)},
-            )
+            _insert_entry(conn, playlist_id, next_position + offset, item_id, entry_ids[offset])
 
     return {"added": len(body.item_ids)}
 
@@ -396,6 +413,72 @@ async def reorder(
             )
 
     return {"ok": True}
+
+
+def _matching_entry_ids(entry_ids: list[UUID] | None, item_ids: list[UUID]) -> list:
+    """Caller-chosen entry ids, one per track, or a None for each."""
+    if entry_ids is None:
+        return [None] * len(item_ids)
+    if len(entry_ids) != len(item_ids) or len(set(entry_ids)) != len(entry_ids):
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            "entry_ids must name one distinct entry for each track",
+        )
+    return list(entry_ids)
+
+
+def _existing_playlist(conn, playlist_id: UUID, user: CurrentUser) -> dict | None:
+    """A playlist that already has this id, if it is this person's.
+
+    Somebody else's is refused rather than returned: choosing ids is a
+    convenience for replay, and it must not become a way to learn that a playlist
+    you do not own exists -- let alone to be handed it as your own.
+    """
+    row = conn.execute(
+        text("SELECT name, owner_id FROM playlists WHERE id = :p"), {"p": str(playlist_id)}
+    ).first()
+    if row is None:
+        return None
+    if row[1] != user.id:
+        raise HTTPException(status.HTTP_409_CONFLICT, "that id is already in use")
+    return {"id": str(playlist_id), "name": row[0]}
+
+
+def _entries_exist(conn, entry_ids: list[UUID], playlist_id: UUID) -> bool:
+    """Whether every one of these entries is already in this playlist.
+
+    Some but not all is refused: that is not a replay of the same change, and
+    choosing which half to add would be guessing.
+    """
+    here, anywhere = conn.execute(
+        text(
+            "SELECT count(*) FILTER (WHERE playlist_id = :p), count(*) "
+            "FROM playlist_items WHERE id = ANY(CAST(:ids AS uuid[]))"
+        ),
+        {"p": str(playlist_id), "ids": [str(e) for e in entry_ids]},
+    ).one()
+    if anywhere == 0:
+        return False
+    if here == len(entry_ids) == anywhere:
+        return True
+    raise HTTPException(status.HTTP_409_CONFLICT, "those entry ids are already in use")
+
+
+def _insert_entry(conn, playlist_id, position: int, item_id: UUID, entry_id) -> None:
+    conn.execute(
+        text(
+            """
+            INSERT INTO playlist_items (id, playlist_id, position, item_id)
+            VALUES (coalesce(CAST(:e AS uuid), gen_random_uuid()), :p, :pos, :i)
+            """
+        ),
+        {
+            "e": str(entry_id) if entry_id else None,
+            "p": str(playlist_id),
+            "pos": position,
+            "i": str(item_id),
+        },
+    )
 
 
 def _renumber(conn, playlist_id: UUID) -> None:
@@ -456,24 +539,52 @@ async def copy_playlist(
     new_name = (body.name or f"{name} (my copy)").strip()
 
     with get_engine().begin() as conn:
+        if body.id is not None:
+            existing = _existing_playlist(conn, body.id, user)
+            if existing is not None:
+                return existing
+
         copy_id = conn.execute(
-            text("INSERT INTO playlists (name, owner_id) VALUES (:n, :o) RETURNING id"),
-            {"n": new_name, "o": str(user.id)},
+            text(
+                "INSERT INTO playlists (id, name, owner_id) "
+                "VALUES (coalesce(CAST(:id AS uuid), gen_random_uuid()), :n, :o) RETURNING id"
+            ),
+            {"id": str(body.id) if body.id else None, "n": new_name, "o": str(user.id)},
         ).scalar_one()
+
+        originals = conn.execute(
+            text(
+                "SELECT id, position, item_id, original_ref, raw_title "
+                "FROM playlist_items WHERE playlist_id = :old ORDER BY position"
+            ),
+            {"old": str(playlist_id)},
+        ).all()
 
         # Unresolved lines come too. They are part of the list somebody made, and
         # dropping them here would quietly shorten it.
-        conn.execute(
-            text(
-                """
-                INSERT INTO playlist_items
-                    (playlist_id, position, item_id, original_ref, raw_title)
-                SELECT :new, position, item_id, original_ref, raw_title
-                FROM playlist_items WHERE playlist_id = :old
-                """
-            ),
-            {"new": str(copy_id), "old": str(playlist_id)},
-        )
+        #
+        # When the copy's id was chosen by the caller, each entry's id is derived
+        # from it and from the original entry, so a copy replayed from the standby
+        # has the same entries as the copy made there -- and a track removed from
+        # it later names an entry that exists on both.
+        for old_id, position, item_id, original_ref, raw_title in originals:
+            conn.execute(
+                text(
+                    """
+                    INSERT INTO playlist_items
+                        (id, playlist_id, position, item_id, original_ref, raw_title)
+                    VALUES (:id, :new, :pos, :item, :ref, :title)
+                    """
+                ),
+                {
+                    "id": str(uuid5(copy_id, str(old_id))) if body.id else str(uuid4()),
+                    "new": str(copy_id),
+                    "pos": position,
+                    "item": str(item_id) if item_id else None,
+                    "ref": original_ref,
+                    "title": raw_title,
+                },
+            )
 
     return {"id": str(copy_id), "name": new_name}
 

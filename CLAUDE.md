@@ -98,7 +98,7 @@ routinely breaks another, and the tracker is what makes that visible.
 | 8 · Optional transcode | ❌ overtaken | It was never optional for this library — see §3.2.1 of ARCHITECTURE for what actually happened |
 | 9 · Public release | 🔨 | Public since August. Docs current as of 14 September 2026; screenshots outstanding |
 
-**Tests: 529 passing. Migrations: 023. Lint: clean. CI green.**
+**Tests: 578 passing. Migrations: 024. Lint: clean. CI green.**
 
 ### AI design decisions — agreed, not yet built
 
@@ -153,7 +153,11 @@ do not stop.
 - [ ] Automatic rescan on file change — sweeps are scheduled, but a change is noticed
       at the next sweep rather than when it happens
 - [ ] Go agent + WireGuard (Mode B split; only needed when the core moves off the PC)
-- [ ] Deploy to Oracle Always Free (phase 0.5)
+- [ ] **The standby on Oracle** (phase 0.5, as redesigned) — `docs/STANDBY.md`.
+      Built: hourly backups, the standby's safe refresh, changes on the standby
+      recorded and replayed on the PC, refusals and a banner. Waiting on the
+      Oracle machine, the Tailscale rule and the join key (owner's part), then
+      deployment, thumbnail sync, and Homesh Connect's third address
 - [x] ~~Off-site backups~~ — Oracle Object Storage, S3-compatible, verified end to
       end on the real bucket. Drive could never have been the destination: a service
       account has no storage quota, so it cannot create a file even in a folder shared
@@ -253,7 +257,7 @@ Full reasoning in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md). The load-beari
 server/app/       config, db, main, auth, security, people, access, prefs, library,
                   scanner, metadata, dedup, signing, stream, transcode, documents,
                   thumbs, sharing, playlists, zones, denon, renderers, discovery,
-                  occupancy, lanaddr, upkeep, backups, crypt, offsite,
+                  occupancy, lanaddr, upkeep, backups, crypt, offsite, standby,
                   sources/{base,local,gdrive}
 server/migrations 023 of them, plain SQL, tracked in `schema_migrations` and applied at
                   startup. `ls server/migrations` is the list; the recent ones are

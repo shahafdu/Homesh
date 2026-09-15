@@ -103,6 +103,14 @@ def _lookup(token: str) -> CurrentUser | None:
 
 
 async def optional_user(request: Request) -> CurrentUser | None:
+    # A change from the standby being carried out on the PC, as the person who
+    # made it. Set in the ASGI scope by app/standby.py, which only code inside
+    # this process can do: nothing arriving over the network can reach the
+    # scope's state, so this is not a way to claim to be somebody.
+    replayed = getattr(request.state, "replay_user", None)
+    if replayed is not None:
+        return replayed
+
     token = request.cookies.get(SESSION_COOKIE)
     if not token:
         return None

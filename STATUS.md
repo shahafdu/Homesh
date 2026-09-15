@@ -6,7 +6,7 @@ to reconstruct the state of a large, half-finished system from memory.
 **Legend** — ✅ built and verified · 🟡 built, needs Shahaf to confirm ·
 🔴 known broken · ⬜ not started · ⏳ waiting on Shahaf
 
-Last updated: 15 September 2026 · 529 tests · 23 migrations · CI green
+Last updated: 15 September 2026 · 578 tests · 24 migrations · CI green
 (verified with `tools/verify-ci.ps1`, not assumed)
 
 ---
@@ -17,6 +17,8 @@ The list to work from. Everything else can proceed without you.
 
 | | What | Why it matters |
 |---|---|---|
+| ⏳ | **Create the Oracle standby machine** | Ampere A1, 2 OCPUs, 12 GB, Ubuntu 24.04, the PC's SSH key pasted in -- exact clicks in `docs/STANDBY.md`. Jerusalem often has no free Ampere capacity; if it says *Out of host capacity*, try again later, and never via a paid A2 machine. Put its public IP in `.local\standby-ip` |
+| ⏳ | **Tailscale: the dead-end rule and a join key** | So the standby can be reached by your devices and can reach nothing. The rule and the key settings are in `docs/STANDBY.md`; the key goes in `.local	ailscale-authkey`, not into a chat |
 | ✅ | **Photo slideshows** | Open a folder → **▶ Slideshow**. Recursive through subfolders. **Plays forever by default** — shuffled draws a fresh sample each time, in order pages through and wraps, and repeats are expected. 3s-1m per photo, fade/slide/zoom/cut/random transitions. Here or in a room, and a room refills its own queue. Verified on the real library: three pages cover 30,000 distinct photos of 105,162 with no overlap |
 | ✅ | **Add a folder of your own media** | **Sources → Choose a folder...** opens the Windows folder picker on the PC, via a `homesh://` protocol handler. Double-click **Add a folder to Homesh** once to register it. `E:\music` is granted; the server reaches that folder and nothing else — `/hostfs` is gone and writes into the mount are refused |
 | ⏳ | **Share a Drive folder as Editor** | Two things need it and both are blocked without it: creating a share link, and putting a backup somewhere this house is not. A service account owns no storage of its own, so a *viewer* cannot grant access it does not itself have — the error says exactly that. Sharing one folder as Editor is the whole task |
