@@ -86,9 +86,16 @@ async def lifespan(app: FastAPI):
         else:
             log.info("schema up to date")
 
-        register_sources()
+        # The standby's accounts and sources come from the PC's backups. Letting
+        # it register folders of its own would write rows the next restore
+        # replaces, and a first-run code there would let whoever reached it
+        # first make an owner account on a machine that is not the house.
+        from .standby import is_standby
 
-        code = ensure_bootstrap_code()
+        if not is_standby():
+            register_sources()
+
+        code = None if is_standby() else ensure_bootstrap_code()
         if code:
             log.warning(
                 "\n"
@@ -108,6 +115,13 @@ async def lifespan(app: FastAPI):
     # rather than leaving a scan writing into a closing connection pool.
     upkeep = asyncio.create_task(scan_forever())
 
+    # The traffic with the other machine, through the bucket: on the PC,
+    # carrying out changes made on the standby; on the standby, sending them
+    # and taking the PC's newest backup.
+    from .upkeep import sync_forever
+
+    syncing = asyncio.create_task(sync_forever())
+
     # Answers "where is the server?" on the LAN, so a television never has to be
     # told an address with a remote control.
     finder = asyncio.create_task(serve_discovery())
@@ -123,7 +137,7 @@ async def lifespan(app: FastAPI):
 
     yield
 
-    for task in (upkeep, finder, watcher, address):
+    for task in (upkeep, finder, watcher, address, syncing):
         task.cancel()
         with suppress(asyncio.CancelledError):
             await task
@@ -148,6 +162,12 @@ if not settings.secure_cookies:
         allow_headers=["*"],
     )
 
+
+# What a write may do on the standby: be kept and carried back, be handled
+# there, or be refused. Inert on the PC.
+from .standby import StandbyGate  # noqa: E402
+
+app.add_middleware(StandbyGate)
 
 app.include_router(auth_router)
 app.include_router(backups_router)
@@ -185,7 +205,12 @@ async def health() -> JSONResponse:
     if not db_ok:
         problems.append("database unreachable")
 
+    from .standby import role
+
     body = {
+        # Which machine answered. The interface shows a banner when it is the
+        # standby, so a refused change is explained before it is attempted.
+        "role": role(),
         "status": "ok" if not problems else "degraded",
         "version": app.version,
         "database": "ok" if db_ok else "unreachable",

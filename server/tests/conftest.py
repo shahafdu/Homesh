@@ -107,6 +107,10 @@ def db():
         # test happens to run second.
         conn.execute(text("DELETE FROM items"))
         conn.execute(text("DELETE FROM users"))
+        # No foreign keys on either, deliberately (they must survive a standby's
+        # restore), so nothing above cascades into them.
+        conn.execute(text("DELETE FROM outbox_ops"))
+        conn.execute(text("DELETE FROM applied_ops"))
 
 
 @pytest.fixture
