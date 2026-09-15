@@ -27,6 +27,31 @@ os.environ.setdefault("MEDIA_ROOTS", "")
 # the container path, which does not exist on a CI runner or a dev machine.
 os.environ.setdefault("CACHE_DIR", tempfile.mkdtemp(prefix="homesh-test-cache-"))
 
+# Nothing the suite does may reach a real service, and these are forced rather
+# than defaulted, because the default is exactly what failed.
+#
+# The suite runs in a container built from the same compose service as the real
+# server, and that service reads `.env`. So the tests inherited the real off-site
+# credentials and the real backup key, and every test that took a backup through
+# the API sent it to the real bucket: three encrypted copies of the *test*
+# database -- one account called "tester", no library -- sitting beside the real
+# backups, each one a "Bring back" and a "Restore" away from replacing the
+# household's accounts with a fixture. Found by listing the bucket after a
+# reboot, not by anything the tests said.
+#
+# The same inheritance handed them the real Drive credential, so every test that
+# started the app listed the household's Drive folders. Read-only, and still
+# not something a test should be doing.
+#
+# Same rule as the database-name guard below: tests do not touch the real thing,
+# and that is enforced here rather than hoped for in each test.
+for _real_service in (
+    "OFFSITE_PROVIDER", "OFFSITE_REGION", "OFFSITE_BUCKET", "OFFSITE_NAMESPACE",
+    "OFFSITE_ACCESS_KEY", "OFFSITE_SECRET_KEY", "BACKUP_KEY",
+):
+    os.environ[_real_service] = ""
+os.environ["GDRIVE_KEY_FILE"] = "/nonexistent/test-suite-has-no-drive-key.json"
+
 
 def _guard_target_database() -> None:
     """Refuse to run against anything but a database named for testing.

@@ -102,6 +102,11 @@ docker compose -f "${repo}/docker-compose.yml" run --rm `
     --volume "${repo}/server:/app" `
     --env "DATABASE_URL=postgresql+psycopg://homesh:$pw@db:5432/$testDb" `
     --env "MEDIA_ROOTS=" `
+    --env "OFFSITE_PROVIDER=" `
+    --env "OFFSITE_ACCESS_KEY=" `
+    --env "OFFSITE_SECRET_KEY=" `
+    --env "BACKUP_KEY=" `
+    --env "GDRIVE_KEY_FILE=/nonexistent/test-suite-has-no-drive-key.json" `
     --entrypoint sh `
     api -c "pip install --quiet pytest pytest-asyncio httpx >/dev/null 2>&1 && python -m pytest $($pytestArgs -join ' ')"
 

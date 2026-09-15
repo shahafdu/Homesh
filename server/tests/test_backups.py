@@ -445,3 +445,22 @@ class TestTheCopyThatLeavesTheHouse:
 
 def shelf_files(directory):
     return sorted(p.name for p in directory.glob("homesh-*"))
+
+
+def test_the_suite_cannot_reach_the_real_bucket():
+    """It did. The suite runs in a container that reads the real `.env`, so
+    every backup taken through the API went to the real bucket -- copies of the
+    *test* database, one Bring back and one Restore away from replacing the
+    household's accounts with a fixture account called "tester".
+
+    conftest.py blanks the credentials before anything is imported; this is the
+    check that it still does."""
+    from app import offsite
+    from app.config import get_settings
+
+    get_settings.cache_clear()
+    try:
+        assert offsite.configured(get_settings()) is None
+        assert get_settings().backup_key == ""
+    finally:
+        get_settings.cache_clear()
