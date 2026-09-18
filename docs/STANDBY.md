@@ -154,45 +154,99 @@ applies to a smaller number of files.
 
 ### 1. Create the machine
 
-Oracle console → **☰ menu → Compute → Instances → Create instance**.
+Oracle console -> **(menu) Compute -> Instances -> Create instance**. The page is
+one long form; these are its sections in the order they appear, and anything not
+named here is left as it came.
+
+**Name and compartment**
 
 - **Name:** `homesh-standby`
-- **Image and shape → Edit:**
-  - **Change shape** → **Ampere** → **VM.Standard.A1.Flex**, and leave the
-    OCPU and memory at whatever the console marks *Always Free-eligible* — in
-    Jerusalem that is **1 OCPU and 6 GB**, and it is the only size offered.
-    **Never raise it past the eligible mark**: above it the shape is a paid one,
-    and the whole arrangement rests on there being nothing here that can bill.
-    Guides quoting 4 OCPU / 24 GB, or 2 and 12, are describing allowances Oracle
-    has since cut.
-  - **Change image** → *Canonical Ubuntu* → **24.04**. Pick the shape first; the
-    image list then offers the `aarch64` build that runs on it.
-- **Networking:** create a new virtual cloud network with a **public subnet**, and
-  leave **Assign a public IPv4 address** on. It needs to reach the internet — the
-  bucket, Drive, Tailscale — and a public address is the free way to do that.
-- **Add SSH keys → Paste public keys**, and paste this, which is the PC's key.
-  It is a public key and safe to share; its private half stays on the PC:
+- **Compartment:** the one already selected. A fresh account has only the root
+  one, and nothing here needs a second.
 
-  ```
-  ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIC2iu1IlKYKdKm26P5NPSzjez5KkmQb+UWeQFtgj8WAl homesh-pc-to-standby
-  ```
+**Placement**
 
-- **Boot volume:** leave the default. It is inside the 200 GB allowance.
-- **Advanced options**, wherever they appear on that page: leave every one of
-  them alone. They cover cloud-init scripts, hostnames, in-transit encryption
-  and capacity reservations, and the defaults are right for this -- the machine
-  is configured after it boots, over SSH, not at creation.
-- **Create.**
+Leave the availability domain as it is. If creation later fails with *Out of
+host capacity* and the region offers more than one domain, trying another is the
+first thing to try.
 
-**If it says "Out of host capacity"**, Oracle has no free Ampere machines in
-Jerusalem at that moment. Nothing is wrong on your side; try again later — early
+**Security**
+
+Leave both **Shielded instance** and **Confidential computing** off. This section
+is not where the SSH key goes -- that has a section of its own, further down.
+
+**Image and shape**
+
+- **Shape -> Change shape -> Ampere -> VM.Standard.A1.Flex**, and leave the OCPU
+  and memory at whatever the console marks *Always Free-eligible* -- in Jerusalem
+  that is **1 OCPU and 6 GB**, and it is the only size offered. **Never raise it
+  past the eligible mark**: above it the shape is a paid one, and the whole
+  arrangement rests on there being nothing here that can bill. Guides quoting
+  4 OCPU / 24 GB, or 2 and 12, describe allowances Oracle has since cut.
+- **Image -> Change image -> Canonical Ubuntu -> 24.04.** Choose the shape first;
+  the image list then offers the `aarch64` build, which is the one that runs on
+  Ampere. Not 20.04, which is old enough to be awkward, and not 26.04.
+
+**Networking**
+
+- **Create a new virtual cloud network.** Name it `homesh-vcn`; the wizard makes
+  a **public subnet** with it, which is what is wanted.
+- **Subnet:** the public one it just made.
+- **Assign a public IPv4 address: Yes.** The machine has to reach the bucket,
+  Drive and Tailscale, and on Oracle a public address is the free way to do that.
+  It is also how I install everything before Tailscale exists.
+- **Network security groups:** leave unticked. The subnet's own security list is
+  enough, and it already allows SSH.
+
+**Add SSH keys** -- its own section, below networking
+
+Choose **Paste public keys** and paste this line, which is the PC's key. It is a
+public key: safe to paste anywhere, and useless without its private half, which
+never leaves the PC.
+
+```
+ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIC2iu1IlKYKdKm26P5NPSzjez5KkmQb+UWeQFtgj8WAl homesh-pc-to-standby
+```
+
+There is no password login on these images, so this key is the only way in. If it
+is wrong or missing, the machine has to be destroyed and made again.
+
+**Boot volume**
+
+- Tick **Specify a custom boot volume size** and set **100 GB**.
+
+  The default is about 47 GB, which works but leaves little room: the thumbnails
+  for a library this size, the Docker images and the database want space, and
+  growing a boot volume later means resizing the filesystem on a running
+  machine. The Always Free allowance is **200 GB of block storage in total**, and
+  this is the only instance using it, so 100 GB is free and stays free.
+- Leave the performance setting (**Balanced**), the backup policy and the
+  encryption as they are. Oracle-managed keys are right here: what actually
+  matters -- the backups in the bucket -- is encrypted by Homesh before it is
+  sent, with a key Oracle never sees.
+
+**Advanced options**, wherever a section offers them: leave every one alone. They
+cover cloud-init scripts, hostnames, in-transit encryption and capacity
+reservations. The machine is configured after it boots, over SSH, not here.
+
+Then **Create**, and wait for the state to go orange *Provisioning* to green
+*Running*, which takes a minute or two.
+
+**If it says "Out of host capacity"**, Oracle has no free Ampere machines in the
+region at that moment. Nothing is wrong on your side; try again later -- early
 morning often works. **Do not** use the trick some guides suggest of creating an
 A2 machine and changing its shape afterwards: A2 is a paid shape, and the point
 is that nothing here can bill.
 
-When it is running, put its **public IP address** — on the instance's page, under
-*Instance access* — into `C:\Scripts\Media_Server\.local\standby-ip`. That file is
-never committed, and the address is only needed for the first setup.
+**When it is running**, copy its **public IP address** -- on the instance's page,
+under *Instance access* -- into `C:\Scripts\Media_Server\.local\standby-ip`.
+That file is never committed, and the address is only needed until Tailscale is
+running.
+
+**What is open while this is being set up.** The new subnet's default rules allow
+SSH on port 22 from anywhere, which is how the machine gets installed at all. It
+is a machine with no password and one key, holding nothing yet, and port 22 is
+closed for good once Tailscale answers, which is my side of this.
 
 ### 2. Make it a dead end on your Tailscale network
 
@@ -244,8 +298,8 @@ chat window. I copy it from there to the machine and delete it afterwards.
 - ✅ The standby's refresh, which waits until a backup contains every change
   the standby made.
 - ✅ The record of changes on the standby, and their replay on the PC.
-- ✅ Refusing accounts, access, rooms and folders on the standby, with a banner
-  that says so before anything is attempted.
+- ✅ Refusing accounts, access, rooms and folders on the standby, with the
+  status bar saying "PC offline - on standby" before anything is attempted.
 - ⬜ The machine itself: Docker, the stack, Tailscale with HTTPS, the public SSH
   rule closed once Tailscale answers — once it exists.
 - ⬜ Thumbnails synced alongside.
