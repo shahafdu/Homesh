@@ -59,10 +59,12 @@ foreach ($line in Get-Content "$repo\.env") {
 }
 
 function New-Key {
-    # 32 bytes, urlsafe base64 -- the shape config.py validates.
+    # 32 bytes, urlsafe base64 -- the shape config.py validates. The padding
+    # stays: Python's urlsafe_b64decode is strict about it, and a key stripped
+    # of its "=" is refused at startup with "must be urlsafe-base64".
     $bytes = New-Object byte[] 32
     [System.Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($bytes)
-    return [Convert]::ToBase64String($bytes).Replace('+', '-').Replace('/', '_').TrimEnd('=')
+    return [Convert]::ToBase64String($bytes).Replace('+', '-').Replace('/', '_')
 }
 
 # The standby's own name on the tailnet, derived from this PC's: same tailnet,

@@ -306,7 +306,15 @@ chat window. I copy it from there to the machine and delete it afterwards.
 - ✅ The record of changes on the standby, and their replay on the PC.
 - ✅ Refusing accounts, access, rooms and folders on the standby, with the
   status bar saying "PC offline - on standby" before anything is attempted.
-- ⬜ The machine itself: Docker, the stack, Tailscale with HTTPS, the public SSH
-  rule closed once Tailscale answers — once it exists.
+- ✅ The machine itself: `tools/deploy-standby.ps1` installs Docker, clones this
+  repository onto it, writes the configuration it needs and builds the stack.
+  Running it again fetches `main` and rebuilds, which is how the standby is
+  upgraded. Verified on the real machine: it came up as a standby, pulled the
+  newest backup out of the bucket and restored 131,302 items from it, reads all
+  five Drive folders, shows the two folders that live on the PC as offline, and
+  refuses a write that is not replayable with 409.
+- ⬜ Tailscale with HTTPS, and the public SSH rule closed once it answers --
+  `tools/deploy-standby.ps1 -Tailscale` does it, and it is waiting for the
+  access rule and the join key above.
 - ⬜ Thumbnails synced alongside.
 - ⬜ Homesh Connect trying the standby third.
