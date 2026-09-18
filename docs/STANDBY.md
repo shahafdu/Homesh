@@ -208,6 +208,12 @@ never leaves the PC.
 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIC2iu1IlKYKdKm26P5NPSzjez5KkmQb+UWeQFtgj8WAl homesh-pc-to-standby
 ```
 
+Paste the **whole line**, the trailing `homesh-pc-to-standby` included, and with
+no line break anywhere in the middle of it. That trailing part is a comment: SSH
+ignores it when matching the key, and it is there so that a later look at
+`authorized_keys` says which key this is. A rejected paste is almost always a
+line break in the middle of the blob.
+
 There is no password login on these images, so this key is the only way in. If it
 is wrong or missing, the machine has to be destroyed and made again.
 
