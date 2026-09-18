@@ -46,10 +46,14 @@ sudo install -m 600 -o root -g root /tmp/homesh.env "$DIR/.env"
 sudo rm -f /tmp/homesh.env
 sudo mkdir -p "$DIR/.secrets"
 if [ -f /tmp/homesh-gdrive.json ]; then
-    sudo install -m 600 -o root -g root /tmp/homesh-gdrive.json "$DIR/.secrets/gdrive.json"
+    # Owned by the container's user (uid 10001 from server/Dockerfile) and
+    # readable by nobody else. Root-owned and 600, the obvious choice, is a
+    # credential the application cannot read: the container does not run as
+    # root, so Drive simply reported itself unreachable.
+    sudo install -m 400 -o 10001 -g 10001 /tmp/homesh-gdrive.json "$DIR/.secrets/gdrive.json"
     sudo rm -f /tmp/homesh-gdrive.json
 fi
-sudo chmod 700 "$DIR/.secrets"
+sudo chmod 755 "$DIR/.secrets"
 
 say "Building and starting"
 # Building here rather than pulling an image: the repository is public, this
