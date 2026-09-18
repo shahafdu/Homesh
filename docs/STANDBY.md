@@ -178,6 +178,10 @@ Oracle console → **☰ menu → Compute → Instances → Create instance**.
   ```
 
 - **Boot volume:** leave the default. It is inside the 200 GB allowance.
+- **Advanced options**, wherever they appear on that page: leave every one of
+  them alone. They cover cloud-init scripts, hostnames, in-transit encryption
+  and capacity reservations, and the defaults are right for this -- the machine
+  is configured after it boots, over SSH, not at creation.
 - **Create.**
 
 **If it says "Out of host capacity"**, Oracle has no free Ampere machines in
