@@ -131,9 +131,19 @@ Two things keep that as small as it can be:
 
 ## What it costs
 
-Nothing, on the Always Free allowance: one Ampere A1 machine with 2 cores and
-12 GB, well inside the limits, and hourly backups of about 19 MB into a bucket
-that stays small because old copies are pruned.
+Nothing, on the Always Free allowance: one Ampere A1 machine at whatever the
+console marks *Always Free-eligible*, and hourly backups of about 19 MB into a
+bucket that stays small because old copies are pruned.
+
+**Take the eligible size, whatever it is.** The allowance has been cut twice
+without notice -- 4 OCPU / 24 GB, then 2 and 12 in June 2026, and in Jerusalem
+in September 2026 the console offers exactly **1 OCPU and 6 GB** and nothing
+else. That is enough for what the standby does: serve the catalog and play files
+that live on Drive, which is copying bytes rather than working on them. What one
+core will not do is transcode, so on the standby a video that the screen cannot
+decode by itself will not play. On the PC it would have been converted on the
+fly; this is the same limitation as a file that lives only on the RAID, and it
+applies to a smaller number of files.
 
 **Never press Upgrade** on the Oracle account, and none of this can bill — see
 `OFFSITE_BACKUPS.md`.
@@ -148,10 +158,13 @@ Oracle console → **☰ menu → Compute → Instances → Create instance**.
 
 - **Name:** `homesh-standby`
 - **Image and shape → Edit:**
-  - **Change shape** → **Ampere** → **VM.Standard.A1.Flex** — it must say
-    *Always Free-eligible* — then **2 OCPUs** and **12 GB** memory. Not more: the
-    free limit was halved to 2 and 12 in June 2026, and many guides still quote
-    the old 4 and 24.
+  - **Change shape** → **Ampere** → **VM.Standard.A1.Flex**, and leave the
+    OCPU and memory at whatever the console marks *Always Free-eligible* — in
+    Jerusalem that is **1 OCPU and 6 GB**, and it is the only size offered.
+    **Never raise it past the eligible mark**: above it the shape is a paid one,
+    and the whole arrangement rests on there being nothing here that can bill.
+    Guides quoting 4 OCPU / 24 GB, or 2 and 12, are describing allowances Oracle
+    has since cut.
   - **Change image** → *Canonical Ubuntu* → **24.04**. Pick the shape first; the
     image list then offers the `aarch64` build that runs on it.
 - **Networking:** create a new virtual cloud network with a **public subnet**, and

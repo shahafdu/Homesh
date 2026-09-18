@@ -46,9 +46,11 @@ Backblaze B2:
    project: the node that keeps the catalog, search and thumbnails answering
    when the PC is off. Same account, later, no second provider.
 
-The free allowance was halved in June 2026 and is still ample here: 2 ARM cores
-and 12 GB of memory, 200 GB of block storage, 10 TB of outbound traffic a month,
-and 20 GB of object storage across the tiers. A backup is about 19 MB a day.
+The free allowance has been cut twice and is still ample for this: an ARM
+machine at whatever size the console marks eligible (1 OCPU and 6 GB in
+Jerusalem as of September 2026), 200 GB of block storage, 10 TB of outbound
+traffic a month, and 20 GB of object storage across the tiers. Backups are
+hourly and about 19 MB each, and old ones are pruned.
 
 ### What to do
 

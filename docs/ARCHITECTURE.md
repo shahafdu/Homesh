@@ -177,7 +177,7 @@ so it never rots.
 
 | Target | Arch | Cost | Notes |
 |---|---|---|---|
-| **Oracle Cloud Always Free** | arm64 | **Free, permanent** | 2 OCPU / 12 GB / 200 GB block storage. Recommended starting point |
+| **Oracle Cloud Always Free** | arm64 | **Free, permanent** | Whatever the console marks eligible — 1 OCPU / 6 GB in Jerusalem as of September 2026 — plus 200 GB block storage. Recommended starting point |
 | **Raspberry Pi 5 at home** | arm64 | ~$80 once | Same image as Oracle — literally a drop-in swap. Data stays in your house |
 | Windows PC | amd64 | Free | Mode A only; not always-on |
 | Any paid VPS | amd64 | ~€4/mo | Escape hatch if the free options degrade |
@@ -188,7 +188,9 @@ and a database restore — an evening's work, not a migration project.
 
 **Honest risks with Oracle's free tier**, which you should know before we depend on it:
 - On **15 June 2026 Oracle silently halved** the Always Free Ampere allowance from 4 OCPU/24 GB
-  to 2 OCPU/12 GB, with no announcement or customer notice. They can do it again.
+  to 2 OCPU/12 GB, with no announcement or customer notice. They did do it again: by September
+  2026 the Jerusalem console offers 1 OCPU / 6 GB and no larger eligible size. Assume the
+  allowance is whatever the console says today, and that it can shrink again.
 - Ampere A1 capacity is region-dependent; `Out of Capacity` errors on instance creation are
   common in popular regions and may take retries.
 - **Idle reclaim:** instances under 10% CPU *and* 10% network over 7 days may be stopped. A

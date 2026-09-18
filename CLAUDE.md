@@ -248,7 +248,8 @@ Full reasoning in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md). The load-beari
   removed; apps only see media they uploaded. Hence the RAID copy is the photo source.
 - **Personal Gmail + `drive.readonly`** ⇒ refresh tokens revoked every 7 days. Use
   `drive.file` instead; no verification, no expiry clock.
-- **Oracle halved its free tier** (June 2026) to 2 OCPU / 12 GB, silently. Portability
+- **Oracle cut its free tier** twice and silently — 2 OCPU / 12 GB in June 2026, and
+  1 OCPU / 6 GB in the Jerusalem console by September. Take the eligible size. Portability
   is therefore an architectural requirement, not a preference.
 
 ---
