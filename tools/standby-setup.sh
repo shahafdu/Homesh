@@ -60,7 +60,10 @@ say "Building and starting"
 # machine has the cores to spare while it is idle, and it means the standby runs
 # the same commit as the PC with nothing to publish in between.
 cd "$DIR"
-sudo $COMPOSE up -d --build
+# Which code this is, stamped into the image -- the same stamp the PC's gets,
+# so the two can be compared at a glance.
+BUILD=$(sudo git -C "$DIR" log -1 --format='%cd-%h' --date=format:'%Y.%m.%d')
+sudo HOMESH_BUILD="$BUILD" $COMPOSE up -d --build
 
 say "Waiting for it to answer"
 for _ in $(seq 1 60); do

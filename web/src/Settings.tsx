@@ -157,6 +157,14 @@ function Passkeys() {
         <div key={key.id} className="invite-row">
           <div>
             <b>{key.label ?? "A device"}</b>
+            {key.pc_only && (
+              <span
+                className="badge warn"
+                title="Made before passkeys moved to a name both machines share. It signs in to the PC, not the standby; signing in on that device offers the one-tap swap."
+              >
+                PC only
+              </span>
+            )}
             <div className="muted small">
               added {formatDate(key.created_at)}
               {key.last_used_at && ` · last used ${formatDate(key.last_used_at)}`}

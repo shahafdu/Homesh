@@ -144,9 +144,20 @@ async def lifespan(app: FastAPI):
     log.info("Homesh stopped")
 
 
+def build_stamp() -> str:
+    """Which code is running: "2026.09.19-85df90c", the commit's date and id.
+
+    Stamped into the image when it is built. This said "0.1.0" for a month
+    whatever it was running -- a number written on the first day and never
+    changed, which cannot tell one build from another or the PC from the
+    standby. "dev" where nothing stamped it: a test run, or a build by hand.
+    """
+    return os.environ.get("HOMESH_BUILD", "").strip() or "dev"
+
+
 app = FastAPI(
     title="Homesh",
-    version="0.1.0",
+    version=build_stamp(),
     lifespan=lifespan,
     docs_url="/api/docs",
     openapi_url="/api/openapi.json",

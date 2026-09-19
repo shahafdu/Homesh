@@ -1,0 +1,13 @@
+-- Which name a passkey belongs to.
+--
+-- A passkey is bound to a "relying party" id, and until now that was the PC's
+-- full host name -- so the standby, under a different name, could use none of
+-- them, and every device had to be set up twice. From here new passkeys belong
+-- to the tailnet's own domain, which both machines sit under, and one passkey
+-- works on both.
+--
+-- NULL means a passkey made before this column existed, for the PC's own name
+-- (RP_ID_LEGACY in the PC's configuration). Those still sign in to the PC, and
+-- are replaced one at a time as each device signs in and takes the one-tap
+-- upgrade.
+ALTER TABLE credentials ADD COLUMN IF NOT EXISTS rp_id TEXT;

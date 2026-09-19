@@ -72,7 +72,22 @@ class TestWhatKindOfChangeThisIs:
 
     def test_signing_in_is_handled_there(self):
         assert standby.classify("POST", "/api/auth/login/begin") == "local"
-        assert standby.classify("POST", "/api/auth/passkeys/complete") == "local"
+        assert standby.classify("POST", "/api/auth/login/complete") == "local"
+        assert standby.classify("POST", "/api/auth/devices/claim") == "local"
+
+    @pytest.mark.parametrize(
+        "method,path",
+        [
+            ("POST", "/api/auth/passkeys/begin"),
+            ("POST", "/api/auth/passkeys/complete"),
+            ("DELETE", "/api/auth/passkeys/0b5c7f36-1c1e-4d7a-9b1e-2f4c1f2a9e11"),
+            ("POST", "/api/auth/register/begin"),
+        ],
+    )
+    def test_passkeys_are_made_and_removed_on_the_pc(self, method, path):
+        """The standby's passkeys are the PC's, restored every hour: one made
+        here would vanish, one removed here would come back."""
+        assert standby.classify(method, path) == "refused"
 
     @pytest.mark.parametrize(
         "method,path",
@@ -481,22 +496,24 @@ class TestTheJourney:
 
 
 class TestTheStandbyKeepsWhatIsItsOwn:
-    def test_its_passkeys_survive_a_restore_and_the_pcs_do_not_arrive(self, db, user, bucket):
+    def test_the_pcs_passkeys_arrive_with_its_backup(self, db, user, bucket):
+        """One passkey for both machines: made on the PC, for the tailnet's
+        domain, it reaches the standby with the next backup and works there."""
         from app import backups
 
         with db.begin() as conn:
             conn.execute(
-                text("INSERT INTO credentials (user_id, credential_id, public_key) "
-                     "VALUES (:u, 'pc-passkey', 'k')"),
+                text("INSERT INTO credentials (user_id, credential_id, public_key, rp_id) "
+                     "VALUES (:u, 'pc-passkey', 'k', 'example.ts.net')"),
                 {"u": str(user.id)},
             )
-        taken = backups.make_backup()              # the PC's backup, with the PC's passkey
+        taken = backups.make_backup()
 
         with db.begin() as conn:
             conn.execute(text("DELETE FROM credentials"))
             conn.execute(
                 text("INSERT INTO credentials (user_id, credential_id, public_key) "
-                     "VALUES (:u, 'standby-passkey', 'k')"),
+                     "VALUES (:u, 'stale-standby-passkey', 'k')"),
                 {"u": str(user.id)},
             )
 
@@ -504,5 +521,15 @@ class TestTheStandbyKeepsWhatIsItsOwn:
 
         with db.connect() as conn:
             rows = conn.execute(text("SELECT credential_id FROM credentials")).all()
-            held = {bytes(r[0]) for r in rows}
-        assert held == {b"standby-passkey"}
+        assert {bytes(r[0]) for r in rows} == {b"pc-passkey"}
+
+    def test_who_is_signed_in_survives_a_restore(self, db, user, bucket):
+        from app import backups
+        from app.security import create_session
+
+        taken = backups.make_backup()
+        with db.begin() as conn:
+            create_session(conn, user.id, "phone")
+        backups.restore(taken.name, keep=standby.STANDBY_LOCAL)
+        with db.connect() as conn:
+            assert conn.execute(text("SELECT count(*) FROM auth_sessions")).scalar_one() == 1

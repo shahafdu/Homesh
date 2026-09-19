@@ -753,6 +753,17 @@ button.compact:disabled { opacity: .5; cursor: not-allowed; }
 
 /* Shown on the standby. Quiet enough to live with for an evening, clear
    enough that a file that will not play is already explained. */
+/* Offering to swap an old passkey. A strip across the top rather than a dialog:
+   it can wait, and it should not stand between somebody and what they opened
+   the app to do. */
+.upgrade-banner {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
+  gap: 10px 16px; padding: 10px 16px; font-size: 13.5px; line-height: 1.4;
+  background: color-mix(in srgb, var(--accent) 12%, var(--bg));
+  border-bottom: 1px solid var(--line); color: var(--ink);
+}
+.upgrade-banner .confirm { display: flex; gap: 8px; }
+
 .standby-banner {
   position: sticky; bottom: 45px; z-index: 18; cursor: pointer;
   border-top: 1px solid var(--line);

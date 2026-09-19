@@ -63,5 +63,11 @@ RUN useradd --create-home --uid 10001 homesh \
  && chown -R homesh:homesh /app /var/lib/homesh
 USER homesh
 
+# Which code this is: "2026.09.19-85df90c", the commit's date and short id,
+# passed in by tools/start-homesh.ps1 and tools/standby-setup.sh. Last, so a new
+# stamp does not throw away the cached layers above it.
+ARG HOMESH_BUILD=
+ENV HOMESH_BUILD=${HOMESH_BUILD}
+
 EXPOSE 8080
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080"]
