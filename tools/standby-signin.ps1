@@ -61,6 +61,10 @@ if ($ok) {
 } else {
     Write-Host "  Could not get a code:" -ForegroundColor Red
     $out | ForEach-Object { Write-Host "  $_" -ForegroundColor Red }
-    Write-Host "  Is this PC connected to Tailscale?" -ForegroundColor Red
+    # Only when the standby was never reached. An answer from it -- "no account
+    # called ..." -- means the connection was fine and the name was not.
+    if (-not ("$out" -match 'Cannot issue a code')) {
+        Write-Host "  Is this PC connected to Tailscale?" -ForegroundColor Red
+    }
 }
 Write-Host ""
