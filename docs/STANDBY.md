@@ -260,47 +260,91 @@ closed for good once Tailscale answers, which is my side of this.
 
 ### 2. Make it a dead end on your Tailscale network
 
-Tailscale admin console → **Access controls**. The default policy lets every
-device reach every other device; the change below keeps that for your own
-devices and gives the standby nothing.
+In the Tailscale web interface (login.tailscale.com/admin): **Access controls**,
+then the **JSON editor**.
 
-**Before replacing anything**, check whether the file has rules you added
-yourself. If it is still Tailscale's default (a single rule with `"src": ["*"]`
-and `"dst": ["*:*"]`), replace that rule, and add the `"tagOwners"` section, so
-that the file contains:
+A tailnet made in the last couple of years has its rules under `"grants"`, and
+the default is one rule that lets everything reach everything:
 
 ```jsonc
-{
-  "tagOwners": {
-    "tag:homesh-standby": ["autogroup:admin"]
-  },
-  "acls": [
-    // Your own devices reach each other exactly as before.
-    { "action": "accept", "src": ["autogroup:member"], "dst": ["autogroup:member:*"] },
-
-    // Your devices may reach the standby, and only its HTTPS port.
-    { "action": "accept", "src": ["autogroup:member"], "dst": ["tag:homesh-standby:443"] }
-
-    // Nothing has the standby as its source, so it cannot open a connection to
-    // anything. Tailscale refuses whatever is not allowed.
-  ]
-}
+"grants": [
+    {"src": ["*"], "dst": ["*"], "ip": ["*"]},
+],
 ```
 
-If it has other rules you rely on, don't replace it — say so, and I will write
-the change that keeps them.
+That `"src": ["*"]` is the problem. It means *any device*, and a device that
+joins with a tag -- which is how the standby joins -- is a device. Left as it is,
+the standby could open a connection to your PC, your phone and anything else on
+the tailnet.
+
+Two changes, and nothing else in the file is touched:
+
+1. **Add a `"tagOwners"` section** at the top, just inside the opening `{`. It
+   creates the tag and says only an admin -- you -- can hand it out, so no
+   device can give it to itself:
+
+   ```jsonc
+   "tagOwners": {
+       "tag:homesh-standby": ["autogroup:admin"],
+   },
+   ```
+
+2. **In `"grants"`, change `"src": ["*"]` to `"src": ["autogroup:member"]`**,
+   so the line reads:
+
+   ```jsonc
+   {"src": ["autogroup:member"], "dst": ["*"], "ip": ["*"]},
+   ```
+
+   `autogroup:member` is the devices signed in by you (and anyone you have
+   invited). They can still reach everything exactly as before -- each other,
+   exit nodes, and the standby. What loses access is every device that is *not*
+   a member, which in your tailnet means the standby: it has no rule with it as
+   the source, and Tailscale refuses whatever no rule allows. It can be reached;
+   it cannot reach.
+
+Leave `"ssh"` and `"nodeAttrs"` as they are. The SSH rule only lets a member
+into their own devices (`autogroup:self`), which a tagged machine is not, so
+there is no Tailscale SSH to or from the standby either.
+
+**Save.** The editor checks the file and refuses to save one it cannot read, so a
+mistake shows up there rather than as a broken network. If you have tagged a
+device of your own before (the **Machines** page shows tags under a device's
+name), say so first: it would lose access too, and it needs a line of its own.
+
+Older tailnets have `"acls"` instead of `"grants"`, with a rule like
+`{"action": "accept", "src": ["*"], "dst": ["*:*"]}`. The change is the same:
+add `tagOwners`, and change that `"src"` to `["autogroup:member"]`.
 
 ### 3. A key for it to join with
 
-Tailscale admin console → **Settings → Keys → Generate auth key**:
+**Only after step 2 is saved** -- until then the tag does not exist and cannot be
+chosen.
 
-- **Reusable:** off
-- **Ephemeral:** off
-- **Pre-approved:** on
-- **Tags:** `tag:homesh-standby`
+In the Tailscale web interface: **Settings** (top bar) -> **Keys** (left) ->
+**Generate auth key...**
 
-Save it into `C:\Scripts\Media_Server\.local\tailscale-authkey` — **not** into a
-chat window. I copy it from there to the machine and delete it afterwards.
+- **Description:** `homesh-standby`
+- **Reusable:** off -- it is used once
+- **Expiration:** leave the default. It only has to last until I use it; the
+  machine stays joined after the key expires
+- **Ephemeral:** off -- an ephemeral machine is removed when it goes offline
+- **Tags:** switch on, and choose `tag:homesh-standby`
+- **Pre-approved:** on, if it is offered. It only appears when device approval
+  is switched on for your tailnet; if you do not see it, there is nothing to do
+
+**Generate key**, and copy it: Tailscale shows it once.
+
+Save it into a file, not into a chat window. The simplest way that does not add
+`.txt` to the name: press **Win+R**, run
+
+```
+notepad C:\Scripts\Media_Server\.local\tailscale-authkey
+```
+
+answer **Yes** when Notepad offers to create the file, paste the key, and save.
+I copy it to the machine from there and delete it afterwards. The `.local`
+folder is never committed.
 
 ## Setting it up — my part
 
