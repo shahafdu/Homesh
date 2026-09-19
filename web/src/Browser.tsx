@@ -376,9 +376,14 @@ function Thumb(props: { item: { item_id: string; kind: Kind; available: boolean 
   const { item, size } = props;
   const [failed, setFailed] = useState(false);
 
-  // No point requesting artwork for a file whose source is unreachable; the server
-  // would answer 503 and we would show the icon anyway.
-  const showImage = !failed && item.available && item.kind !== "doc" && item.kind !== "other";
+  // Asked for whether or not the file can be played right now. The thumbnail
+  // lives in the server's cache, not on the drive: made while the drive was on,
+  // or carried to the standby from the PC, it is there with the drive off. This
+  // used to skip offline files on the grounds that the server could not make
+  // one -- which, with offline worked out live, hid every thumbnail of a
+  // switched-off RAID and every PC file on the standby. When there is none the
+  // server answers quickly and the icon is drawn, as before.
+  const showImage = !failed && item.kind !== "doc" && item.kind !== "other";
 
   return (
     <div className="thumb">
