@@ -94,10 +94,20 @@ standby made, so an hourly refresh can never throw away something you did.
 
 ## How your phone finds the right one
 
-Homesh Connect already tries more than one address — the house address first,
-then Tailscale. The standby becomes a third: **PC at home → PC over Tailscale →
-standby.** The first one that answers wins, so when the PC is on you never touch
-Oracle at all.
+Homesh Connect tries the PC's two addresses first -- over Tailscale and at
+home -- and the standby only when neither answers: **PC → standby.** The first
+one that answers wins, so when the PC is on you never touch Oracle at all. When
+it does open the standby it says so on its own screen, and the app's status bar
+says it for as long as you are there.
+
+The phone learns the standby's address from the PC (`STANDBY_ORIGIN` in the
+PC's `.env`, written by `deploy-standby.ps1`), the same way it learns the PC's
+own two addresses. **It learns nothing from the standby.** Asked the same
+question, the standby would name itself as the address to use from outside, and
+a phone that believed it would go on opening Oracle long after the PC was back.
+So the phone app needs to reach the PC once, with the standby configured, before
+the fallback exists -- which is the ordinary case, since the PC is on most of
+the time.
 
 **Passkeys are tied to an address.** The standby has a different name from the
 PC, so a passkey made for one does not sign in to the other, and the standby
@@ -388,5 +398,12 @@ folder is never committed.
   tailnet and uses the public address only for a first install.
 - ✅ A way to sign in to it at all -- see *How your phone finds the right one*
   above. Without it the standby could never have been used.
-- ⬜ Thumbnails synced alongside.
-- ⬜ Homesh Connect trying the standby third.
+- ✅ Thumbnails synced alongside (`server/app/thumbsync.py`). The PC sends the
+  ones made since last time after each hourly backup, as one encrypted pack
+  rather than one object per picture -- the free tier allows 50,000 requests a
+  month, and a folder of photographs is thousands of thumbnails. The standby
+  fetches new packs hourly and accepts only files named exactly like a
+  thumbnail, so a pack cannot write anywhere else. Past forty packs the PC sends
+  one complete set and removes the rest. Phone and browser sizes only: rooms do
+  not run on the standby.
+- ✅ Homesh Connect trying the standby when the PC does not answer, from 1.3.0.

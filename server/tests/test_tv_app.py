@@ -113,6 +113,40 @@ class TestPhoneUpdateOffer:
         assert anon_client.get("/phone.json").status_code == 404
 
 
+class TestWhereThePhoneFallsBack:
+    """The phone learns the standby's address from the PC, and learns nothing
+    from the standby -- which would otherwise hand it its own address as "the
+    one to use from outside", and the phone would keep opening Oracle long
+    after the PC was back."""
+
+    def _address(self, anon_client, monkeypatch, **env) -> dict:
+        from app.config import get_settings
+
+        for name, value in env.items():
+            monkeypatch.setenv(name, value)
+        get_settings.cache_clear()
+        try:
+            return anon_client.get("/tv.address").json()
+        finally:
+            get_settings.cache_clear()
+
+    def test_the_pc_names_the_standby(self, anon_client, monkeypatch):
+        body = self._address(anon_client, monkeypatch,
+                             STANDBY_ORIGIN="https://standby.example.ts.net/")
+        assert body["role"] == "primary"
+        assert body["standby"] == "https://standby.example.ts.net"
+
+    def test_no_standby_configured_is_none(self, anon_client, monkeypatch):
+        body = self._address(anon_client, monkeypatch, STANDBY_ORIGIN="")
+        assert body["standby"] is None
+
+    def test_the_standby_says_what_it_is_and_names_nothing(self, anon_client, monkeypatch):
+        body = self._address(anon_client, monkeypatch, HOMESH_ROLE="standby",
+                             STANDBY_ORIGIN="https://standby.example.ts.net")
+        assert body["role"] == "standby"
+        assert body["standby"] is None
+
+
 class TestTheAddressForATelevision:
     """Which address a television is given, and whether it can be reached.
 

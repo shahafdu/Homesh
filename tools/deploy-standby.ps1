@@ -214,6 +214,29 @@ if ($Tailscale) {
 
 Remove-Item $envFile -Force -ErrorAction SilentlyContinue
 
+# Tell the PC where the standby is, so it can tell the phone app: the phone
+# learns its addresses from the PC, and falls back to this one when the PC does
+# not answer. In .env, because an address is configuration.
+if ($onTailnet -or $Tailscale) {
+    $pcEnv = "$repo\.env"
+    $wanted = "STANDBY_ORIGIN=https://$standbyHost"
+    $text = [System.IO.File]::ReadAllText($pcEnv)
+    $newline = if ($text.Contains("`r`n")) { "`r`n" } else { "`n" }
+    if ($text -match '(?m)^STANDBY_ORIGIN=.*$') {
+        $updated = [regex]::Replace($text, '(?m)^STANDBY_ORIGIN=.*?(?=\r?$)', $wanted)
+    } else {
+        $updated = $text.TrimEnd("`r", "`n") + $newline + $newline +
+            "# Where the standby answers; the phone app falls back to it. Written by" + $newline +
+            "# tools/deploy-standby.ps1." + $newline + $wanted + $newline
+    }
+    if ($updated -ne $text) {
+        # Without a byte-order mark, as the file was: a BOM in front of the first
+        # variable makes its name unreadable to Compose.
+        [System.IO.File]::WriteAllText($pcEnv, $updated, (New-Object System.Text.UTF8Encoding($false)))
+        Write-Host "  Told the PC where the standby is. Restart Homesh on the PC to pass it on." -ForegroundColor Yellow
+    }
+}
+
 Write-Host ""
 Write-Host "Done." -ForegroundColor Green
 if ($onTailnet -or $Tailscale) {

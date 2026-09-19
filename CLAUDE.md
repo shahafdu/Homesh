@@ -127,7 +127,7 @@ routinely breaks another, and the tracker is what makes that visible.
 | 8 · Optional transcode | ❌ overtaken | It was never optional for this library — see §3.2.1 of ARCHITECTURE for what actually happened |
 | 9 · Public release | 🔨 | Public since August. Docs current as of 14 September 2026; screenshots outstanding |
 
-**Tests: 598 passing. Migrations: 024. Lint: clean. CI green.**
+**Tests: 612 passing. Migrations: 024. Lint: clean. CI green.**
 
 ### AI design decisions — agreed, not yet built
 
@@ -290,6 +290,7 @@ server/app/       config, db, main, auth, security, people, access, prefs, libra
                   scanner, metadata, dedup, signing, stream, transcode, documents,
                   thumbs, sharing, playlists, zones, denon, renderers, discovery,
                   occupancy, lanaddr, upkeep, backups, crypt, offsite, standby,
+                  thumbsync, signin_code,
                   sources/{base,local,gdrive}
 server/migrations 023 of them, plain SQL, tracked in `schema_migrations` and applied at
                   startup. `ls server/migrations` is the list; the recent ones are

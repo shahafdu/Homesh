@@ -6,7 +6,7 @@ to reconstruct the state of a large, half-finished system from memory.
 **Legend** — ✅ built and verified · 🟡 built, needs Shahaf to confirm ·
 🔴 known broken · ⬜ not started · ⏳ waiting on Shahaf
 
-Last updated: 19 September 2026 · 598 tests · 24 migrations · CI green
+Last updated: 19 September 2026 · 612 tests · 24 migrations · CI green
 (verified with `tools/verify-ci.ps1`, not assumed)
 
 ---
@@ -74,7 +74,7 @@ Deployed and believed correct; not yet confirmed in use.
 | 🟡 | **Offline drives say so** | A top folder whose drive is off is tagged *offline*; inside one, an *offline folder* marker sits beside the path; its files are greyed. Playing from it stops at once with a reason, rather than walking the whole queue one failure at a time -- which was the twenty-second freeze. A file that is also on Drive still plays |
 | 🟡 | **Any file can be opened** | Files nothing could preview were inert — a `.MSWMM` or one with no extension could not even be clicked. The viewer shows the bytes as text or hex, choosing whichever answers the question, and either can be switched to |
 | 🔴 | **Install TV app 0.6.2 on the boxes** | Four rounds of fixes need this APK, from `‹server›/apk`. The crash on video and on stop was one bug — the video bridge was handed the player before it existed and held null for the life of the app. The film down one edge was another, and it took two goes: layout parameters were missing, and then `MATCH_PARENT` was not enough either, because a `VideoView` measures *smaller* than the frame to keep the film's shape and the leftover is aligned to the start edge — which on a Hebrew system is the right one. Centring fixed it. 0.6.2 also puts the web layer *above* the player, so the on-screen controls appear over a film rather than behind it. From 0.6.1 a screen reports its version on connecting and the room card shows it, so you can tell from your phone whether a box took an update |
-| 🟡 | **Homesh Connect 1.2.0 -- install once by hand** | In daily use and the only interface Shahaf goes through. **1.2.0 shows its own version at the bottom of the screen and has Check for updates**, which installs a newer build through Android's own prompt. 1.1.0 cannot check, so this one install is by hand: open `‹server›/phone` in the phone's browser, or the [releases page](https://github.com/shahafdu/Homesh/releases/latest). After that it keeps itself current. The TV app did not change and no screen is offered anything |
+| 🟡 | **Homesh Connect 1.3.0 -- falls back to the standby** | In daily use and the only interface Shahaf goes through. **1.3.0 opens the standby by itself when the PC does not answer**, and says so on its screen. It learns the standby's address from the PC, so it needs to have reached the PC once since the standby was set up. From 1.2.0, **Check for updates** at the bottom of the screen installs it; from 1.1.0, install by hand once from `‹server›/phone` or the [releases page](https://github.com/shahafdu/Homesh/releases/latest). The TV app did not change and no screen is offered anything |
 | 🟡 | **The logo goes home** | From four folders deep, one tap |
 | 🟡 | **Browsing this computer for a folder** | Settings browses your own storage — descend, breadcrumbs, **Add this folder** at any depth. The first attempt only listed the top of one mounted folder, which is not browsing: the folder somebody wants is three levels down |
 | 🟡 | **Shuffle in a room is a switch** | It was an action, so the button looked identical whether or not it had been pressed. The state lives with the queue now, where several phones can see it |
@@ -170,9 +170,9 @@ not decisions waiting on anybody.
 
 ## Next, in order
 
-1. 🔨 **The standby goes live** — on the tailnet as a dead end, public SSH
-   closed, and a way to sign in. Left: thumbnails synced alongside, and Homesh
-   Connect trying the standby third so the phone falls back to it by itself
+1. ✅ **The standby is live** — on the tailnet as a dead end, public SSH
+   closed, a way to sign in, thumbnails synced from the PC hourly, and the phone
+   app falling back to it when the PC does not answer
 2. ⬜ **Rate limiting on sign-in** — listed in the architecture, never built, and
    worth having now the server has a real hostname
 3. ⬜ **Audio caching** — first play fetches, later plays are instant.

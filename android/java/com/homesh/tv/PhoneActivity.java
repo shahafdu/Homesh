@@ -62,6 +62,8 @@ public final class PhoneActivity extends Activity {
     private static final String TAG = "HomeshPhone";
     private static final String PREFS = "homesh.phone";
     private static final String KEY_ORIGIN = "origin";
+    /** The standby on Oracle, tried when neither of the PC's addresses answers. */
+    private static final String KEY_STANDBY = "standby";
 
     /** Tailscale's own package. Declared in <queries> so it can be seen at all. */
     private static final String TAILSCALE = "com.tailscale.ipn";
@@ -205,9 +207,16 @@ public final class PhoneActivity extends Activity {
             SharedPreferences prefs = getSharedPreferences(PREFS, Context.MODE_PRIVATE);
             String lan = Prefs.server(this);
             String origin = prefs.getString(KEY_ORIGIN, null);
+            String standby = prefs.getString(KEY_STANDBY, null);
 
+            // The PC first, by either of its addresses: it is the stronger
+            // machine, it holds every file, and it is where changes belong. The
+            // standby only when neither answers -- the PC is off, not merely
+            // slow -- so being at home with the PC on never touches Oracle.
             String reachable = firstThatAnswers(origin, lan);
 
+            // A search of this network looks for the PC, so it comes before the
+            // standby: somebody who pressed it expects the PC to be here.
             if (reachable == null && sweep) {
                 runOnUiThread(() -> message.setText("Searching this network…"));
                 String found = Discovery.find();
@@ -217,12 +226,27 @@ public final class PhoneActivity extends Activity {
                 }
             }
 
+            if (reachable == null && standby != null) {
+                runOnUiThread(() -> message.setText("Your PC is not answering. Trying the standby…"));
+                if (Server.reachable(standby)) reachable = standby;
+            }
+
             if (reachable != null) {
                 // Learned while it is possible to learn it, so the next time the
                 // phone is away from home it already knows where to look.
                 rememberOrigin(reachable, prefs);
                 String go = reachable;
-                runOnUiThread(() -> open(go));
+                boolean onStandby = reachable.equals(standby);
+                runOnUiThread(() -> {
+                    open(go);
+                    // Said on this screen as well as in the app's own status
+                    // bar: it is the moment somebody decides whether to wait
+                    // for the PC or carry on.
+                    if (onStandby) {
+                        message.setText("Your PC is off, so Homesh opened on the standby. "
+                                + "Files on Drive play; files kept only on the PC do not.");
+                    }
+                });
             } else {
                 runOnUiThread(this::cannotReach);
             }
@@ -258,13 +282,22 @@ public final class PhoneActivity extends Activity {
             }
 
             JSONObject json = new JSONObject(body.toString());
+            // Learned from the PC only. The standby answers this too, and what
+            // it calls "origin" is itself: taken as the PC's address, the phone
+            // would go on opening Oracle long after the PC was back.
+            if ("standby".equals(json.optString("role", "primary"))) return;
+
             String origin = json.optString("origin", null);
             String lan = json.optString("lan", null);
+            String standby = json.optString("standby", null);
             if (origin != null && !origin.isEmpty() && !"null".equals(origin)) {
                 prefs.edit().putString(KEY_ORIGIN, origin).apply();
             }
             if (lan != null && !lan.isEmpty() && !"null".equals(lan)) {
                 Prefs.setServer(this, lan);
+            }
+            if (standby != null && !standby.isEmpty() && !"null".equals(standby)) {
+                prefs.edit().putString(KEY_STANDBY, standby).apply();
             }
         } catch (Exception e) {
             // Knowing the other address is a convenience, not a requirement.
