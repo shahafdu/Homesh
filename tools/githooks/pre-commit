@@ -18,6 +18,13 @@ ids=$(git diff --cached -U0 --diff-filter=ACM \
       | grep -E '^\+' | grep -v '^+++' \
       | grep -nE 'uuid:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}')
 
+# SSH keys, public ones included. A public key logs nobody in, but a server can
+# be asked whether it accepts one, so a published key finds the machine that
+# does. One was printed in the standby's setup guide and had to be replaced.
+keys=$(git diff --cached -U0 --diff-filter=ACM \
+       | grep -E '^\+' | grep -v '^+++' \
+       | grep -nE 'ssh-(ed25519|rsa|ecdsa-[a-z0-9-]+|dss) AAAA[0-9A-Za-z+/]{20,}|-----BEGIN [A-Z ]*PRIVATE KEY-----')
+
 # Files that exist to describe this machine. Ignored, so reaching here means
 # somebody forced one in.
 private=$(git diff --cached --name-only --diff-filter=ACM           | grep -xE 'docker-compose\.override\.yml|\.local/.*')
@@ -29,6 +36,16 @@ if [ -n "$private" ]; then
   echo
   echo "These are ignored for a reason. If you meant to change how the file is"
   echo "generated, change the generator, not the output."
+  exit 1
+fi
+
+if [ -n "$keys" ]; then
+  echo
+  echo "REFUSING: this commit adds an SSH key."
+  echo "$keys" | cut -c1-60
+  echo
+  echo "Keys live in .local, which is not tracked. Point at the file instead of"
+  echo "printing what is in it."
   exit 1
 fi
 

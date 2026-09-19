@@ -21,16 +21,18 @@ for commit in $(git rev-list "$range" 2>/dev/null); do
   hits=$(git grep -nIE '(^|[^0-9.])(10|192\.168|172\.(1[6-9]|2[0-9]|3[01]))\.[0-9]{1,3}\.[0-9]{1,3}' \
          "$commit" -- . 2>/dev/null | head -3)
   ids=$(git grep -nIE 'uuid:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}' "$commit" -- . 2>/dev/null | head -3)
-  if [ -n "$hits" ] || [ -n "$ids" ]; then
+  keys=$(git grep -nIE 'ssh-(ed25519|rsa|ecdsa-[a-z0-9-]+|dss) AAAA[0-9A-Za-z+/]{20,}|-----BEGIN [A-Z ]*PRIVATE KEY-----' \
+         "$commit" -- . 2>/dev/null | head -3 | cut -c1-80)
+  if [ -n "$hits" ] || [ -n "$ids" ] || [ -n "$keys" ]; then
     bad="$bad
 $(git log -1 --format='%h %s' "$commit")
-$hits$ids"
+$hits$ids$keys"
   fi
 done
 
 if [ -n "$bad" ]; then
   echo
-  echo "REFUSING TO PUSH: a commit being sent contains a private address or a device id."
+  echo "REFUSING TO PUSH: a commit being sent contains a private address, a device id or an SSH key."
   echo "$bad" | head -20
   echo
   echo "This repository is public. Fix the commit — not just the working tree —"
