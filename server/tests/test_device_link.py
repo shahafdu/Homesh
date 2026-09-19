@@ -16,6 +16,17 @@ from app.main import app
 from app.security import CurrentUser, optional_user, require_user
 
 
+@pytest.fixture(autouse=True)
+def _fresh_throttle():
+    """The claim throttle is per process. Without this, the test that proves
+    guessing is throttled leaves every claim after it refused with 429."""
+    from app import auth
+
+    auth._link_attempts.clear()
+    yield
+    auth._link_attempts.clear()
+
+
 @pytest.fixture
 def other(db, user):
     with db.begin() as conn:
@@ -115,6 +126,49 @@ class TestClaiming:
             for c in codes
         ]
         assert 429 in statuses, "brute force was not throttled"
+
+
+class TestTheFirstWayIntoTheStandby:
+    """The standby starts with no passkeys, no first-run code and nobody signed
+    in, so none of the ordinary ways in apply. A code issued from a shell on the
+    machine is the one that does -- and a shell there means the PC's key."""
+
+    def _run(self, capsys, *args) -> tuple[int, str]:
+        from app.signin_code import main
+
+        status = main(["signin_code", *args])
+        out = capsys.readouterr()
+        return status, out.out + out.err
+
+    def test_it_issues_a_code_for_the_owner(self, anon_client, db, user, capsys):
+        status, printed = self._run(capsys)
+        assert status == 0
+        code = printed.split(": ", 1)[1].split("\n", 1)[0]
+
+        # Printed in two halves to be read aloud; claimed exactly as typed.
+        r = anon_client.post("/api/auth/devices/claim", json={"code": code})
+        assert r.status_code == 200
+        assert r.json()["handle"] == user.handle
+
+    def test_it_can_name_someone_else(self, anon_client, db, user, other, capsys):
+        status, printed = self._run(capsys, "kid")
+        assert status == 0
+        code = printed.split(": ", 1)[1].split("\n", 1)[0]
+        assert anon_client.post(
+            "/api/auth/devices/claim", json={"code": code}
+        ).json()["handle"] == "kid"
+
+    def test_an_unknown_name_issues_nothing(self, db, user, capsys):
+        status, printed = self._run(capsys, "nobody")
+        assert status == 1
+        assert "nobody" in printed
+        with db.connect() as conn:
+            assert conn.execute(text("SELECT count(*) FROM device_links")).scalar() == 0
+
+    def test_it_is_not_reachable_over_http(self, anon_client, db, user):
+        """The whole point is that it is not a web endpoint: an anonymous
+        caller has no way to ask for one."""
+        assert anon_client.post("/api/auth/devices/link").status_code == 401
 
 
 class TestAddingAPasskey:
