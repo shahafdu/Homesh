@@ -195,8 +195,9 @@ async def _scheduled_backup() -> None:
     """A backup every hour, and throw away what is no longer worth keeping.
 
     Hourly because the standby restores from these: it is never further behind
-    the PC than the newest one. Pruning keeps every backup from the last day and
-    one a day after that, so this costs a day of hourlies rather than a week.
+    the PC than the newest one. Pruning after each keeps only the newest of the
+    day, so hourly costs nothing on the shelf: the one before is gone as soon
+    as the next is written.
 
     Hung off the hourly loop rather than given a scheduler of its own: the
     condition is "the newest one is an hour old", which survives the machine

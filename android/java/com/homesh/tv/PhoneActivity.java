@@ -73,6 +73,14 @@ public final class PhoneActivity extends Activity {
     private Button changeAddress;
     private LinearLayout root;
 
+    /** Which version this is, and whether a newer one is waiting. */
+    private TextView about;
+    private Button updates;
+
+    /** What the server offered at the last check, once there is something newer. */
+    private PhoneUpdates.Offer newer;
+    private volatile boolean checkingUpdates;
+
     /** The address that answered, kept so the button can reopen without asking again. */
     private String reachedAt;
 
@@ -121,12 +129,24 @@ public final class PhoneActivity extends Activity {
         changeAddress = button("Change the address",
                 v -> startActivity(new Intent(this, SetupActivity.class)));
 
+        // Which build is installed, said on the screen rather than buried in
+        // Android's app settings -- it is the first question when something
+        // behaves differently on one phone than on another.
+        about = new TextView(this);
+        about.setText("Homesh Connect " + PhoneUpdates.installedName(this));
+        about.setTextColor(Color.parseColor("#A79B8D"));
+        about.setTextSize(13);
+        about.setPadding(0, 56, 0, 8);
+        updates = button("Check for updates", v -> onUpdatesPressed());
+
         root.addView(brand);
         root.addView(message);
         root.addView(openHomesh);
         root.addView(openTailscale);
         root.addView(searchAgain);
         root.addView(changeAddress);
+        root.addView(about);
+        root.addView(updates);
         setContentView(root);
 
         showActions(false);
@@ -349,6 +369,70 @@ public final class PhoneActivity extends Activity {
 
     private boolean tailscaleInstalled() {
         return getPackageManager().getLaunchIntentForPackage(TAILSCALE) != null;
+    }
+
+    /**
+     * Check, or install what the last check found.
+     *
+     * <p>Asked of whichever address answers, the same way opening Homesh is: at
+     * home that is the house address, away it is the tailnet one, and the server
+     * hands out the same build either way.
+     */
+    private void onUpdatesPressed() {
+        if (checkingUpdates) return;
+        checkingUpdates = true;
+        updates.setEnabled(false);
+        final PhoneUpdates.Offer install = newer;
+        about.setText(install != null ? "Downloading " + install.name + "…" : "Checking…");
+
+        new Thread(() -> {
+            String server = reachedAt;
+            if (server == null) {
+                SharedPreferences prefs = getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+                server = firstThatAnswers(prefs.getString(KEY_ORIGIN, null), Prefs.server(this));
+            }
+            final String at = server;
+            final String mine = PhoneUpdates.installedName(this);
+
+            if (at == null) {
+                runOnUiThread(() -> finishUpdates(
+                        "Homesh Connect " + mine + " · cannot reach the server to check",
+                        "Check for updates"));
+                return;
+            }
+
+            if (install != null) {
+                boolean started = PhoneUpdates.downloadAndInstall(this, at);
+                runOnUiThread(() -> finishUpdates(
+                        started
+                                ? "Homesh Connect " + mine + " · installing " + install.name
+                                : "Homesh Connect " + mine + " · the download failed",
+                        started ? "Install " + install.name : "Try again"));
+                return;
+            }
+
+            PhoneUpdates.Offer offer = PhoneUpdates.offered(at);
+            int installed = PhoneUpdates.installedCode(this);
+            runOnUiThread(() -> {
+                if (offer == null) {
+                    finishUpdates("Homesh Connect " + mine + " · the server has no phone build to offer",
+                            "Check for updates");
+                } else if (offer.code > installed) {
+                    newer = offer;
+                    finishUpdates("Homesh Connect " + mine + " · " + offer.name + " is available",
+                            "Install " + offer.name);
+                } else {
+                    finishUpdates("Homesh Connect " + mine + " · up to date", "Check for updates");
+                }
+            });
+        }).start();
+    }
+
+    private void finishUpdates(String status, String label) {
+        about.setText(status);
+        updates.setText(label);
+        updates.setEnabled(true);
+        checkingUpdates = false;
     }
 
     /**

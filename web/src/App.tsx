@@ -329,23 +329,31 @@ export default function App() {
         )}
 
         <footer className="footer">
-          {/* In the status bar, where the state of the server already is. It was
-              a banner across the top, which is the place for something to act
-              on; this is something to be aware of, and it is there all the time
-              the PC is off. Pressing it says what that means. */}
+          {/* Which machine is answering, said all the time rather than only when
+              it is the unusual one. The two look identical otherwise, and "why
+              does this not play" has a different answer on each: on the PC
+              everything plays, on the standby only what is on Drive does.
+              Pressing the standby's says what that means in full. */}
           {health?.role === "standby" ? (
             <button
               className="status standby-status"
               onClick={() => setAboutStandby((v) => !v)}
-              title="The PC is off; this is the standby. Press for what that means."
+              title="The PC is off, so the standby on Oracle is answering. Press for what that means."
             >
               <span className="dot standby" />
-              PC offline · on standby
+              Remote · Oracle standby · PC offline
             </button>
           ) : (
-            <span className="status">
+            <span
+              className="status"
+              title={`Signed in as ${state.user.display_name} · database ${health?.database ?? "…"}`}
+            >
               <span className={`dot${health?.status === "ok" ? "" : " bad"}`} />
-              {state.user.display_name} · server {health?.version} · db {health?.database}
+              {health === null
+                ? "Connecting…"
+                : health.status === "ok"
+                  ? `Local · your PC · v${health.version}`
+                  : `Your PC · database ${health.database}`}
             </span>
           )}
 

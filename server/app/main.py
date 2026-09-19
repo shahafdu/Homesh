@@ -319,6 +319,22 @@ def _short_address(lan: str) -> str | None:
     return None
 
 
+@app.get("/phone.json", include_in_schema=False)
+async def phone_version() -> Response:
+    """What phone app build the server is offering.
+
+    The phone app compares this with its own version when asked to check for
+    updates. Unauthenticated like the television's: it is asked before anybody
+    has signed in, and a version number is not a secret.
+    """
+    info = _tv_apk_path().with_name("homesh-phone.json")
+    if not info.is_file():
+        return JSONResponse({"detail": "no phone app build present"}, status_code=404)
+    return FileResponse(
+        info, media_type="application/json", headers={"Cache-Control": "no-store"}
+    )
+
+
 @app.get("/phone", include_in_schema=False)
 async def phone_apk() -> Response:
     """The phone app: a way in when the way in is down.

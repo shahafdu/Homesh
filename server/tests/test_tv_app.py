@@ -89,6 +89,30 @@ class TestUpdateOffer:
         assert anon_client.get("/tv.json").status_code == 200
 
 
+class TestPhoneUpdateOffer:
+    """The phone app's "Check for updates", which it had no way to answer: only
+    the television's version was published."""
+
+    def test_the_phone_version_is_published(self, anon_client, tmp_path, monkeypatch):
+        (tmp_path / "homesh-phone.apk").write_bytes(b"PK")
+        (tmp_path / "homesh-phone.json").write_text('{"versionCode": 7, "versionName": "1.2.0"}')
+        monkeypatch.setenv("TV_APK_PATH", str(tmp_path / "homesh-tv.apk"))
+
+        r = anon_client.get("/phone.json")
+        assert r.status_code == 200
+        assert r.json() == {"versionCode": 7, "versionName": "1.2.0"}
+        # Asked every time the button is pressed; a cached answer says
+        # "up to date" about a build that has since been replaced.
+        assert "no-store" in r.headers["cache-control"]
+
+    def test_it_is_not_the_televisions(self, anon_client, tmp_path, monkeypatch):
+        """Two apps, two numbers. Answering with the TV's would offer the phone
+        a build for a different device."""
+        (tmp_path / "homesh-tv.json").write_text('{"versionCode": 17}')
+        monkeypatch.setenv("TV_APK_PATH", str(tmp_path / "homesh-tv.apk"))
+        assert anon_client.get("/phone.json").status_code == 404
+
+
 class TestTheAddressForATelevision:
     """Which address a television is given, and whether it can be reached.
 
