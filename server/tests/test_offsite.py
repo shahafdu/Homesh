@@ -21,7 +21,7 @@ from app.offsite import OffsiteError, Store
 def _store(**over) -> Store:
     return Store(
         provider=over.get("provider", "oracle"),
-        region=over.get("region", "il-jerusalem-1"),
+        region=over.get("region", "eu-frankfurt-1"),
         bucket=over.get("bucket", "homesh-backups"),
         access_key=over.get("access_key", "AKIDEXAMPLE"),
         secret_key=over.get("secret_key", "SECRETEXAMPLE"),
@@ -93,8 +93,8 @@ class TestWhereItSends:
 
     def test_each_provider_has_its_own_endpoint(self):
         assert _store().host.startswith("examplenamespace.compat.objectstorage.")
-        assert _store(provider="aws").host == "s3.il-jerusalem-1.amazonaws.com"
-        assert _store(provider="backblaze").host == "s3.il-jerusalem-1.backblazeb2.com"
+        assert _store(provider="aws").host == "s3.eu-frankfurt-1.amazonaws.com"
+        assert _store(provider="backblaze").host == "s3.eu-frankfurt-1.backblazeb2.com"
 
     def test_an_unknown_provider_says_so(self):
         with pytest.raises(OffsiteError, match="unknown"):
@@ -118,7 +118,7 @@ class TestConfiguration:
     def test_half_configured_says_which_half(self):
         settings = self.Fake()
         settings.offsite_provider = "oracle"
-        settings.offsite_region = "il-jerusalem-1"
+        settings.offsite_region = "eu-frankfurt-1"
         settings.offsite_bucket = "homesh-backups"
         # No keys.
         with pytest.raises(OffsiteError, match="OFFSITE_ACCESS_KEY"):

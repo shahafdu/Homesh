@@ -37,6 +37,13 @@ jobs:
             fail=1
           fi
 
+          # SSH keys, public ones included: a server can be asked whether it
+          # accepts a key, so a published one finds the machine that does.
+          if git grep -nIE 'ssh-(ed25519|rsa|ecdsa-[a-z0-9-]+|dss) AAAA[0-9A-Za-z+/]{20,}|-----BEGIN [A-Z ]*PRIVATE KEY-----' -- . ; then
+            echo "::error::SSH key found in a tracked file. Keys belong in .local."
+            fail=1
+          fi
+
           if [ "$fail" = "0" ]; then echo "clean"; fi
           exit $fail
 

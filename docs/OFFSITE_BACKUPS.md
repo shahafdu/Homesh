@@ -47,8 +47,8 @@ Backblaze B2:
    when the PC is off. Same account, later, no second provider.
 
 The free allowance has been cut twice and is still ample for this: an ARM
-machine at whatever size the console marks eligible (1 OCPU and 6 GB in
-Jerusalem as of September 2026), 200 GB of block storage, 10 TB of outbound
+machine at whatever size the console marks eligible (1 OCPU and 6 GB in some
+regions as of September 2026), 200 GB of block storage, 10 TB of outbound
 traffic a month, and 20 GB of object storage across the tiers. Backups are
 hourly and about 19 MB each, and old ones are pruned.
 

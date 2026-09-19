@@ -136,9 +136,8 @@ console marks *Always Free-eligible*, and hourly backups of about 19 MB into a
 bucket that stays small because old copies are pruned.
 
 **Take the eligible size, whatever it is.** The allowance has been cut twice
-without notice -- 4 OCPU / 24 GB, then 2 and 12 in June 2026, and in Jerusalem
-in September 2026 the console offers exactly **1 OCPU and 6 GB** and nothing
-else. That is enough for what the standby does: serve the catalog and play files
+without notice -- 4 OCPU / 24 GB, then 2 and 12 in June 2026, and by September
+2026 some regions' consoles offer exactly **1 OCPU and 6 GB** and nothing else. That is enough for what the standby does: serve the catalog and play files
 that live on Drive, which is copying bytes rather than working on them. What one
 core will not do is transcode, so on the standby a video that the screen cannot
 decode by itself will not play. On the PC it would have been converted on the
@@ -178,8 +177,8 @@ is not where the SSH key goes -- that has a section of its own, further down.
 **Image and shape**
 
 - **Shape -> Change shape -> Ampere -> VM.Standard.A1.Flex**, and leave the OCPU
-  and memory at whatever the console marks *Always Free-eligible* -- in Jerusalem
-  that is **1 OCPU and 6 GB**, and it is the only size offered. **Never raise it
+  and memory at whatever the console marks *Always Free-eligible* -- in some
+  regions that is **1 OCPU and 6 GB**, and it is the only size offered. **Never raise it
   past the eligible mark**: above it the shape is a paid one, and the whole
   arrangement rests on there being nothing here that can bill. Guides quoting
   4 OCPU / 24 GB, or 2 and 12, describe allowances Oracle has since cut.
@@ -200,19 +199,24 @@ is not where the SSH key goes -- that has a section of its own, further down.
 
 **Add SSH keys** -- its own section, below networking
 
-Choose **Paste public keys** and paste this line, which is the PC's key. It is a
-public key: safe to paste anywhere, and useless without its private half, which
-never leaves the PC.
+The key is made on the PC, once, and kept in `.local`, which is never committed:
 
-```
-ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIC2iu1IlKYKdKm26P5NPSzjez5KkmQb+UWeQFtgj8WAl homesh-pc-to-standby
+```powershell
+ssh-keygen -t ed25519 -N '""' -C homesh -f .local\standby_ed25519
 ```
 
-Paste the **whole line**, the trailing `homesh-pc-to-standby` included, and with
-no line break anywhere in the middle of it. That trailing part is a comment: SSH
-ignores it when matching the key, and it is there so that a later look at
-`authorized_keys` says which key this is. A rejected paste is almost always a
-line break in the middle of the blob.
+Choose **Paste public keys** and paste the contents of
+`.local\standby_ed25519.pub` -- the **whole line**, the trailing comment
+included, with no line break anywhere in the middle of it. A rejected paste is
+almost always a line break in the middle of the blob. The file without `.pub` is
+the private half and never leaves the PC.
+
+**Why the key is not printed here.** It is a public key and cannot log anybody
+in, but it is not anonymous either: an SSH server can be asked whether it
+accepts a given key, so a key published beside the words "the standby" is a way
+to find which machine on the internet is yours. This document once printed the
+real one; it was replaced on the machine as soon as that was noticed, so the key
+in the history opens nothing and identifies nothing.
 
 There is no password login on these images, so this key is the only way in. If it
 is wrong or missing, the machine has to be destroyed and made again.
