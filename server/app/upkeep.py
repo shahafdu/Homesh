@@ -40,11 +40,33 @@ BETWEEN_SOURCES = timedelta(seconds=30)
 FINGERPRINTS_PER_SWEEP = 2000
 
 # How often the database is copied. Hourly: the standby restores from these, so
-# this is how far behind the PC it can be. Pruning keeps a day of hourlies and a
-# daily copy after that, which still covers the agreed need -- a change nobody
-# noticed at the time is found within a day or two, and the copies go back a
-# month.
+# this is how far behind the PC it can be. Pruning keeps one a day for a week
+# and one a week for five, so taking them hourly costs nothing on the shelf.
 BACKUP_EVERY = timedelta(hours=1)
+
+
+def next_backup_in(backups: list, now: datetime) -> float:
+    """Seconds until the next backup is due, between a minute and an hour.
+
+    The loop used to sleep a flat hour between looks. After a restart that put
+    its looks out of step with the backups: the first look, five minutes in,
+    found one twenty minutes old and rightly skipped -- and the next was an
+    hour later, so the gap was 83 minutes the first time it was measured and
+    could approach two hours. That is the standby falling that far behind.
+    Waking when the next one is due keeps it hourly whenever the server was
+    restarted.
+
+    The copy taken before a restore does not count as the latest backup. It is
+    the state being thrown away, so the state that replaced it would otherwise
+    wait an hour for its first backup.
+    """
+    from .backups import BEFORE_RESTORE
+
+    regular = [b for b in backups if BEFORE_RESTORE not in b.name]
+    if not regular:
+        return 60.0
+    due = (regular[0].taken_at + BACKUP_EVERY - now).total_seconds()
+    return min(3600.0, max(60.0, due))
 
 
 def _due(interval: timedelta) -> list[tuple[UUID, str]]:
@@ -185,10 +207,18 @@ async def run_forever() -> None:
         except Exception:  # noqa: BLE001
             log.exception("scheduled backup failed")
 
-        # Re-checked hourly rather than slept for a whole day: a source added at
-        # noon should not wait until tomorrow, and a machine that suspends
-        # overnight would otherwise drift a full cycle every time it woke.
-        await asyncio.sleep(3600)
+        # Re-checked at least hourly rather than slept for a whole day: a source
+        # added at noon should not wait until tomorrow, and a machine that
+        # suspends overnight would otherwise drift a full cycle every time it
+        # woke. Sooner when the next backup is due sooner -- see next_backup_in.
+        try:
+            from .backups import list_backups
+
+            shelf = await asyncio.to_thread(list_backups)
+            pause = next_backup_in(shelf, datetime.now(UTC))
+        except Exception:  # noqa: BLE001 - an unreadable shelf still waits
+            pause = 3600.0
+        await asyncio.sleep(pause)
 
 
 async def _scheduled_backup() -> None:
@@ -205,8 +235,10 @@ async def _scheduled_backup() -> None:
     """
     from .backups import list_backups, make_backup, prune
 
-    newest = await asyncio.to_thread(list_backups)
-    if newest and datetime.now(UTC) - newest[0].taken_at < BACKUP_EVERY:
+    shelf = await asyncio.to_thread(list_backups)
+    # Due is the same question the loop's sleep asks, answered the same way,
+    # so the two cannot disagree about whether this is the moment.
+    if next_backup_in(shelf, datetime.now(UTC)) > 60.0:
         return
 
     made = await asyncio.to_thread(make_backup)
