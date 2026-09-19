@@ -6,7 +6,7 @@ to reconstruct the state of a large, half-finished system from memory.
 **Legend** — ✅ built and verified · 🟡 built, needs Shahaf to confirm ·
 🔴 known broken · ⬜ not started · ⏳ waiting on Shahaf
 
-Last updated: 19 September 2026 · 594 tests · 24 migrations · CI green
+Last updated: 19 September 2026 · 598 tests · 24 migrations · CI green
 (verified with `tools/verify-ci.ps1`, not assumed)
 
 ---
@@ -18,7 +18,8 @@ The list to work from. Everything else can proceed without you.
 | | What | Why it matters |
 |---|---|---|
 | ✅ | **The Oracle standby machine** | Created and running Homesh: Ampere A1, 1 OCPU / 6 GB (all the console offers as Always Free-eligible), Ubuntu 24.04 aarch64, 100 GB boot volume. `tools/deploy-standby.ps1` installs and upgrades it. It pulled the newest backup out of the bucket by itself and restored 131,302 items, reads all five Drive folders, shows the PC's own folders as offline, and refuses what must not be changed there. Not reachable from your phone yet -- that is the Tailscale row below |
-| ⏳ | **Tailscale: the dead-end rule and a join key** | So the standby can be reached by your devices and can reach nothing. The rule and the key settings are in `docs/STANDBY.md`; the key goes in `.local\tailscale-authkey`, not into a chat |
+| ✅ | **Tailscale: the dead-end rule and a join key** | Done. The standby is on the tailnet with HTTPS; your devices reach it and it reaches nothing -- tested from the standby against the PC: HTTPS, the app's port, ping and SSH all refused. Its SSH to the internet is closed |
+| ⏳ | **Sign in to the standby, once per phone** | Double-click **Sign in to the standby** in the repository folder on the PC. It shows a one-time code; on the phone open the standby's address, choose **Use a code**, type it, then **Settings -> Add a passkey to this device**. The standby keeps passkeys of its own and starts with none, so this is the only way in -- and it needs the PC's key, so nobody else can do it |
 | ✅ | **Photo slideshows** | Open a folder → **▶ Slideshow**. Recursive through subfolders. **Plays forever by default** — shuffled draws a fresh sample each time, in order pages through and wraps, and repeats are expected. 3s-1m per photo, fade/slide/zoom/cut/random transitions. Here or in a room, and a room refills its own queue. Verified on the real library: three pages cover 30,000 distinct photos of 105,162 with no overlap |
 | ✅ | **Add a folder of your own media** | **Sources → Choose a folder...** opens the Windows folder picker on the PC, via a `homesh://` protocol handler. Double-click **Add a folder to Homesh** once to register it. `E:\music` is granted; the server reaches that folder and nothing else — `/hostfs` is gone and writes into the mount are refused |
 | ⏳ | **Share a Drive folder as Editor** | Needed for one thing now: creating a Drive share link. Backups no longer depend on it -- they go to the Oracle bucket. A service account owns no storage of its own, so a *viewer* cannot grant access it does not itself have — the error says exactly that. Sharing one folder as Editor is the whole task |
@@ -169,9 +170,9 @@ not decisions waiting on anybody.
 
 ## Next, in order
 
-1. ⏳ **The standby goes live** — built and running on Oracle, waiting on the
-   Tailscale rule and join key. Then: `deploy-standby.ps1 -Tailscale`, port 22
-   closed, thumbnails synced, and Homesh Connect trying the standby third
+1. 🔨 **The standby goes live** — on the tailnet as a dead end, public SSH
+   closed, and a way to sign in. Left: thumbnails synced alongside, and Homesh
+   Connect trying the standby third so the phone falls back to it by itself
 2. ⬜ **Rate limiting on sign-in** — listed in the architecture, never built, and
    worth having now the server has a real hostname
 3. ⬜ **Audio caching** — first play fetches, later plays are instant.

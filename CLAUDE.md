@@ -127,7 +127,7 @@ routinely breaks another, and the tracker is what makes that visible.
 | 8 · Optional transcode | ❌ overtaken | It was never optional for this library — see §3.2.1 of ARCHITECTURE for what actually happened |
 | 9 · Public release | 🔨 | Public since August. Docs current as of 14 September 2026; screenshots outstanding |
 
-**Tests: 594 passing. Migrations: 024. Lint: clean. CI green.**
+**Tests: 598 passing. Migrations: 024. Lint: clean. CI green.**
 
 ### AI design decisions — agreed, not yet built
 
@@ -305,8 +305,9 @@ android/          TV shell — Manifest, java/com/homesh/tv/{MainActivity,SetupA
 tools/            probe-denon.ps1, configure-network.ps1, run-tests.ps1,
                   build-tv-apk.sh, grant-folder.ps1, start-homesh.ps1,
                   homesh-common.ps1, verify-ci.ps1, scan-apk.py, githooks/
-(repo root)       "Start Homesh.cmd", "Add a folder to Homesh.cmd" — the two
-                  jobs done by double-click rather than through a terminal
+(repo root)       "Start Homesh.cmd", "Add a folder to Homesh.cmd", "Sign in to the
+                  standby.cmd" — the jobs done by double-click rather than
+                  through a terminal
 docs/             ARCHITECTURE.md, USER_GUIDE.md, TV_APP.md, PHONE_APP.md,
                   OFFSITE_BACKUPS.md, STANDBY.md, TLS.md
 ```

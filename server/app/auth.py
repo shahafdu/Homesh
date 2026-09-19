@@ -528,24 +528,32 @@ class LinkClaim(BaseModel):
     device_label: str | None = Field(default=None, max_length=80)
 
 
+def issue_device_link(conn, user_id, via: str = "app") -> str:
+    """A one-time code that signs this account in on another device.
+
+    Shared by the button in the app and by `python -m app.signin_code`, which is
+    how the first device gets into the standby -- see that module.
+    """
+    code = "".join(secrets.choice(LINK_ALPHABET) for _ in range(LINK_CODE_LENGTH))
+    conn.execute(text("DELETE FROM device_links WHERE expires_at < now()"))
+    conn.execute(
+        text(
+            """
+            INSERT INTO device_links (code_hash, user_id, expires_at)
+            VALUES (:h, :u, :e)
+            """
+        ),
+        {"h": _hash_code(code), "u": str(user_id), "e": datetime.now(UTC) + LINK_TTL},
+    )
+    audit(conn, "auth.device_link.issued", user_id, {"via": via}, None)
+    return code
+
+
 @router.post("/devices/link")
 async def create_device_link(user: CurrentUser = Depends(require_user)) -> dict:
     """Issue a code that signs this same account in on another device."""
-    code = "".join(secrets.choice(LINK_ALPHABET) for _ in range(LINK_CODE_LENGTH))
-    expires = datetime.now(UTC) + LINK_TTL
-
     with get_engine().begin() as conn:
-        conn.execute(text("DELETE FROM device_links WHERE expires_at < now()"))
-        conn.execute(
-            text(
-                """
-                INSERT INTO device_links (code_hash, user_id, expires_at)
-                VALUES (:h, :u, :e)
-                """
-            ),
-            {"h": _hash_code(code), "u": str(user.id), "e": expires},
-        )
-        audit(conn, "auth.device_link.issued", user.id, {}, None)
+        code = issue_device_link(conn, user.id)
 
     settings = get_settings()
     return {

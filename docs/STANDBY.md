@@ -100,8 +100,22 @@ standby.** The first one that answers wins, so when the PC is on you never touch
 Oracle at all.
 
 **Passkeys are tied to an address.** The standby has a different name from the
-PC, so a passkey made for one does not sign in to the other. Each phone signs in
-to the standby once, with **Use on another device**. It is a one-off per device.
+PC, so a passkey made for one does not sign in to the other, and the standby
+keeps passkeys of its own. It starts with none, which leaves no ordinary way in:
+the first-run code is switched off there (whoever reached it first would have
+made an owner account on a machine outside the house), and **Use on another
+device** needs somebody already signed in on that same server.
+
+So the first sign-in on each phone uses a code made on the machine itself.
+Double-click **Sign in to the standby** in the repository folder on the PC: it
+asks the standby over the tailnet, with the PC's key, for an eight-character
+code that works once within ten minutes, and shows it in that window and nowhere
+else. On the phone, open the standby's address, choose **Use a code**, type it
+in -- then **Settings -> Add a passkey to this device**, and the code is never
+needed again on that phone.
+
+Nobody else can do this. Getting a code needs a shell on the standby, and the
+only way to one is the PC's SSH key over your tailnet.
 
 ## What changes about the risk
 
@@ -361,8 +375,18 @@ folder is never committed.
   newest backup out of the bucket and restored 131,302 items from it, reads all
   five Drive folders, shows the two folders that live on the PC as offline, and
   refuses a write that is not replayable with 409.
-- ⬜ Tailscale with HTTPS, and the public SSH rule closed once it answers --
-  `tools/deploy-standby.ps1 -Tailscale` does it, and it is waiting for the
-  access rule and the join key above.
+- ✅ On the tailnet with HTTPS, as a dead end. Verified from both sides: this
+  PC reaches it over HTTPS, and from the standby the PC resolves by name but
+  HTTPS, the app's port, ping and SSH all get nothing. The join key was deleted
+  from the machine after use.
+- ✅ SSH to the internet closed. The rule opening port 22 to the world is gone
+  from the running firewall and from the saved one, so a reboot does not bring
+  it back; SSH works over the tailnet only, because Tailscale's own chain
+  accepts what arrives on `tailscale0` ahead of everything else. The public
+  address refuses, checked again after the five-minute undo that guarded the
+  change had passed. `deploy-standby.ps1` now reaches the machine over the
+  tailnet and uses the public address only for a first install.
+- ✅ A way to sign in to it at all -- see *How your phone finds the right one*
+  above. Without it the standby could never have been used.
 - ⬜ Thumbnails synced alongside.
 - ⬜ Homesh Connect trying the standby third.

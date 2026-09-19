@@ -39,7 +39,6 @@ function Need-File([string]$path, [string]$what) {
     return (Get-Content $path -Raw).Trim()
 }
 
-$address = Need-File "$repo\.local\standby-ip" "The standby's address"
 $key     = "$repo\.local\standby_ed25519"
 Need-File $key "The SSH key for the standby" | Out-Null
 
@@ -54,7 +53,6 @@ icacls $key /inheritance:r /grant:r "$($env:USERNAME):(R)" | Out-Null
 # half built and the old container still running.
 $ssh = @('-i', $key, '-o', 'StrictHostKeyChecking=accept-new', '-o', 'ConnectTimeout=20',
          '-o', 'ServerAliveInterval=30', '-o', 'ServerAliveCountMax=10')
-$remote = "ubuntu@$address"
 
 # ---- The configuration the standby runs on ----------------------------------------
 
@@ -80,6 +78,20 @@ if ($origin -notmatch '^https://[^.]+\.(.+)$') {
     throw "PUBLIC_ORIGIN in .env is not a tailnet address, so the standby's name cannot be derived from it."
 }
 $standbyHost = "homesh-standby.$($Matches[1])"
+
+# Which way in. Over the tailnet once it has joined -- the public SSH port is
+# closed after that and refuses -- and by the public address only for the very
+# first install, before there is a tailnet to use.
+$ErrorActionPreference = 'Continue'
+& ssh @ssh -o BatchMode=yes -o ConnectTimeout=10 "ubuntu@$standbyHost" 'true' 2>$null
+$onTailnet = ($LASTEXITCODE -eq 0)
+$ErrorActionPreference = 'Stop'
+if ($onTailnet) {
+    $remote = "ubuntu@$standbyHost"
+} else {
+    $address = Need-File "$repo\.local\standby-ip" "The standby's public address (first install only)"
+    $remote = "ubuntu@$address"
+}
 
 # Its own signing keys, deliberately not the PC's. Nothing needs them to match --
 # sessions and passkeys are per-address anyway -- and a standby that cannot mint
@@ -187,8 +199,11 @@ if ($Tailscale) {
     # What it is actually called there, rather than what was assumed above: a
     # name already taken gets a suffix, and a passkey registered against the
     # wrong name is a sign-in that fails for reasons nobody can see.
+    # Read from a file the join script wrote, rather than asked with a Python
+    # one-liner: PowerShell 5.1 strips the inner quotes from a native command's
+    # argument, and the first run ended on a bash syntax error right here.
     $ErrorActionPreference = 'Continue'
-    $actual = (& ssh @ssh $remote "tailscale status --json | python3 -c ""import json,sys; print(json.load(sys.stdin)['Self']['DNSName'].rstrip('.'))""").Trim()
+    $actual = "$(& ssh @ssh $remote 'cat /tmp/homesh-dnsname' 2>$null)".Trim()
     if ($actual -and $actual -ne $standbyHost) {
         Write-Host "  It joined as $actual. Rewriting its configuration to match." -ForegroundColor Yellow
         [System.IO.File]::WriteAllText($envFile, (Build-Env $actual))
