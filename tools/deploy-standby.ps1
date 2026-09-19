@@ -48,7 +48,12 @@ Need-File $key "The SSH key for the standby" | Out-Null
 # off, this account only.
 icacls $key /inheritance:r /grant:r "$($env:USERNAME):(R)" | Out-Null
 
-$ssh = @('-i', $key, '-o', 'StrictHostKeyChecking=accept-new', '-o', 'ConnectTimeout=20')
+# Keepalives, because the build is several quiet minutes on one core and
+# something between here and the machine drops a connection that says nothing
+# for long enough -- the second deploy died that way, exit 255, with the image
+# half built and the old container still running.
+$ssh = @('-i', $key, '-o', 'StrictHostKeyChecking=accept-new', '-o', 'ConnectTimeout=20',
+         '-o', 'ServerAliveInterval=30', '-o', 'ServerAliveCountMax=10')
 $remote = "ubuntu@$address"
 
 # ---- The configuration the standby runs on ----------------------------------------
