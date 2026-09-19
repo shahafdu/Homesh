@@ -271,8 +271,18 @@ def tv_address() -> Response:
     """
     lan = lanaddr.lan_base() or ""
     configured = (get_settings().lan_base_url or "").strip().rstrip("/")
+    from .standby import role
+
+    standby_at = (get_settings().standby_origin or "").strip().rstrip("/")
     return JSONResponse(
         {
+            # Which machine answered. The phone app learns addresses only from
+            # the primary: taken from the standby, "origin" would be the
+            # standby's own, and the phone would go on opening Oracle long after
+            # the PC was back.
+            "role": role(),
+            # Where to go when the PC does not answer. Only the primary says.
+            "standby": (standby_at or None) if role() == "primary" else None,
             "lan": lan or None,
             # The address that works from outside the house, which is a
             # different question from the one above and the one a phone away

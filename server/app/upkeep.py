@@ -268,6 +268,17 @@ async def _scheduled_backup() -> None:
     except Exception as exc:  # noqa: BLE001 - a key that may not delete is a fine setup
         log.warning("could not prune off-site backups: %s", exc)
 
+    # And the thumbnails made since last time, for the standby -- which cannot
+    # make them for files that live only here. Hourly, with the backup, rather
+    # than on the ten-minute sync: a request budget of 50,000 a month is spent
+    # better on the changes a person made than on pictures of them.
+    from . import thumbsync
+
+    try:
+        await asyncio.to_thread(thumbsync.push)
+    except Exception as exc:  # noqa: BLE001 - the next hour tries again
+        log.warning("could not send thumbnails to the standby: %s", exc)
+
 
 # How often the two machines check the bucket for each other.
 #
@@ -281,6 +292,10 @@ async def _scheduled_backup() -> None:
 # billing for them, so the failure is safe, but it is still a failure.
 SYNC_EVERY = timedelta(minutes=10)
 
+# The standby looks for new thumbnail packs every sixth pass: hourly, which is
+# how often the PC sends them. About 720 listings a month.
+THUMBS_EVERY_PASSES = 6
+
 
 async def sync_forever() -> None:
     """The traffic between the PC and the standby, through the bucket."""
@@ -288,6 +303,7 @@ async def sync_forever() -> None:
     from .backups import offsite_ready
 
     await asyncio.sleep(FIRST_SWEEP_DELAY.total_seconds())
+    passes = 0
     while True:
         ready, why = offsite_ready()
         if not ready:
@@ -298,12 +314,19 @@ async def sync_forever() -> None:
                     await asyncio.to_thread(standby.push_outbox)
                     outcome = await asyncio.to_thread(standby.refresh_from_primary)
                     log.debug("standby refresh: %s", outcome)
+                    # Thumbnails hourly -- the PC only sends them hourly, so
+                    # looking more often would spend requests finding nothing.
+                    if passes % THUMBS_EVERY_PASSES == 0:
+                        from . import thumbsync
+
+                        await asyncio.to_thread(thumbsync.pull)
                 else:
                     await standby.replay_outboxes()
             except asyncio.CancelledError:
                 raise
             except Exception:  # noqa: BLE001 - the next pass tries again
                 log.exception("sync with the other machine failed")
+        passes += 1
         await asyncio.sleep(SYNC_EVERY.total_seconds())
 
 

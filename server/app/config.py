@@ -74,6 +74,12 @@ class Settings(BaseSettings):
     # replaces its own database with somebody else's backup every hour.
     homesh_role: str = "primary"
 
+    # Where the standby answers, on the PC only. Handed to the phone app so it
+    # can fall back there when the PC does not answer -- the PC is the one place
+    # the phone reliably hears from first. Written into .env by
+    # tools/deploy-standby.ps1; an address, so configuration and never code.
+    standby_origin: str = ""
+
     media_url_ttl_minutes: int = Field(default=5, ge=1, le=60)
 
     # Receivers pull for the length of a whole track or film, so the short browser
