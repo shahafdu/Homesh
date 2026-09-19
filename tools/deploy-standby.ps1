@@ -216,6 +216,8 @@ Remove-Item $envFile -Force -ErrorAction SilentlyContinue
 
 Write-Host ""
 Write-Host "Done." -ForegroundColor Green
-if (-not $Tailscale) {
+if ($onTailnet -or $Tailscale) {
+    Write-Host "Reachable from your devices at https://$standbyHost" -ForegroundColor DarkGray
+} else {
     Write-Host "It answers only on the machine itself until -Tailscale has been run." -ForegroundColor DarkGray
 }
