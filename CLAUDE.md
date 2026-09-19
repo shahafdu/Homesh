@@ -37,6 +37,35 @@ changing it would invalidate every registered passkey.
 room, receiver configuration, and zone wiring. `.env` holds addresses and
 secrets. Read both when resuming; never copy their contents into a tracked file.
 
+### Nothing that identifies this setup goes in the repository
+
+**Not secrets only — identifiers too.** This repository is public, and nobody
+reading it may learn anything about the owner's network, machines, keys or
+accounts: not a password, and equally not an SSH *public* key, a cloud region, a
+tailnet or host name, a bucket namespace, an IP address, a device id, or which
+room holds what. Something that grants no access can still find or fingerprint
+the setup — an SSH server can be asked whether it accepts a given public key, so
+a published key identifies the machine that does.
+
+This was broken once, in September 2026: the setup guide printed the standby's
+public key for pasting and the docs named its region. The key was replaced on the
+machine, the docs were rewritten, and the guards were widened. The owner called
+it a security breach, and it was.
+
+- **Documentation describes how to make or find a value, never the value.**
+  "Run `ssh-keygen … -f .local\standby_ed25519` and paste the `.pub` file" — not
+  the key. "Your region" — not the region.
+- **A concrete value belongs in `.local/` or `.env`**, both untracked, and a
+  script reads it from there. Commit the script, never its input.
+- **Tests and examples use placeholders**: RFC 5737 addresses (192.0.2.x),
+  `examplenamespace`, a region nobody here uses.
+- **Chat replies follow the same rule**: say where a value lives, do not print it.
+- **Before every commit, ask of each concrete value: does this describe *this*
+  setup?** The guards — pre-commit, pre-push, `run-tests.ps1` and CI — refuse
+  private addresses, device ids, SSH keys and tailnet names. They cannot
+  recognise a region or a room, so that part is judgement, and it is the part
+  that failed.
+
 ---
 
 ## Before anything is called done
@@ -55,8 +84,8 @@ git push origin main
 trusted rather than read hopefully. **Do not report work as done before it has
 run and passed.**
 
-Two git hooks refuse a private address or a device id — `pre-commit` on staged
-content, `pre-push` on every outgoing commit. They live in `tools/githooks` and
+Two git hooks refuse a private address, a device id, an SSH key or a tailnet
+name — `pre-commit` on staged content, `pre-push` on every outgoing commit. They live in `tools/githooks` and
 are wired up with:
 
 ```powershell
@@ -98,7 +127,7 @@ routinely breaks another, and the tracker is what makes that visible.
 | 8 · Optional transcode | ❌ overtaken | It was never optional for this library — see §3.2.1 of ARCHITECTURE for what actually happened |
 | 9 · Public release | 🔨 | Public since August. Docs current as of 14 September 2026; screenshots outstanding |
 
-**Tests: 585 passing. Migrations: 024. Lint: clean. CI green.**
+**Tests: 590 passing. Migrations: 024. Lint: clean. CI green.**
 
 ### AI design decisions — agreed, not yet built
 
@@ -132,9 +161,9 @@ access — enforced by the tool list and the API, never by prompt.
 **Every action is auditable from inside the app.** A history of what the AI did,
 readable in the interface — not something to go hunting for in logs on the PC.
 
-**Backups, because the AI can change the database.** Hourly for a day, daily
-for a week, weekly for five weeks -- which is what guarantees the points at two
-weeks and a month (aiming at those marks directly never kept anything: the
+**Backups, because the AI can change the database.** Taken hourly (for the
+standby), kept daily for a week and weekly for five weeks -- which is what
+guarantees the points at two weeks and a month (aiming at those marks directly never kept anything: the
 dailies near them had already been pruned). Restore from within the app,
 administrators only.
 

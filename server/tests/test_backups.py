@@ -172,9 +172,8 @@ class TestRefusals:
 
 
 class TestKeeping:
-    """Everything from the last day, a day for a week, a week for five. The
-    weeklies are what catch a change nobody noticed at the time, which a
-    daily-only shelf quietly loses."""
+    """A day for a week, a week for five. The weeklies are what catch a change
+    nobody noticed at the time, which a daily-only shelf quietly loses."""
 
     def _shelf(self, shelf, ages_in_days):
         shelf.mkdir(parents=True, exist_ok=True)
@@ -198,10 +197,44 @@ class TestKeeping:
         assert prune() == []
         assert len(list_backups()) == DAILY_DAYS
 
-    def test_every_hour_of_the_last_day_is_kept(self):
+    def test_today_keeps_only_its_newest(self):
+        """Backups are taken hourly and the standby needs only the newest.
+        Keeping every hourly put two dozen near-identical rows at the top of
+        Settings, which is what was reported."""
         now = datetime(2026, 9, 15, 12, tzinfo=UTC)
-        taken = [(now - timedelta(hours=h), f"h{h}") for h in range(24)]
+        taken = [(now - timedelta(hours=h), f"h{h}") for h in range(12)]
+        assert worth_keeping(taken, now) == {"h0"}
+
+    def test_the_copy_taken_before_a_restore_survives_the_next_backup(self):
+        """It is the only undo a restore has. Under the daily rule the next
+        hourly backup would displace it within the hour."""
+        now = datetime(2026, 9, 15, 12, tzinfo=UTC)
+        taken = [
+            (now, "homesh-20260915-120000.sql.gz"),
+            (now - timedelta(minutes=20), "homesh-20260915-114000-before-restore.sql.gz"),
+            (now - timedelta(hours=1), "homesh-20260915-110000.sql.gz"),
+        ]
+        assert worth_keeping(taken, now) == {
+            "homesh-20260915-120000.sql.gz",
+            "homesh-20260915-114000-before-restore.sql.gz",
+        }
+
+    def test_a_copy_before_a_restore_never_stands_in_for_its_day(self):
+        """Newest of its day or not, the day's own backup is the ordinary one."""
+        now = datetime(2026, 9, 15, 12, tzinfo=UTC)
+        taken = [
+            (now - timedelta(days=2), "homesh-20260913-120000-before-restore.sql.gz"),
+            (now - timedelta(days=2, hours=1), "homesh-20260913-110000.sql.gz"),
+        ]
         assert worth_keeping(taken, now) == {name for _, name in taken}
+
+    def test_a_copy_before_a_restore_goes_after_a_week(self):
+        now = datetime(2026, 9, 15, 12, tzinfo=UTC)
+        taken = [
+            (now, "homesh-20260915-120000.sql.gz"),
+            (now - timedelta(days=9), "homesh-20260906-120000-before-restore.sql.gz"),
+        ]
+        assert worth_keeping(taken, now) == {"homesh-20260915-120000.sql.gz"}
 
     def test_an_older_day_keeps_only_its_newest(self):
         now = datetime(2026, 9, 15, 12, tzinfo=UTC)
@@ -248,8 +281,9 @@ class TestKeeping:
                 ages = [(now - when).total_seconds() / 86400 for when, _ in shelf]
                 assert any(10 <= a <= 18 for a in ages), ages
                 assert any(26 <= a <= 35 for a in ages), ages
-                # And it stays small: a day of hourlies, a week, five weeks.
-                assert len(shelf) <= 40, len(shelf)
+                # And it stays short: a week of dailies and five weeklies,
+                # some of which are the same backup.
+                assert len(shelf) <= DAILY_DAYS + 5, len(shelf)
                 checked += 1
         assert checked == 7
 
@@ -327,6 +361,9 @@ class TestWhoMayDoThis:
         saved = done.json()["previous_state_saved_as"]
         assert saved != taken.name
         assert saved in {b.name for b in list_backups()}
+        # Marked, so the keeping rule can keep it and the list can say what it is.
+        assert "before-restore" in saved
+        assert resolve(saved)
 
 
 def test_the_list_is_newest_first(shelf):

@@ -469,9 +469,9 @@ see what, playlists, where everybody had got to, and the catalog with all its ta
 your media: those are your own files on your own disks, and copying terabytes is a
 different job.
 
-One is taken every hour. The last day of them is kept, then one a day for a week and one a
-week for five weeks, so there is always one from about a fortnight back and one from
-about a month back. You can take one at any moment, and you should before anything
+One is taken every hour, and they are kept one a day for a week and one a week for five
+weeks, so there is always one from about a fortnight back and one from about a month
+back. Settings shows them as a dropdown: choose one, then restore, download or delete it. You can take one at any moment, and you should before anything
 drastic.
 
 **Restoring** replaces the catalog, the accounts and the playlists with whatever was

@@ -827,6 +827,20 @@ button.compact:disabled { opacity: .5; cursor: not-allowed; }
 }
 .invite-row:first-of-type { border-top: 0; }
 
+/* Choosing a backup: the dropdown full width, its size and download under it,
+   and the actions for the one chosen below that. Stacked rather than in a row,
+   because on a phone a date, a size and three buttons do not fit on one line. */
+.backup-pick {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 8px;
+  margin-top: 12px;
+}
+.backup-pick select {
+  width: 100%; max-width: 360px;
+  padding: 8px 10px; font: inherit; font-size: 14px;
+  color: var(--ink); background: var(--bg);
+  border: 1px solid var(--line); border-radius: 8px;
+}
+
 .invite-link {
   font-family: var(--mono); font-size: 12px;
   padding: 10px 12px; border-radius: 8px;

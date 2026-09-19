@@ -46,7 +46,25 @@ has avoided every dependency so far.
 
 From [the releases page](https://github.com/shahafdu/Homesh/releases/latest),
 which is deliberately not the server — the app has to be installable when the
-server cannot be reached, which is the situation it exists for.
+server cannot be reached, which is the situation it exists for. Your own server
+offers the same build at `/phone`.
+
+## Which version, and updating it
+
+The version installed is shown at the bottom of the screen, under the buttons.
+**Check for updates** asks whichever address answers — the house one at home,
+the tailnet one away — what build the server offers at `/phone.json`, and if it
+is newer the button becomes **Install**, which downloads it and hands it to
+Android's own installer prompt. That prompt cannot be skipped by an ordinary app,
+and should not be.
+
+From 1.2.0. Earlier builds cannot check, so the move to 1.2.0 is one install by
+hand; after that the app keeps itself current.
+
+The update code is in its own file, `PhoneUpdates.java`, compiled into the phone
+app only. The television app has its own updater, and its version guard hashes
+the sources in its APK — so extending the TV's updater would have offered every
+screen an update to code that changes nothing on a screen.
 
 ## Addresses
 

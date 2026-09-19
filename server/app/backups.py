@@ -67,7 +67,12 @@ SKIP = {"schema_migrations"}
 
 # What a backup file is allowed to be called. Anything reaching the filesystem
 # from a request is matched against this first — a name is a name, never a path.
-NAME = re.compile(r"^homesh-\d{8}-\d{6}(-\d+)?\.sql\.gz$")
+NAME = re.compile(r"^homesh-\d{8}-\d{6}(-before-restore)?(-\d+)?\.sql\.gz$")
+
+# Marks the copy taken of the present state just before a restore replaces it.
+# Named rather than flagged in a table, because the table is exactly what the
+# restore overwrites.
+BEFORE_RESTORE = "-before-restore"
 
 
 @dataclass
@@ -144,7 +149,7 @@ def _ordered_tables(conn) -> list[str]:
     return ordered
 
 
-def make_backup() -> Backup:
+def make_backup(before_restore: bool = False) -> Backup:
     """Write every row of every table to a new file.
 
     One connection and one snapshot: a backup taken across several transactions
@@ -156,7 +161,7 @@ def make_backup() -> Backup:
     # a name that collided would overwrite the very file being restored. Found
     # by the test that checks the safety copy exists afterwards -- it did not,
     # because it had replaced its own source.
-    name, target = _free_name(taken)
+    name, target = _free_name(taken, BEFORE_RESTORE if before_restore else "")
     rows = 0
 
     engine = get_engine()
@@ -206,10 +211,10 @@ def make_backup() -> Backup:
     )
 
 
-def _free_name(taken: datetime) -> tuple[str, Path]:
+def _free_name(taken: datetime, mark: str = "") -> tuple[str, Path]:
     """A name nothing else is using, to the second and then some."""
     root = backup_dir()
-    stem = f"homesh-{taken:%Y%m%d-%H%M%S}"
+    stem = f"homesh-{taken:%Y%m%d-%H%M%S}{mark}"
     for suffix in ("", *(f"-{n}" for n in range(2, 100))):
         candidate = root / f"{stem}{suffix}.sql.gz"
         if not candidate.exists():
@@ -284,7 +289,7 @@ def resolve(name: str) -> Path:
     return path
 
 
-# Kept: everything from the last day, one a day for a week, one a week for five.
+# Kept: one a day for a week, one a week for five.
 #
 # The shape matters more than the numbers. A week of dailies catches "something
 # went wrong yesterday"; the weeklies catch "something went wrong a while ago
@@ -299,11 +304,20 @@ def resolve(name: str) -> Path:
 # on the way to becoming the one kept, and at any moment there is one about two
 # weeks old and one about a month old.
 #
-# About 35 backups at roughly 19 MB is under 700 MB, here and in the bucket.
+# At most twelve, and usually fewer where a daily is also its week's weekly.
 #
-# Everything from the last day is kept because backups are taken hourly on the
-# PC, so that the standby is never more than an hour behind it.
-HOURLY = timedelta(days=1)
+# Backups are *taken* hourly, so that the standby is never more than an hour
+# behind the PC -- but only the newest is what the standby needs, and within a
+# day the newest is the one a day keeps anyway. This once kept every hourly
+# from the last day as well, which put two dozen near-identical entries at the
+# top of the list in Settings and answered no question anybody asks: "put it
+# back the way it was at 14:00 rather than 15:00" is not a recovery anybody
+# needs from a catalog.
+#
+# The copy taken just before a restore is the exception. It is the only way to
+# undo a restore, and under the daily rule it would be deleted within the hour,
+# displaced by the next backup of the same day. It is kept for a week on its
+# own terms and never counts as its day's backup.
 DAILY_DAYS = 7
 WEEKLY_DAYS = 35
 
@@ -319,8 +333,10 @@ def worth_keeping(taken: list[tuple[datetime, str]], now: datetime) -> set[str]:
     per_week: dict = {}
     for when, name in newest_first:
         age = now - when
-        if age <= HOURLY:
-            kept.add(name)
+        if BEFORE_RESTORE in name:
+            if age <= timedelta(days=DAILY_DAYS):
+                kept.add(name)
+            continue
         # Newest first, so the first of each day or week seen is its newest.
         if age <= timedelta(days=DAILY_DAYS):
             per_day.setdefault(when.date(), name)
@@ -732,7 +748,7 @@ async def put_back(name: str, user: CurrentUser = Depends(require_user)) -> dict
     except (ValueError, FileNotFoundError) as exc:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "no such backup") from exc
 
-    safety = await asyncio.to_thread(make_backup)
+    safety = await asyncio.to_thread(make_backup, True)
     try:
         done = await asyncio.to_thread(restore, name)
     except ValueError as exc:

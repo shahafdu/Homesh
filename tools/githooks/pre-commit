@@ -23,7 +23,7 @@ ids=$(git diff --cached -U0 --diff-filter=ACM \
 # does. One was printed in the standby's setup guide and had to be replaced.
 keys=$(git diff --cached -U0 --diff-filter=ACM \
        | grep -E '^\+' | grep -v '^+++' \
-       | grep -nE 'ssh-(ed25519|rsa|ecdsa-[a-z0-9-]+|dss) AAAA[0-9A-Za-z+/]{20,}|-----BEGIN [A-Z ]*PRIVATE KEY-----')
+       | grep -nE 'ssh-(ed25519|rsa|ecdsa-[a-z0-9-]+|dss) AAAA[0-9A-Za-z+/]{20,}|-----BEGIN [A-Z ]*PRIVATE KEY-----|[a-z0-9-]+\.tail[0-9a-f]{4,}\.ts\.net')
 
 # Files that exist to describe this machine. Ignored, so reaching here means
 # somebody forced one in.
@@ -41,10 +41,10 @@ fi
 
 if [ -n "$keys" ]; then
   echo
-  echo "REFUSING: this commit adds an SSH key."
+  echo "REFUSING: this commit adds an SSH key or a tailnet name."
   echo "$keys" | cut -c1-60
   echo
-  echo "Keys live in .local, which is not tracked. Point at the file instead of"
+  echo "Both belong in .local or .env, which are not tracked. Point at the file instead of"
   echo "printing what is in it."
   exit 1
 fi

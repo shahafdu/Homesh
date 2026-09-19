@@ -223,36 +223,85 @@ function OffsiteCopies(props: {
   onChange: (label: string, work: () => Promise<unknown>) => Promise<void>;
 }) {
   const { state } = props;
+  const [picked, setPicked] = useState<string | null>(null);
   if (!state) return null;
+
+  const copies = state.backups;
+  const chosen = copies.find((b) => b.name === picked) ?? copies[0] ?? null;
 
   return (
     <>
       <p className="muted small" style={{ marginTop: 14 }}>
         <b>Off the machine.</b>{" "}
         {state.ready
-          ? "Encrypted here and sent to Drive after each daily backup. Whoever stores them cannot read them."
+          ? "Encrypted here and sent to your storage bucket after each backup, and " +
+            "kept by the same rule. Whoever stores them cannot read them."
           : state.why}
       </p>
 
-      {state.backups.map((backup) => (
-        <div key={backup.id} className="invite-row">
-          <div>
-            <b>{backup.taken_at ? formatDate(backup.taken_at) : backup.name}</b>
-            <div className="muted small">{formatSize(backup.size_bytes)} · encrypted</div>
-          </div>
+      {chosen && (
+        <div className="backup-pick">
+          <select
+            value={chosen.name}
+            disabled={props.busy}
+            onChange={(e) => setPicked(e.target.value)}
+            aria-label="Choose an off-site copy"
+          >
+            {copies.map((b) => (
+              <option key={b.id} value={b.name}>
+                {b.taken_at ? backupWhen(b.taken_at) : b.name}
+              </option>
+            ))}
+          </select>
+          <div className="muted small">{formatSize(chosen.size_bytes)} · encrypted</div>
           <button
             className="compact"
             disabled={props.busy}
-            onClick={() =>
-              props.onChange("fetching", () => retrieveOffsite(backup.name))
-            }
+            onClick={() => props.onChange("fetching", () => retrieveOffsite(chosen.name))}
           >
             Bring back
           </button>
         </div>
-      ))}
+      )}
     </>
   );
+}
+
+
+/** "Fri 19 Sep, 11:00" -- the weekday first, because "which day" is the
+ *  question, and the time because a day can hold more than one. */
+function backupWhen(iso: string): string {
+  return new Date(iso).toLocaleString(undefined, {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+const isBeforeRestore = (b: Backup) => b.name.includes("-before-restore");
+
+function backupLabel(b: Backup): string {
+  return isBeforeRestore(b) ? `${backupWhen(b.taken_at)} · before a restore` : backupWhen(b.taken_at);
+}
+
+/** In the order somebody looks for one: recent days, then the weeks behind
+ *  them, with the copies taken before a restore kept apart, since those are
+ *  the "undo" rather than a point in time anybody chose. */
+function backupGroups(backups: Backup[]): { label: string; backups: Backup[] }[] {
+  const week = Date.now() - 7 * 24 * 60 * 60 * 1000;
+  const groups = [
+    { label: "This week", backups: [] as Backup[] },
+    { label: "Weekly, further back", backups: [] as Backup[] },
+    { label: "Taken before a restore", backups: [] as Backup[] },
+  ];
+  for (const b of backups) {
+    if (isBeforeRestore(b)) groups[2].backups.push(b);
+    else if (new Date(b.taken_at).getTime() >= week) groups[0].backups.push(b);
+    else groups[1].backups.push(b);
+  }
+  return groups.filter((g) => g.backups.length > 0);
 }
 
 
@@ -270,6 +319,11 @@ function Backups() {
   const [note, setNote] = useState<string | null>(null);
   const [confirming, setConfirming] = useState<string | null>(null);
   const [offsite, setOffsite] = useState<Offsite | null>(null);
+  const [picked, setPicked] = useState<string | null>(null);
+
+  // What the dropdown shows: the one chosen, or the newest until somebody
+  // chooses. Falls back when the chosen one is deleted or pruned away.
+  const chosen = backups.find((b) => b.name === picked) ?? backups[0] ?? null;
 
   const refresh = useCallback(() => {
     listBackups().then(setBackups).catch(() => undefined);
@@ -298,8 +352,9 @@ function Backups() {
       <label>Backups</label>
       <p className="muted small">
         The catalog, accounts, playlists and everything you have marked — not your
-        media files. Taken every hour; the last day of them is kept, then one a day
-        for a week and one a week for five weeks.
+        media files. Taken every hour and kept one a day for a week, then one a week
+        for five weeks, so there is always one from about a fortnight and about a
+        month back.
       </p>
 
       <button
@@ -319,32 +374,54 @@ function Backups() {
         <p className="muted small">Nothing yet. The first one is taken within the hour.</p>
       )}
 
-      {backups.map((backup) => (
-        <div key={backup.name} className="invite-row">
-          <div>
-            <b>{formatDate(backup.taken_at)}</b>
-            <div className="muted small">
-              {formatSize(backup.size_bytes)}
-              {" · "}
-              {/* A backup on the same disk as the thing it is backing up is
-                  half a backup. Nothing here can put a copy somewhere else for
-                  you, so at least it is one tap to take one away. */}
-              <a href={backupUrl(backup.name)} download>
-                Download
-              </a>
-            </div>
+      {/* One control and the actions for what it has chosen, rather than a row
+          per backup. A list of a dozen near-identical dates with three buttons
+          each was a wall, and the question it answers -- "which point in time"
+          -- is a choice of one. */}
+      {chosen && (
+        <div className="backup-pick">
+          <select
+            value={chosen.name}
+            disabled={busy !== null}
+            onChange={(e) => {
+              setPicked(e.target.value);
+              setConfirming(null);
+            }}
+            aria-label="Choose a backup"
+          >
+            {backupGroups(backups).map((group) => (
+              <optgroup key={group.label} label={group.label}>
+                {group.backups.map((b) => (
+                  <option key={b.name} value={b.name}>
+                    {backupLabel(b)}
+                  </option>
+                ))}
+              </optgroup>
+            ))}
+          </select>
+
+          <div className="muted small">
+            {formatSize(chosen.size_bytes)}
+            {" · "}
+            {/* A backup on the same disk as the thing it is backing up is half a
+                backup. Nothing here can put a copy somewhere else for you, so at
+                least it is one tap to take one away. */}
+            <a href={backupUrl(chosen.name)} download>
+              Download
+            </a>
           </div>
-          {confirming === backup.name ? (
+
+          {confirming === chosen.name ? (
             <span className="confirm">
               <button
                 className="compact danger"
                 disabled={busy !== null}
                 onClick={() =>
                   run("restoring", async () => {
-                    const done = await restoreBackup(backup.name);
+                    const done = await restoreBackup(chosen.name);
                     setNote(
                       `Restored ${done.rows.toLocaleString()} rows. What was here ` +
-                        `first was saved as ${done.previous_state_saved_as}.`,
+                        "first was saved as a backup marked “before a restore”.",
                     );
                   })
                 }
@@ -360,21 +437,21 @@ function Backups() {
               <button
                 className="compact"
                 disabled={busy !== null}
-                onClick={() => setConfirming(backup.name)}
+                onClick={() => setConfirming(chosen.name)}
               >
-                Restore
+                Restore this
               </button>
               <button
                 className="compact"
                 disabled={busy !== null}
-                onClick={() => run("removing", () => removeBackup(backup.name))}
+                onClick={() => run("removing", () => removeBackup(chosen.name))}
               >
                 Delete
               </button>
             </span>
           )}
         </div>
-      ))}
+      )}
 
       {confirming && (
         <p className="muted small">

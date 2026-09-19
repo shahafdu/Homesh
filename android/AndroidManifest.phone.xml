@@ -14,11 +14,14 @@
 -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.homesh.phone"
-    android:versionCode="6"
-    android:versionName="1.1.0">
+    android:versionCode="7"
+    android:versionName="1.2.0">
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- "Check for updates" installs what it finds. Android still shows its own
+         installer prompt; what this removes is finding /phone in a browser. -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <!-- Android 11 hides other apps unless they are named here. Without this
          Tailscale is invisible: the launch intent comes back null and the app
@@ -55,6 +58,15 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- Passes a downloaded update to the system installer as content, the
+             only form Android accepts. The same class as the television's; its
+             authority is this app's own package name plus ".updates". -->
+        <provider
+            android:name="com.homesh.tv.UpdateProvider"
+            android:authorities="com.homesh.phone.updates"
+            android:exported="false"
+            android:grantUriPermissions="true" />
 
         <!-- Typing an address, shared with the television app. -->
         <activity
