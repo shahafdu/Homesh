@@ -109,23 +109,33 @@ So the phone app needs to reach the PC once, with the standby configured, before
 the fallback exists -- which is the ordinary case, since the PC is on most of
 the time.
 
-**Passkeys are tied to an address.** The standby has a different name from the
-PC, so a passkey made for one does not sign in to the other, and the standby
-keeps passkeys of its own. It starts with none, which leaves no ordinary way in:
-the first-run code is switched off there (whoever reached it first would have
-made an owner account on a machine outside the house), and **Use on another
-device** needs somebody already signed in on that same server.
+**One passkey for both machines.** A passkey belongs to a name -- WebAuthn's
+"relying party id" -- and works only where that name applies. Passkeys used to
+belong to the PC's full host name, so the standby, under a different one, could
+use none of them and every device had to be set up twice. They now belong to
+the tailnet's own domain, which both machines sit under (`RP_ID` on both). That
+is allowed because Tailscale lists `ts.net` on the public suffix list, which
+makes a tailnet's domain a registrable one of its own.
 
-So the first sign-in on each phone uses a code made on the machine itself.
-Double-click **Sign in to the standby** in the repository folder on the PC: it
-asks the standby over the tailnet, with the PC's key, for an eight-character
-code that works once within ten minutes, and shows it in that window and nowhere
-else. On the phone, open the standby's address, choose **Use a code**, type it
-in -- then **Settings -> Add a passkey to this device**, and the code is never
-needed again on that phone.
+So the standby does not keep passkeys of its own any more: the PC's arrive with
+every backup and sign in there as they are. It refuses to make or remove one,
+since anything it made would be gone at the next refresh -- both happen on the
+PC. Being signed in is still per machine (a session cookie belongs to a host),
+so the first visit to the standby on each device is one passkey tap.
 
-Nobody else can do this. Getting a code needs a shell on the standby, and the
-only way to one is the PC's SSH key over your tailnet.
+**Moving across.** Passkeys made before the change belong to the PC's old name
+(`RP_ID_LEGACY`, the PC only) and still sign in to the PC. Each signed-in device
+there shows a strip -- *One tap and this device signs in to the standby too* --
+whose **Update passkey** saves a passkey under the shared name and removes the
+old one in the same step. Once every device has done it, `RP_ID_LEGACY` is
+emptied.
+
+**A way in without a passkey.** For a device with none, **Sign in to the
+standby** in the repository folder on the PC asks the standby over the tailnet,
+with the PC's key, for an eight-character code that works once within ten
+minutes, and shows it in that window and nowhere else; on the device, **Use a
+code**. Nobody else can do this: getting a code needs a shell on the standby,
+and the only way to one is the PC's SSH key over your tailnet.
 
 ## What changes about the risk
 
