@@ -169,11 +169,11 @@ not decisions waiting on anybody.
 
 ## Next, in order
 
-1. ⬜ **Rate limiting on sign-in** — listed in the architecture, never built, and
+1. ⏳ **The standby goes live** — built and running on Oracle, waiting on the
+   Tailscale rule and join key. Then: `deploy-standby.ps1 -Tailscale`, port 22
+   closed, thumbnails synced, and Homesh Connect trying the standby third
+2. ⬜ **Rate limiting on sign-in** — listed in the architecture, never built, and
    worth having now the server has a real hostname
-2. ⬜ **Database backups** — daily, a week back, plus two-week and one-month
-   points; restore from inside the app, administrators only.
-   **Prerequisite for anything with AI in it**
 3. ⬜ **Audio caching** — first play fetches, later plays are instant.
    Drive's own latency is ~1.4s per request and nothing else will remove it
 
@@ -181,7 +181,7 @@ not decisions waiting on anybody.
 
 ## AI — agreed, not started
 
-Decisions are settled and recorded in CLAUDE.md. Sequenced after backups.
+Decisions are settled and recorded in CLAUDE.md. Backups, the prerequisite, are done; this starts once the standby is live.
 
 1. ⬜ **Provider layer** — your own key (Claude / Gemini / OpenAI), OpenRouter,
    local model, or none. Tiered by cost, paid tier gated per account
@@ -204,6 +204,5 @@ outside the house without you pressing something.
 ## Later phases
 
 - ⬜ **Photo availability** — RAID→Drive sync, Wake-on-LAN, Takeout gap-fill
-- ⬜ **Oracle deployment** — the always-on node
 - ⬜ **Gapless audio and ReplayGain**
 - ⬜ **Public release** — screenshots, documentation
