@@ -85,6 +85,18 @@ class TestSigning:
         assert " " not in path
         assert path == "/homesh-backups/homesh%202026.sql.gz.enc"
 
+    def test_a_slash_in_a_name_stays_a_slash(self):
+        """Measured against the real store: an escaped slash is decoded before
+        the signature is checked, so the request was signed for one path and
+        checked against another -- 403 SignatureDoesNotMatch on the first upload
+        under thumbs/. The standby's outbox/ is named the same way."""
+        assert offsite._key_path(_store(), "thumbs/a b.tar.enc") == (
+            "/homesh-backups/thumbs/a%20b.tar.enc"
+        )
+        assert offsite._key_path(_store(), "outbox/x.json.enc") == (
+            "/homesh-backups/outbox/x.json.enc"
+        )
+
 
 class TestWhereItSends:
     def test_oracle_needs_its_namespace(self):

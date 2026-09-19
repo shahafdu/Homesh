@@ -190,7 +190,13 @@ def _authorise(
 
 
 def _key_path(store: Store, name: str) -> str:
-    return f"/{quote(store.bucket, safe='')}/{quote(name, safe='')}"
+    # The slashes in a name stay slashes. S3's signing rule encodes each segment
+    # of the path and not the separators, and the store decodes %2F back into /
+    # before it checks the signature -- so an escaped slash is a request signed
+    # for one path and checked against another. Backups never noticed, having no
+    # slash in their names; the first upload under thumbs/ was refused with
+    # SignatureDoesNotMatch, and the standby's outbox/ would have been next.
+    return f"/{quote(store.bucket, safe='')}/{quote(name, safe='/')}"
 
 
 def _explain(response: httpx.Response, doing: str) -> OffsiteError:
