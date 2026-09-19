@@ -365,6 +365,14 @@ Sync-HomeshGrants | Out-Null
 Install-Watcher
 
 Write-Host 'Starting Homesh...' -ForegroundColor Cyan
+
+# Which code this is, stamped into the image: the date of the commit and its
+# short id. The server called itself 0.1.0 for a month, whatever it was running,
+# which answered no question anybody asks. Compose passes it to the build.
+$ErrorActionPreference = 'Continue'
+$env:HOMESH_BUILD = "$(git -C $PSScriptRoot\.. log -1 --format='%cd-%h' --date=format:'%Y.%m.%d' 2>$null)".Trim()
+$ErrorActionPreference = 'Stop'
+
 $args = if ($Rebuild) { @('up', '-d', '--build') } else { @('up', '-d') }
 $code = Invoke-HomeshCompose $args
 if ($code -ne 0) {

@@ -23,6 +23,12 @@ class Settings(BaseSettings):
     # ── WebAuthn / passkeys ─────────────────────────────────────────────────
     rp_id: str = "localhost"
     rp_name: str = "Homesh"
+    # The name passkeys used to belong to, still accepted for signing in -- on
+    # the PC only. RP_ID moved from the PC's full host name to the tailnet's
+    # domain so that one passkey works on the PC and the standby both; passkeys
+    # made before that belong to the old name, and each device swaps its own
+    # with one tap the next time it signs in. Empty once they all have.
+    rp_id_legacy: str = ""
 
     # ── Database ────────────────────────────────────────────────────────────
     database_url: str = "postgresql+psycopg://homesh:homesh@db:5432/homesh"

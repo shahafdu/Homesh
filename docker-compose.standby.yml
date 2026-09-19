@@ -30,6 +30,9 @@ services:
     build:
       context: .
       dockerfile: server/Dockerfile
+      args:
+        # The commit date and short id, set by the start and deploy scripts.
+        HOMESH_BUILD: ${HOMESH_BUILD:-}
     restart: unless-stopped
     env_file: .env
     depends_on:

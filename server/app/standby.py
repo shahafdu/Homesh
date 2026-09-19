@@ -44,11 +44,16 @@ OUTBOX_PREFIX = "outbox/"
 
 # Tables that belong to the machine they are on and survive a standby's restore.
 #
-# A passkey belongs to an address, and the standby has its own, so the PC's are
-# useless there and the standby's must not be replaced by them. Sessions are who
-# is signed in, here. Device links are sign-ins in progress. And the outbox is the
-# one thing a restore must never throw away: changes not yet carried back.
-STANDBY_LOCAL = ("credentials", "auth_sessions", "device_links", "outbox_ops")
+# Sessions are who is signed in, here. Device links are sign-ins in progress. And
+# the outbox is the one thing a restore must never throw away: changes not yet
+# carried back.
+#
+# Passkeys are not on the list, and used to be. A passkey belongs to a name, and
+# the PC's belonged to the PC's own host name, so they were useless here and the
+# standby kept its own -- which meant setting every device up twice. They now
+# belong to the tailnet's domain, which both machines sit under, so the PC's
+# passkeys arrive with its backup and work here as they are.
+STANDBY_LOCAL = ("auth_sessions", "device_links", "outbox_ops")
 
 
 def role() -> str:
@@ -77,6 +82,12 @@ _UUID = r"[0-9a-fA-F-]{36}"
 # being there.
 _LOCAL = [re.compile(r"^/api/auth/")]
 
+# ...except making and removing passkeys. The standby's passkeys are the PC's,
+# restored with every backup, so one made here would vanish within the hour and
+# one removed here would come back. Both are done on the PC, and reach the
+# standby with its next backup.
+_NOT_HERE = [re.compile(r"^/api/auth/(passkeys|register)(/|$)")]
+
 # Ordinary personal changes: kept on the standby, and replayed on the PC.
 _REPLAYED = [
     ("POST", re.compile(r"^/api/playlists/?$")),
@@ -104,6 +115,8 @@ def classify(method: str, path: str) -> str:
     method = method.upper()
     if method not in _WRITES:
         return "read"
+    if any(p.match(path) for p in _NOT_HERE):
+        return "refused"
     if any(p.match(path) for p in _LOCAL):
         return "local"
     if any(m == method and p.match(path) for m, p in _REPLAYED):

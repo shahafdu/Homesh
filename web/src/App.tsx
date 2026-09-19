@@ -1,6 +1,15 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, ApiError, type AuthState, type Health } from "./api";
-import { claimDeviceLink, login, logout, passkeysSupported, register } from "./auth";
+import {
+  claimDeviceLink,
+  dismissUpgrade,
+  login,
+  logout,
+  passkeysSupported,
+  register,
+  shouldOfferUpgrade,
+  upgradePasskey,
+} from "./auth";
 import Browser from "./Browser";
 import Player from "./Player";
 import Settings from "./Settings";
@@ -19,6 +28,13 @@ import { usePlayer } from "./player";
 import { useRoomActivity } from "./rooms";
 import type { FileEntry } from "./library";
 import { applyPrefs, DEFAULT_PREFS, getPrefs, savePrefs, type Prefs } from "./prefs";
+
+/** "build 2026.09.19" from "2026.09.19-85df90c". The date is what a person can
+ *  compare between the PC and the standby; the commit is in the tooltip. */
+function buildLabel(stamp: string): string {
+  const date = /^(\d{4}\.\d{2}\.\d{2})-/.exec(stamp);
+  return date ? `build ${date[1]}` : `build ${stamp}`;
+}
 
 export default function App() {
   const [state, setState] = useState<AuthState | null>(null);
@@ -63,6 +79,9 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [aboutStandby, setAboutStandby] = useState(false);
+  // Whether to offer swapping this device's old passkey for one that works on
+  // the standby as well.
+  const [upgradeFor, setUpgradeFor] = useState(false);
 
   const refresh = useCallback(async () => {
     const [s, h] = await Promise.all([
@@ -73,6 +92,7 @@ export default function App() {
     setHealth(h);
 
     if (s.authenticated) {
+      void shouldOfferUpgrade().then(setUpgradeFor);
       // Preferences live on the account, so they arrive with the session rather
       // than being re-chosen on every device.
       const p = await getPrefs();
@@ -130,6 +150,39 @@ export default function App() {
   if (state.authenticated && state.user) {
     return (
       <div className="app">
+        {/* Only where the swap can happen: passkeys are made on the PC, and the
+            standby refuses them. */}
+        {upgradeFor && health?.role !== "standby" && (
+          <div className="upgrade-banner" role="status">
+            <span>
+              <b>One tap and this device signs in to the standby too.</b> Your
+              passkey here was made for the PC alone.
+            </span>
+            <span className="confirm">
+              <button
+                className="compact primary"
+                disabled={busy}
+                onClick={() =>
+                  run(async () => {
+                    await upgradePasskey();
+                    setUpgradeFor(false);
+                  })
+                }
+              >
+                Update passkey
+              </button>
+              <button
+                className="compact"
+                onClick={() => {
+                  dismissUpgrade();
+                  setUpgradeFor(false);
+                }}
+              >
+                Not now
+              </button>
+            </span>
+          </div>
+        )}
         <Browser
           view={prefs.view}
           onViewChange={(view) => void changePrefs({ view })}
@@ -342,17 +395,18 @@ export default function App() {
             >
               <span className="dot standby" />
               Remote · Oracle standby · PC offline
+              {health.version && ` · ${buildLabel(health.version)}`}
             </button>
           ) : (
             <span
               className="status"
-              title={`Signed in as ${state.user.display_name} · database ${health?.database ?? "…"}`}
+              title={`Signed in as ${state.user.display_name} · build ${health?.version ?? "…"} · database ${health?.database ?? "…"}`}
             >
               <span className={`dot${health?.status === "ok" ? "" : " bad"}`} />
               {health === null
                 ? "Connecting…"
                 : health.status === "ok"
-                  ? `Local · your PC · v${health.version}`
+                  ? `Local · your PC · ${buildLabel(health.version)}`
                   : `Your PC · database ${health.database}`}
             </span>
           )}
@@ -392,7 +446,13 @@ export default function App() {
   }
 
   return state.has_users ? (
-    <SignIn busy={busy} error={error} onSignIn={() => run(login)} />
+    <SignIn
+      busy={busy}
+      error={error}
+      onSignIn={() =>
+        run(login)
+      }
+    />
   ) : (
     <FirstRun busy={busy} error={error} onRegister={(h, d, c) => run(() => register(h, d, c))} />
   );

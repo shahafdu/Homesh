@@ -22,6 +22,15 @@ class TestAuthGating:
         """Deliberately open: it is how the container reports readiness."""
         assert anon_client.get("/api/health").status_code == 200
 
+    def test_it_says_which_build_is_running(self, monkeypatch):
+        """Not "0.1.0", which it said for a month whatever it was running."""
+        from app.main import build_stamp
+
+        monkeypatch.setenv("HOMESH_BUILD", "2026.09.19-85df90c")
+        assert build_stamp() == "2026.09.19-85df90c"
+        monkeypatch.setenv("HOMESH_BUILD", "")
+        assert build_stamp() == "dev"
+
     def test_unknown_api_path_404s_as_json(self, anon_client):
         """The SPA catch-all must not answer API typos with the HTML shell."""
         r = anon_client.get("/api/definitely-not-a-route")

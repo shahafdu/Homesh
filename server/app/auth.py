@@ -72,6 +72,9 @@ class _Flow:
     handle: str | None = None
     display_name: str | None = None
     invite_code: str | None = None
+    # Which name the ceremony was run for. A sign-in with an old passkey is
+    # verified against the old name, and only against it.
+    rp_id: str | None = None
 
 
 _flows: dict[str, _Flow] = {}
@@ -138,6 +141,15 @@ class CompleteBody(BaseModel):
     flow_id: str
     credential: dict
     device_label: str | None = None
+    # Adding a passkey only: the old one this device signed in with, removed
+    # once the new one is saved. How a device moves to the shared name.
+    replaces: UUID | None = None
+
+
+class LoginBegin(BaseModel):
+    # Ask for the old name's passkeys instead. Offered only where RP_ID_LEGACY
+    # is set, which is the PC while its devices move across.
+    legacy: bool = False
 
 
 # ── Endpoints ───────────────────────────────────────────────────────────────
@@ -308,8 +320,9 @@ async def register_complete(body: CompleteBody, request: Request, response: Resp
         conn.execute(
             text(
                 """
-                INSERT INTO credentials (user_id, credential_id, public_key, sign_count, nickname)
-                VALUES (:uid, :cid, :pk, :sc, :nick)
+                INSERT INTO credentials
+                    (user_id, credential_id, public_key, sign_count, nickname, rp_id)
+                VALUES (:uid, :cid, :pk, :sc, :nick, :rp)
                 """
             ),
             {
@@ -318,6 +331,7 @@ async def register_complete(body: CompleteBody, request: Request, response: Resp
                 "pk": verified.credential_public_key,
                 "sc": verified.sign_count,
                 "nick": body.device_label,
+                "rp": settings.rp_id,
             },
         )
 
@@ -387,16 +401,30 @@ async def register_complete(body: CompleteBody, request: Request, response: Resp
 
 
 @router.post("/login/begin")
-async def login_begin() -> dict:
+async def login_begin(body: LoginBegin | None = None) -> dict:
     settings = get_settings()
+    legacy = (settings.rp_id_legacy or "").strip()
+    if body is not None and body.legacy:
+        if not legacy:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "no older passkeys are accepted here")
+        rp_id = legacy
+    else:
+        rp_id = settings.rp_id
+
     # No allow_credentials: the authenticator offers whichever passkey it holds,
     # so the user never types a username.
     options = generate_authentication_options(
-        rp_id=settings.rp_id,
+        rp_id=rp_id,
         user_verification=UserVerificationRequirement.REQUIRED,
     )
-    flow_id = _new_flow(options.challenge, "login")
-    return {"flow_id": flow_id, "options": json.loads(options_to_json(options))}
+    flow_id = _new_flow(options.challenge, "login", rp_id=rp_id)
+    return {
+        "flow_id": flow_id,
+        "options": json.loads(options_to_json(options)),
+        # Whether a device holding only an older passkey can still get in, so
+        # the sign-in screen knows to try that name too.
+        "legacy_available": bool(legacy),
+    }
 
 
 @router.post("/login/complete")
@@ -439,7 +467,7 @@ async def login_complete(body: CompleteBody, request: Request, response: Respons
             credential=body.credential,
             expected_challenge=flow.challenge,
             expected_origin=settings.public_origin,
-            expected_rp_id=settings.rp_id,
+            expected_rp_id=flow.rp_id or settings.rp_id,
             credential_public_key=bytes(public_key),
             credential_current_sign_count=sign_count,
             require_user_verification=True,
@@ -467,7 +495,10 @@ async def login_complete(body: CompleteBody, request: Request, response: Respons
         audit(conn, "auth.login", user_id, {}, ip)
 
     set_session_cookie(response, token)
-    return {"ok": True}
+    # Signed in with an old passkey: say which, so the app can offer the swap
+    # and take this one away once the new one exists.
+    old = bool(flow.rp_id) and flow.rp_id != settings.rp_id
+    return {"ok": True, "upgrade": old, "credential": str(cred_row_id) if old else None}
 
 
 @router.post("/logout")
@@ -688,8 +719,9 @@ async def add_passkey_complete(
         conn.execute(
             text(
                 """
-                INSERT INTO credentials (user_id, credential_id, public_key, sign_count, nickname)
-                VALUES (:uid, :cid, :pk, :sc, :nick)
+                INSERT INTO credentials
+                    (user_id, credential_id, public_key, sign_count, nickname, rp_id)
+                VALUES (:uid, :cid, :pk, :sc, :nick, :rp)
                 """
             ),
             {
@@ -698,11 +730,30 @@ async def add_passkey_complete(
                 "pk": verified.credential_public_key,
                 "sc": verified.sign_count,
                 "nick": body.device_label,
+                "rp": settings.rp_id,
             },
         )
         audit(conn, "auth.passkey.added", user.id, {"label": body.device_label}, ip)
 
-    return {"ok": True}
+        replaced = False
+        if body.replaces is not None:
+            # Only an old-name passkey, and only this account's. The new one is
+            # already saved in the same transaction, so the account is never
+            # left with none.
+            replaced = bool(
+                conn.execute(
+                    text(
+                        "DELETE FROM credentials "
+                        "WHERE id = :c AND user_id = :u AND rp_id IS NULL"
+                    ),
+                    {"c": str(body.replaces), "u": str(user.id)},
+                ).rowcount
+            )
+            if replaced:
+                audit(conn, "auth.passkey.upgraded", user.id,
+                      {"replaced": str(body.replaces)}, ip)
+
+    return {"ok": True, "replaced": replaced}
 
 
 @router.get("/passkeys")
@@ -711,7 +762,7 @@ async def list_passkeys(user: CurrentUser = Depends(require_user)) -> list[dict]
         rows = conn.execute(
             text(
                 """
-                SELECT id, nickname, created_at, last_used_at
+                SELECT id, nickname, created_at, last_used_at, rp_id IS NULL
                 FROM credentials WHERE user_id = :u ORDER BY created_at
                 """
             ),
@@ -723,6 +774,10 @@ async def list_passkeys(user: CurrentUser = Depends(require_user)) -> list[dict]
             "label": r[1],
             "created_at": r[2].isoformat(),
             "last_used_at": r[3].isoformat() if r[3] else None,
+            # Made for the PC's own name: works there, not on the standby. Only
+            # said where the name has in fact moved; elsewhere every passkey
+            # predates the column and nothing about it is limited.
+            "pc_only": bool(r[4]) and bool((get_settings().rp_id_legacy or "").strip()),
         }
         for r in rows
     ]
