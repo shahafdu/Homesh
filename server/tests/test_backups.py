@@ -314,6 +314,54 @@ class TestKeeping:
         assert sorted(removed) == sorted(n for n, keep in names.items() if not keep)
 
 
+class TestWhenTheNextIsDue:
+    """The loop wakes when the next backup is due, not a flat hour after it
+    last looked. Measured on the real server: restarted at 09:30, it looked at
+    09:35, found a backup from 09:12 and skipped -- and would not have looked
+    again until 10:35, 83 minutes after the last one."""
+
+    @staticmethod
+    def _b(name: str, when: datetime) -> Backup:
+        return Backup(name=name, taken_at=when, size_bytes=1, rows=0)
+
+    def test_after_a_restart_it_wakes_when_the_backup_is_due(self):
+        from app.upkeep import next_backup_in
+
+        now = datetime(2026, 9, 19, 9, 35, tzinfo=UTC)
+        taken = datetime(2026, 9, 19, 9, 12, 54, tzinfo=UTC)
+        shelf = [self._b("homesh-20260919-091254.sql.gz", taken)]
+        # Due at 10:12:54, which is 37m54s away -- not an hour.
+        assert next_backup_in(shelf, now) == pytest.approx(37 * 60 + 54)
+
+    def test_it_never_waits_more_than_an_hour(self):
+        """Scanning shares the loop, and a source added at noon should not wait."""
+        from app.upkeep import next_backup_in
+
+        now = datetime(2026, 9, 19, 12, tzinfo=UTC)
+        future = [self._b("homesh-20260919-130000.sql.gz", now + timedelta(hours=1))]
+        assert next_backup_in(future, now) == 3600
+
+    def test_an_overdue_or_empty_shelf_goes_within_a_minute(self):
+        from app.upkeep import next_backup_in
+
+        now = datetime(2026, 9, 19, 12, tzinfo=UTC)
+        old = [self._b("homesh-20260919-080000.sql.gz", now - timedelta(hours=4))]
+        assert next_backup_in(old, now) == 60
+        assert next_backup_in([], now) == 60
+
+    def test_a_copy_before_a_restore_does_not_count_as_the_latest(self):
+        """It is the state that was thrown away. The state that replaced it
+        should be backed up on schedule, not an hour after the restore."""
+        from app.upkeep import next_backup_in
+
+        now = datetime(2026, 9, 19, 12, tzinfo=UTC)
+        shelf = [
+            self._b("homesh-20260919-115900-before-restore.sql.gz", now - timedelta(minutes=1)),
+            self._b("homesh-20260919-105000.sql.gz", now - timedelta(minutes=70)),
+        ]
+        assert next_backup_in(shelf, now) == 60
+
+
 class TestWhoMayDoThis:
     """Administrators only, all of it — which is also what stops the AI: it
     reaches the server as whoever asked it, through this same API."""
