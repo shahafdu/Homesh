@@ -6,7 +6,7 @@ to reconstruct the state of a large, half-finished system from memory.
 **Legend** — ✅ built and verified · 🟡 built, needs Shahaf to confirm ·
 🔴 known broken · ⬜ not started · ⏳ waiting on Shahaf
 
-Last updated: 19 September 2026 · 630 tests · 25 migrations · CI green
+Last updated: 19 September 2026 · 646 tests · 25 migrations · CI green
 (verified with `tools/verify-ci.ps1`, not assumed)
 
 ---
@@ -173,8 +173,12 @@ not decisions waiting on anybody.
 1. ✅ **The standby is live** — on the tailnet as a dead end, public SSH
    closed, a way to sign in, thumbnails synced from the PC hourly, and the phone
    app falling back to it when the PC does not answer
-2. ⬜ **Rate limiting on sign-in** — listed in the architecture, never built, and
-   worth having now the server has a real hostname
+2. 🟡 **Attempt limits on the unauthenticated doors** — sign-in, the first-run
+   code, invitation lookups and device codes. Twenty failed sign-ins in five
+   minutes, ten code attempts, and the first-run code retired after five wrong
+   guesses. Counted per caller address, which here is coarser than it sounds:
+   Docker's port mapping rewrites the source, so every client looks alike and
+   the limits are in effect per server — chosen with that in mind
 3. ⬜ **Audio caching** — first play fetches, later plays are instant.
    Drive's own latency is ~1.4s per request and nothing else will remove it
 

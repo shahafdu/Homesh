@@ -83,6 +83,17 @@ def _schema():
     run_migrations()
 
 
+@pytest.fixture(autouse=True)
+def _fresh_attempt_limits():
+    """Attempt limits are counted in memory for the life of the process, so one
+    test's hammering would refuse the next test's first knock."""
+    from app import throttle
+
+    throttle.clear()
+    yield
+    throttle.clear()
+
+
 @pytest.fixture
 def db():
     engine = get_engine()

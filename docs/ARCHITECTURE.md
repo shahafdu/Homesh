@@ -698,7 +698,13 @@ checklist at the end.
 
 **Application**
 - Strict CSP, no inline script, Trusted Types
-- Rate limiting on auth and search endpoints
+- Attempt limits on every door reachable without an account: sign-in, the
+  first-run code, invitation lookups, device codes (`server/app/throttle.py`).
+  Counted per caller address, which on a Docker deployment is coarser than it
+  looks -- the port mapping rewrites the source, so in practice the limits are
+  per server; the numbers are chosen for that, and the module says so. The
+  first-run code is retired after five wrong guesses, and the held WebAuthn
+  challenges are capped as well as expired
 - All input validated at the schema boundary (Pydantic)
 - Path-traversal defenses on every connector — the agent refuses any path outside its
   configured roots, checked after symlink resolution
