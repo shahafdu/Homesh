@@ -33,7 +33,7 @@ from webauthn.helpers.structs import (
     UserVerificationRequirement,
 )
 
-from . import lanaddr
+from . import lanaddr, throttle
 from .config import get_settings
 from .db import get_engine
 from .security import (
@@ -79,9 +79,18 @@ class _Flow:
 
 _flows: dict[str, _Flow] = {}
 
+# How many challenges are held at once. Each is small and lives five minutes, but
+# anybody can ask for one without an account, so the count needs a ceiling as
+# well as an expiry. Past it the oldest goes -- which is the one closest to
+# expiring anyway. A household never has two of these in flight; the limit in
+# throttle.py bounds the asking, and this bounds the holding.
+MAX_FLOWS = 512
+
 
 def _new_flow(challenge: bytes, purpose: str, **extra) -> str:
     _prune_flows()
+    while len(_flows) >= MAX_FLOWS:
+        _flows.pop(next(iter(_flows)))
     flow_id = secrets.token_urlsafe(16)
     _flows[flow_id] = _Flow(
         challenge=challenge,
@@ -116,12 +125,35 @@ def user_count() -> int:
 
 def ensure_bootstrap_code() -> str | None:
     """Issue a first-run code if the instance has no users yet."""
-    global _bootstrap_code
+    global _bootstrap_code, _bootstrap_wrong
     if user_count() > 0:
         _bootstrap_code = None
         return None
     _bootstrap_code = secrets.token_hex(4).upper()
+    _bootstrap_wrong = 0
     return _bootstrap_code
+
+
+# Wrong guesses at the first-run code, and how many it takes to retire it.
+#
+# The code is eight hex characters -- thirty-two bits, chosen to be read off a
+# log and typed. That is plenty against a few tries and nothing against a
+# million, and it is the one moment when a stranger who reaches the server could
+# make themselves its owner. So the attempts are counted and the code is thrown
+# away well before guessing becomes worth trying; a restart issues a new one.
+_bootstrap_wrong = 0
+BOOTSTRAP_TRIES = 5
+
+
+def _wrong_bootstrap_code() -> None:
+    global _bootstrap_code, _bootstrap_wrong
+    _bootstrap_wrong += 1
+    if _bootstrap_wrong >= BOOTSTRAP_TRIES:
+        _bootstrap_code = None
+        log.warning(
+            "%d wrong first-run codes: the code is retired. Restart the server "
+            "for a new one.", _bootstrap_wrong,
+        )
 
 
 # ── Schemas ─────────────────────────────────────────────────────────────────
@@ -156,12 +188,13 @@ class LoginBegin(BaseModel):
 
 
 @router.get("/invite/{code}")
-async def invite_details(code: str) -> dict:
+async def invite_details(code: str, request: Request) -> dict:
     """What an invite is for, so the sign-up screen can greet by name.
 
     Unauthenticated by necessity, since the person has no account yet. It reveals
     only what they are about to be told anyway.
     """
+    throttle.hit("invite", throttle.caller(request), throttle.INVITES)
     with get_engine().connect() as conn:
         row = conn.execute(
             text(
@@ -202,9 +235,14 @@ async def me(user: CurrentUser = Depends(require_user)) -> dict:
 @router.post("/register/begin")
 async def register_begin(
     body: RegisterBegin,
+    request: Request,
     inviter: CurrentUser | None = Depends(optional_user),
 ) -> dict:
     settings = get_settings()
+    # Only the unauthenticated routes in: an admin inviting somebody is not
+    # guessing anything, and should not be rationed for doing it repeatedly.
+    if inviter is None:
+        throttle.hit("register", throttle.caller(request), throttle.CODES)
     first_user = user_count() == 0
     handle, display_name = body.handle.strip(), body.display_name.strip()
 
@@ -231,6 +269,7 @@ async def register_begin(
         if not _bootstrap_code or not body.bootstrap_code:
             raise HTTPException(status.HTTP_403_FORBIDDEN, "bootstrap code required")
         if not secrets.compare_digest(body.bootstrap_code.strip().upper(), _bootstrap_code):
+            _wrong_bootstrap_code()
             raise HTTPException(status.HTTP_403_FORBIDDEN, "invalid bootstrap code")
     elif inviter is None or not inviter.is_admin:
         # No public registration, ever.
@@ -401,7 +440,8 @@ async def register_complete(body: CompleteBody, request: Request, response: Resp
 
 
 @router.post("/login/begin")
-async def login_begin(body: LoginBegin | None = None) -> dict:
+async def login_begin(request: Request, body: LoginBegin | None = None) -> dict:
+    throttle.hit("challenge", throttle.caller(request), throttle.CHALLENGE)
     settings = get_settings()
     legacy = (settings.rp_id_legacy or "").strip()
     if body is not None and body.legacy:
@@ -430,6 +470,11 @@ async def login_begin(body: LoginBegin | None = None) -> dict:
 @router.post("/login/complete")
 async def login_complete(body: CompleteBody, request: Request, response: Response) -> dict:
     settings = get_settings()
+    # Counted before the check, not after the failure: verifying a signature
+    # costs the same whether it passes, and that cost is the point of a flood.
+    who = throttle.caller(request)
+    throttle.hit("sign-in", who, throttle.SIGN_IN)
+
     flow = _take_flow(body.flow_id, "login")
     ip = request.client.host if request.client else None
 
@@ -494,6 +539,8 @@ async def login_complete(body: CompleteBody, request: Request, response: Respons
         token = create_session(conn, user_id, body.device_label)
         audit(conn, "auth.login", user_id, {}, ip)
 
+    # Somebody who got in is not left carrying the count of their own fumbles.
+    throttle.forgive("sign-in", who)
     set_session_cookie(response, token)
     # Signed in with an old passkey: say which, so the app can offer the swap
     # and take this one away once the new one exists.
@@ -533,25 +580,8 @@ LINK_CODE_LENGTH = 8
 # one screen and typed into another.
 LINK_ALPHABET = "ABCDEFGHJKLMNPQRTUVWXYZ2346789"
 
-# Coarse per-address throttle. The codes carry ~39 bits over a ten-minute window,
-# so guessing is already hopeless; this makes it loud as well as futile.
-_link_attempts: dict[str, list[datetime]] = {}
-MAX_LINK_ATTEMPTS = 10
-LINK_ATTEMPT_WINDOW = timedelta(minutes=5)
-
-
 def _hash_code(code: str) -> str:
     return hashlib.sha256(code.encode()).hexdigest()
-
-
-def _too_many_attempts(ip: str | None) -> bool:
-    if ip is None:
-        return False
-    now = datetime.now(UTC)
-    recent = [t for t in _link_attempts.get(ip, []) if now - t < LINK_ATTEMPT_WINDOW]
-    recent.append(now)
-    _link_attempts[ip] = recent
-    return len(recent) > MAX_LINK_ATTEMPTS
 
 
 class LinkClaim(BaseModel):
@@ -602,10 +632,10 @@ async def claim_device_link(
 ) -> dict:
     """Exchange a code for a session on this device."""
     ip = request.client.host if request.client else None
-    if _too_many_attempts(ip):
-        raise HTTPException(
-            status.HTTP_429_TOO_MANY_REQUESTS, "too many attempts — wait a few minutes"
-        )
+    # The codes carry ~39 bits and live ten minutes, so guessing is already
+    # hopeless; this makes it futile as well, and shares its counting with the
+    # other doors anybody can knock on (throttle.py).
+    throttle.hit("codes", throttle.caller(request), throttle.CODES)
 
     code = body.code.strip().upper().replace(" ", "")
 

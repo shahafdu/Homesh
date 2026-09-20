@@ -16,17 +16,6 @@ from app.main import app
 from app.security import CurrentUser, optional_user, require_user
 
 
-@pytest.fixture(autouse=True)
-def _fresh_throttle():
-    """The claim throttle is per process. Without this, the test that proves
-    guessing is throttled leaves every claim after it refused with 429."""
-    from app import auth
-
-    auth._link_attempts.clear()
-    yield
-    auth._link_attempts.clear()
-
-
 @pytest.fixture
 def other(db, user):
     with db.begin() as conn:
