@@ -461,6 +461,7 @@ async def _handle_message(
         }
         await hub.broadcast_state(renderer_id, state)
         _persist_position(renderer_id, state)
+        await _reconcile(renderer_id, state)
 
         # The end of an item is news the queue needs. Reported by the screen
         # because only the screen knows -- for a photograph, because only the
@@ -552,6 +553,67 @@ def _persist_position(renderer_id: UUID, state: dict) -> None:
                 "r": str(renderer_id),
             },
         )
+
+
+async def _reconcile(renderer_id: UUID, state: dict) -> None:
+    """Believe the screen about what is on it.
+
+    Every socket drops when the server restarts, and a dropped socket ends the
+    session (_end_session below) -- honestly, because a server that cannot reach a
+    screen cannot claim to be playing to it. But the screen carries on: the film
+    keeps playing, the document stays on the wall. On reconnecting it is marked
+    ready and told nothing, so the room showed a PDF while the tower said "ready"
+    and neither could put the other right. Reported from the room, exactly that.
+
+    A screen reports where it is every few seconds, which is enough to settle it:
+
+    - It is showing what this room's queue says it should be: the room was
+      playing, so say so again. The queue, the cursor and the position are still
+      in the row; only the claim to be playing had been withdrawn.
+    - It is showing something else entirely -- a queue replaced while the socket
+      was down, or a screen paired to a different room since: tell it to stop.
+      A screen showing something the server cannot name is a screen nobody can
+      control, and leaving it there is the fault being fixed.
+    """
+    reported = state.get("state")
+    if reported not in ("playing", "paused"):
+        return
+    shown = state.get("item_id")
+    if not shown:
+        return
+
+    with get_engine().connect() as conn:
+        row = conn.execute(
+            text(
+                """
+                SELECT s.zone_id, s.state::text, s.queue, s.cursor
+                FROM play_sessions s JOIN zones z ON z.id = s.zone_id
+                WHERE z.renderer_id = :r
+                """
+            ),
+            {"r": str(renderer_id)},
+        ).first()
+    if row is None:
+        return
+
+    zone_id, session_state, queue, cursor = row
+    if session_state != "idle":
+        return  # the two already agree closely enough
+
+    queue = queue or []
+    expected = queue[cursor] if 0 <= cursor < len(queue) else None
+    if expected and str(shown) == str(expected):
+        with get_engine().begin() as conn:
+            conn.execute(
+                text("UPDATE play_sessions SET state = CAST(:s AS playback_state), "
+                     "updated_at = now() WHERE zone_id = :z"),
+                {"s": reported, "z": str(zone_id)},
+            )
+        log.info("room %s was still showing its own queue: session restored", zone_id)
+        return
+
+    log.info("room %s is showing something it was not told to: asking it to stop", zone_id)
+    await hub.send(renderer_id, {"type": "stop"})
 
 
 def _end_session(renderer_id: UUID) -> None:
