@@ -98,6 +98,15 @@ class Settings(BaseSettings):
     # be a hardcoded absolute path.
     cache_dir: str = "/var/lib/homesh/cache"
 
+    # How much disk to spend keeping tracks fetched from Drive, in megabytes.
+    # Drive charges about 1.4 s before the first byte of every read, which for
+    # music is the wait before it starts; a cached track has none. Zero switches
+    # it off. Films are never kept -- see audiocache.py.
+    audio_cache_mb: int = 2048
+    # Above this, a single track is left where it is: an hour of uncompressed
+    # audio would evict a hundred songs to save one wait.
+    audio_cache_file_mb: int = 100
+
     # Receiver address, used when SSDP discovery cannot run.
     #
     # Docker's bridge network does not forward multicast to the LAN, so a
