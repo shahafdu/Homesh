@@ -6,7 +6,7 @@ to reconstruct the state of a large, half-finished system from memory.
 **Legend** — ✅ built and verified · 🟡 built, needs Shahaf to confirm ·
 🔴 known broken · ⬜ not started · ⏳ waiting on Shahaf
 
-Last updated: 19 September 2026 · 646 tests · 25 migrations · CI green
+Last updated: 19 September 2026 · 662 tests · 25 migrations · CI green
 (verified with `tools/verify-ci.ps1`, not assumed)
 
 ---
@@ -179,8 +179,11 @@ not decisions waiting on anybody.
    guesses. Counted per caller address, which here is coarser than it sounds:
    Docker's port mapping rewrites the source, so every client looks alike and
    the limits are in effect per server — chosen with that in mind
-3. ⬜ **Audio caching** — first play fetches, later plays are instant.
-   Drive's own latency is ~1.4s per request and nothing else will remove it
+3. 🟡 **Audio caching** — a track fetched from Drive is kept on disk and read
+   from there ever after. Measured on the real library: **1.0-1.2 s before the
+   first byte from Drive, under a millisecond from the copy**. Audio only, never
+   films; the first play is not slowed to fill it; 2 GB by default, longest
+   unplayed evicted first
 
 ---
 

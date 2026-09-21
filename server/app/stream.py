@@ -19,6 +19,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy import text
 from starlette.concurrency import iterate_in_threadpool
 
+from . import audiocache
 from .access import may_access_item
 from .config import get_settings
 from .db import get_engine
@@ -260,6 +261,14 @@ async def stream(
     connector, rel, filename, size, ext = resolve_playable(item_id)
     media_type = MIME.get(ext.lower(), "application/octet-stream")
 
+    # A track fetched from Drive once is read from disk ever after. The copy is
+    # only used when it is whole and still the right size; when there is none,
+    # one is fetched alongside this request rather than before it, so nothing
+    # here waits for it. See audiocache.py.
+    cached = audiocache.hit(item_id, size) if size else None
+    if cached is None and audiocache.wanted(ext, size, connector):
+        audiocache.want(item_id, size, connector, rel)
+
     start, end = 0, size - 1
     status_code = status.HTTP_200_OK
     headers: dict[str, str] = {
@@ -299,8 +308,13 @@ async def stream(
 
     headers["Content-Length"] = str(end - start + 1) if size else "0"
 
+    body = (
+        audiocache.read_range(cached, start, end)
+        if cached is not None
+        else connector.open_range(rel, start, end)
+    )
     return StreamingResponse(
-        _closing_body(connector.open_range(rel, start, end)),
+        _closing_body(body),
         status_code=status_code,
         media_type=media_type,
         headers=headers,

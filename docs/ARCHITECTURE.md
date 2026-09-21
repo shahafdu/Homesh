@@ -280,6 +280,34 @@ transcode is not, and the difference decides what hardware this needs. Everythin
 delegating heavy work to the machine with the files still holds — and it is that machine which
 does the encoding here, because in Mode A it is the same machine.
 
+### 3.2.3 A track from Drive is fetched once
+
+Drive charges about **1.4 seconds before the first byte** of any read, on every
+read. For a film that is paid once at the start and forgotten. For music it is
+paid on every track, and it is precisely the gap between pressing play and
+hearing something -- measured on this library at 1.0-1.2 s per track, and
+nothing in the protocol removes it.
+
+So a track fetched from a remote source is kept on disk (`server/app/audiocache.py`)
+and read from there ever after: **1.0-1.2 s down to under a millisecond**,
+measured through the same code path the player uses.
+
+Four choices in it worth stating:
+
+- **Audio only, and only from a remote source.** A local file has no network in
+  front of it, and a library of films would fill any disk. A track is a few
+  megabytes; the same albums are played again and again.
+- **The first play is not made slower to fill the cache.** It streams from Drive
+  exactly as before while a copy is fetched alongside, one file at a time, so
+  filling never competes for bandwidth with what is playing.
+- **The cached name carries the file's size.** A file that changed behind us
+  cannot be served from an old copy: the name no longer matches, so it is not a
+  hit rather than a wrong answer. A short or failed fetch is discarded, because
+  half a track served as if whole is worse than no cache at all.
+- **A budget with a ceiling, not a target** (`AUDIO_CACHE_MB`, 2 GB by default,
+  0 to switch it off). What has gone longest unplayed goes first, which for music
+  is the right answer nearly always.
+
 ### 3.2.2 The storage being off must not take the server with it
 
 The first principle in this document is that the catalog is always up and the
