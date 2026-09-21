@@ -349,6 +349,95 @@ class TestTheBackupFolderIsNotALibrary:
         assert names == ["music"]
 
 
+class TestAskingWhetherASourceIsThere:
+    """Browsing must not wait on the network.
+
+    Saying which folders are offline put this question on the listing path, and
+    for Drive the honest answer costs 0.8-1.1 s when the connector's own minute
+    of memory has lapsed. Opening the root asks every source, so a listing took
+    four seconds -- reported as the phone app being laggy between folders.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _forget(self):
+        from app import library
+
+        library.forget_connectors()
+        yield
+        library.forget_connectors()
+
+    def _slow_source(self, monkeypatch, answer=True):
+        """A source that takes a second to answer, and counts being asked."""
+        from app import library
+
+        asked = []
+
+        def ask(source_id):
+            asked.append(source_id)
+            return answer
+
+        monkeypatch.setattr(library, "_ask_source", ask)
+        return asked
+
+    def test_the_first_question_is_asked_properly(self, monkeypatch):
+        from app import library
+
+        asked = self._slow_source(monkeypatch)
+        assert library._reachable("a-source") is True
+        assert len(asked) == 1
+
+    def test_and_then_answered_from_memory(self, monkeypatch):
+        from app import library
+
+        asked = self._slow_source(monkeypatch)
+        for _ in range(20):
+            library._reachable("a-source")
+        assert len(asked) == 1, "a listing waited on the network again"
+
+    def test_a_going_stale_answer_is_given_at_once(self, monkeypatch):
+        """The refresh happens behind the request, not in front of it."""
+        import time
+
+        from app import library
+
+        asked = self._slow_source(monkeypatch)
+        library._reachable("a-source")
+        # Older than fresh, younger than stale.
+        library._reach["a-source"] = (True, time.monotonic() - library.REACH_FRESH - 1)
+
+        started = time.monotonic()
+        assert library._reachable("a-source") is True
+        assert (time.monotonic() - started) < 0.05, "the answer waited for a refresh"
+
+        # And the refresh does happen, behind it.
+        for _ in range(50):
+            if len(asked) > 1:
+                break
+            time.sleep(0.02)
+        assert len(asked) > 1, "nothing was refreshed"
+
+    def test_an_ancient_answer_is_not_trusted(self, monkeypatch):
+        import time
+
+        from app import library
+
+        asked = self._slow_source(monkeypatch)
+        library._reachable("a-source")
+        library._reach["a-source"] = (True, time.monotonic() - library.REACH_STALE - 1)
+        library._reachable("a-source")
+        assert len(asked) == 2, "an answer older than the stale window was reused"
+
+    def test_a_drive_that_has_just_been_switched_off_is_not_remembered(self, monkeypatch):
+        """forget_connectors is what a scan, a new grant and a removal all call."""
+        from app import library
+
+        asked = self._slow_source(monkeypatch)
+        library._reachable("a-source")
+        library.forget_connectors()
+        library._reachable("a-source")
+        assert len(asked) == 2
+
+
 class TestTheRootSaysWhereAFolderLives:
     """The same folder kept on the PC and on Drive is called the same thing in
     both, so the root listed it twice with nothing to tell the two apart.
