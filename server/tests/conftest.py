@@ -122,6 +122,9 @@ def db():
         # restore), so nothing above cascades into them.
         conn.execute(text("DELETE FROM outbox_ops"))
         conn.execute(text("DELETE FROM applied_ops"))
+        # Costs are summed per month across tests otherwise, and a cap holds
+        # for the rest of the run.
+        conn.execute(text("DELETE FROM ai_calls"))
 
 
 @pytest.fixture

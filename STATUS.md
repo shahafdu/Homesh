@@ -6,7 +6,7 @@ to reconstruct the state of a large, half-finished system from memory.
 **Legend** — ✅ built and verified · 🟡 built, needs Shahaf to confirm ·
 🔴 known broken · ⬜ not started · ⏳ waiting on Shahaf
 
-Last updated: 19 September 2026 · 662 tests · 25 migrations · CI green
+Last updated: 21 September 2026 · 683 tests · 26 migrations · CI green
 (verified with `tools/verify-ci.ps1`, not assumed)
 
 ---
@@ -187,12 +187,17 @@ not decisions waiting on anybody.
 
 ---
 
-## AI — agreed, not started
+## AI — the layer is built, the uses are not
 
-Decisions are settled and recorded in CLAUDE.md. Backups, the prerequisite, are done; this starts once the standby is live.
+Decisions are settled and recorded in CLAUDE.md and now in `docs/AI.md`.
 
-1. ⬜ **Provider layer** — your own key (Claude / Gemini / OpenAI), OpenRouter,
-   local model, or none. Tiered by cost, paid tier gated per account
+1. 🟡 **Provider layer** — OpenRouter with **gpt-oss**, free tier by default; the
+   key lives in `.env` and the guards refuse one that reaches the repo. A paid
+   model is refused outright while the monthly cap is zero, which it is until
+   set; above zero the month's spend is summed and checked *before* each call.
+   Spending is granted per account. Every attempt is recorded — refusals
+   included, never the question or the answer — and readable at
+   `/api/ai/history`
 2. ⬜ **Offline tagging pass** — one run over the library, cached in
    `item_metadata` with `origin='ai'`, so later questions filter locally first
 3. ⬜ **Commands** — play here, stop there, skip, build a list. Calls the same

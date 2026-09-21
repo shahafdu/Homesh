@@ -107,6 +107,28 @@ class Settings(BaseSettings):
     # audio would evict a hundred songs to save one wait.
     audio_cache_file_mb: int = 100
 
+    # -- AI (docs/AI.md) ----------------------------------------------------
+    # Which provider, or empty for none at all -- in which case the feature is
+    # absent rather than broken. "openrouter" is one key for many models,
+    # including free ones, and it reports what each call cost.
+    ai_provider: str = ""
+
+    # The key. Configuration, never code: it lives in .env, is never returned by
+    # an endpoint and never written to a table.
+    ai_api_key: str = ""
+    ai_base_url: str = "https://openrouter.ai/api/v1"
+
+    # gpt-oss, free tier by default. A name ending ":free" costs nothing, which
+    # is what makes the cap below safe to leave at zero.
+    ai_model: str = "openai/gpt-oss-20b:free"
+
+    # What may be spent in a calendar month, in millionths of a unit of currency
+    # (1_000_000 = one unit). Zero means paid models are refused outright, and
+    # zero is the default: no fresh install can spend anything. Above zero, the
+    # month's spend is summed and checked before each call -- the platform
+    # refusing rather than the code promising.
+    ai_monthly_cap_micros: int = 0
+
     # Receiver address, used when SSDP discovery cannot run.
     #
     # Docker's bridge network does not forward multicast to the LAN, so a

@@ -127,7 +127,7 @@ routinely breaks another, and the tracker is what makes that visible.
 | 8 · Optional transcode | ❌ overtaken | It was never optional for this library — see §3.2.1 of ARCHITECTURE for what actually happened |
 | 9 · Public release | 🔨 | Public since August. Docs current as of 14 September 2026; screenshots outstanding |
 
-**Tests: 662 passing. Migrations: 025. Lint: clean. CI green.**
+**Tests: 683 passing. Migrations: 026. Lint: clean. CI green.**
 
 ### AI design decisions — agreed, not yet built
 
@@ -290,7 +290,7 @@ server/app/       config, db, main, auth, security, people, access, prefs, libra
                   scanner, metadata, dedup, signing, stream, transcode, documents,
                   thumbs, sharing, playlists, zones, denon, renderers, discovery,
                   occupancy, lanaddr, upkeep, backups, crypt, offsite, standby,
-                  thumbsync, signin_code, throttle, audiocache,
+                  thumbsync, signin_code, throttle, audiocache, ai, ai_api,
                   sources/{base,local,gdrive}
 server/migrations 023 of them, plain SQL, tracked in `schema_migrations` and applied at
                   startup. `ls server/migrations` is the list; the recent ones are
@@ -310,7 +310,7 @@ tools/            probe-denon.ps1, configure-network.ps1, run-tests.ps1,
                   standby.cmd" — the jobs done by double-click rather than
                   through a terminal
 docs/             ARCHITECTURE.md, USER_GUIDE.md, TV_APP.md, PHONE_APP.md,
-                  OFFSITE_BACKUPS.md, STANDBY.md, TLS.md
+                  OFFSITE_BACKUPS.md, STANDBY.md, AI.md, TLS.md
 ```
 
 ---

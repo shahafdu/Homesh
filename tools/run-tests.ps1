@@ -79,10 +79,10 @@ $leaks = @(git grep -nIE $pattern -- . 2>$null)
 $ids   = @(git grep -nIE 'uuid:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}' -- . 2>$null)
 # SSH keys, public ones included: a server can be asked whether it accepts a
 # key, so a published one finds the machine that does.
-$keys  = @(git grep -nIE 'ssh-(ed25519|rsa|ecdsa-[a-z0-9-]+|dss) AAAA[0-9A-Za-z+/]{20,}|-----BEGIN [A-Z ]*PRIVATE KEY-----|[a-z0-9-]+\.tail[0-9a-f]{4,}\.ts\.net' -- . 2>$null)
+$keys  = @(git grep -nIE 'ssh-(ed25519|rsa|ecdsa-[a-z0-9-]+|dss) AAAA[0-9A-Za-z+/]{20,}|-----BEGIN [A-Z ]*PRIVATE KEY-----|[a-z0-9-]+\.tail[0-9a-f]{4,}\.ts\.net|sk-or-v1-[0-9a-f]{16,}|sk-ant-api[0-9]{2}-[A-Za-z0-9_-]{20,}' -- . 2>$null)
 
 if ($leaks.Count -gt 0 -or $ids.Count -gt 0 -or $keys.Count -gt 0) {
-    Write-Host "  A tracked file names a private address, a device id, an SSH key or a tailnet name:" -ForegroundColor Red
+    Write-Host "  A tracked file names a private address, a device id, an SSH key, a tailnet name or an API key:" -ForegroundColor Red
     ($leaks + $ids + $keys) | ForEach-Object { Write-Host "    $_" -ForegroundColor Red }
     Write-Host "  Use an RFC 5737 documentation address (192.0.2.x, 198.51.100.x)." -ForegroundColor Red
     exit 1
