@@ -127,7 +127,7 @@ routinely breaks another, and the tracker is what makes that visible.
 | 8 · Optional transcode | ❌ overtaken | It was never optional for this library — see §3.2.1 of ARCHITECTURE for what actually happened |
 | 9 · Public release | 🔨 | Public since August. Docs current as of 14 September 2026; screenshots outstanding |
 
-**Tests: 687 passing. Migrations: 026. Lint: clean. CI green.**
+**Tests: 692 passing. Migrations: 026. Lint: clean. CI green.**
 
 ### AI design decisions — agreed, not yet built
 

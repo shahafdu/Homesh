@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from uuid import UUID
 
@@ -238,19 +240,87 @@ def remove_source(source_id: UUID, user: CurrentUser = Depends(require_user)) ->
     log.info("removed source %s", gone)
 
 
-def _reachable(source_id) -> bool:
-    """Whether this source can be read at this moment.
+# What is known about each source, and when it was learned.
+#
+# Asking a source whether it is there is cheap for a folder on this machine -- a
+# stat -- and expensive for Drive: an API call, measured at 0.8 to 1.1 seconds
+# when the connector's own minute of memory has lapsed. That was fine while the
+# question was only asked before playing something, and became the cost of
+# *browsing* when listings started saying which folders are offline: opening the
+# root asked all five Drive folders in turn, so a listing took four seconds.
+# Reported as the phone app being laggy between folders, and rightly.
+#
+# So a listing never waits on the network. It is answered from what was last
+# learned, and a refresh runs behind the request.
+_reach: dict[object, tuple[bool, float]] = {}
+_refreshing: set[object] = set()
 
-    Cheap for both kinds: a local folder is a stat, and the Drive connector
-    remembers its own answer for a minute. Never raises -- a drive that has been
-    switched off answers ENODEV rather than False, and this is the one place
-    that most wants an answer.
-    """
+# Worth refreshing after this, and too old to trust after that. A drive switched
+# off is noticed within a minute of somebody looking, which is what the tag on a
+# folder is for; nothing waits for the answer except the first look of all.
+REACH_FRESH = 60.0
+REACH_STALE = 600.0
+
+_reach_pool = ThreadPoolExecutor(max_workers=2, thread_name_prefix="reachability")
+
+
+def _ask_source(source_id) -> bool:
+    """The real question, which may take a second. Never raises -- a drive that
+    has been switched off answers ENODEV rather than False, and this is the one
+    place that most wants an answer."""
     try:
         connector = connector_for(source_id)
         return bool(connector and connector.available)
     except Exception:  # noqa: BLE001
         return False
+
+
+def _remember(source_id) -> bool:
+    answer = _ask_source(source_id)
+    _reach[source_id] = (answer, time.monotonic())
+    return answer
+
+
+def _refresh_soon(source_id) -> None:
+    if source_id in _refreshing:
+        return
+    _refreshing.add(source_id)
+
+    def work() -> None:
+        try:
+            _remember(source_id)
+        finally:
+            _refreshing.discard(source_id)
+
+    try:
+        _reach_pool.submit(work)
+    except RuntimeError:  # pragma: no cover - at shutdown
+        _refreshing.discard(source_id)
+
+
+def _reachable(source_id) -> bool:
+    """Whether this source can be read, as far as is known without waiting.
+
+    Fresh enough: answered from memory. Going stale: answered from memory and a
+    refresh is started behind the request. Older than that, or never asked:
+    asked properly, which is the only call that can be slow.
+    """
+    known = _reach.get(source_id)
+    if known is None:
+        return _remember(source_id)
+
+    answer, learned = known
+    age = time.monotonic() - learned
+    if age >= REACH_STALE:
+        return _remember(source_id)
+    if age >= REACH_FRESH:
+        _refresh_soon(source_id)
+    return answer
+
+
+def forget_reachability() -> None:
+    """For tests, and for a source that has just been added or removed."""
+    _reach.clear()
 
 
 def playable_now(conn, item_ids) -> set:
@@ -830,6 +900,9 @@ _connectors: dict[UUID, object] = {}
 def forget_connectors() -> None:
     """Drop the cache — after a scan, when the tree may have changed."""
     _connectors.clear()
+    # What was known about each source went with them: a folder that has just
+    # been granted, removed, or switched off must not be answered from memory.
+    _reach.clear()
 
 
 def connector_for(source_id: UUID):

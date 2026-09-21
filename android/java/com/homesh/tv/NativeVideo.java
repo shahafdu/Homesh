@@ -103,7 +103,25 @@ public final class NativeVideo {
                 // of "send to this room" crashed the television.
                 view.setOnPreparedListener(player -> {
                     try {
-                        if (positionMs > 0) player.seekTo(positionMs);
+                        // Always, even to zero.
+                        //
+                        // VideoView remembers a seek position of its own and
+                        // applies it to whatever is opened next: pause a film
+                        // four seconds in, send a different one, and the new one
+                        // starts four seconds in. Reported exactly that way, for
+                        // some mp4s and not others -- it depends where the last
+                        // thing was left -- and never for wmv or avi, which are
+                        // converted and play in the web layer instead.
+                        //
+                        // It also explains the part that made no sense: taking
+                        // it back to the beginning from the control tower jumped
+                        // straight back, because a seek re-opens the file here
+                        // and the widget re-applied its own stale position.
+                        //
+                        // Seeking to the position we were actually given says
+                        // what we mean and leaves the widget nothing to
+                        // remember. Zero is a legal seek on a prepared player.
+                        player.seekTo(Math.max(0, positionMs));
                         player.start();
                     } catch (IllegalStateException gone) {
                         Log.w(TAG, "the player went away before it could start", gone);
