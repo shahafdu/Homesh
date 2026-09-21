@@ -6,6 +6,9 @@ these are about what that caller cannot do.
 
 from __future__ import annotations
 
+import json
+import uuid
+
 import pytest
 from sqlalchemy import text
 
@@ -225,6 +228,92 @@ class TestCommandChannel:
 
     def test_listing_requires_authentication(self, anon_client):
         assert anon_client.get("/api/renderers").status_code == 401
+
+
+class TestAScreenThatCarriedOnAlone:
+    """Every socket drops when the server restarts, and a dropped socket ends the
+    session -- honestly, since a server that cannot reach a screen cannot claim to
+    be playing to it. But the screen carries on: the film keeps playing, the
+    document stays on the wall. Reported from the room as a PDF on the television
+    while the control tower said "ready", with no way to put either right."""
+
+    def _screen(self, client, anon_client, item_id=None, cursor=0, state="idle"):
+        body = _begin(anon_client)
+        client.post("/api/renderers/pair/claim", json={"code": body["code"], "name": "Bedroom"})
+        token = anon_client.get(
+            f"/api/renderers/pair/status?poll_token={body['poll_token']}"
+        ).json()["device_token"]
+        zone_id = client.get("/api/zones").json()[0]["id"]
+        queue = json.dumps([str(item_id)] if item_id else [])
+        return token, zone_id, queue, cursor, state
+
+    def _session(self, db, zone_id, queue, cursor, state):
+        with db.begin() as conn:
+            conn.execute(
+                text(
+                    """
+                    INSERT INTO play_sessions (zone_id, queue, cursor, state)
+                    VALUES (:z, CAST(:q AS jsonb), :c, CAST(:s AS playback_state))
+                    """
+                ),
+                {"z": zone_id, "q": queue, "c": cursor, "s": state},
+            )
+
+    def _state_of(self, db, zone_id) -> str:
+        with db.connect() as conn:
+            return conn.execute(
+                text("SELECT state::text FROM play_sessions WHERE zone_id = :z"), {"z": zone_id}
+            ).scalar_one()
+
+    def test_still_showing_its_own_queue_restores_the_session(self, client, anon_client, db):
+        item = uuid.uuid4()
+        token, zone_id, queue, cursor, state = self._screen(client, anon_client, item)
+        self._session(db, zone_id, queue, cursor, state)
+
+        with client.websocket_connect(f"/api/renderers/ws?token={token}") as ws:
+            ws.send_json({"type": "state", "state": "playing", "position_ms": 12000,
+                          "item_id": str(item)})
+            ws.send_json({"type": "ping"})
+            assert ws.receive_json()["type"] == "pong"
+            # Read while the socket is open: closing it ends the session, which
+            # is the behaviour this is reconciling with rather than against.
+            assert self._state_of(db, zone_id) == "playing"
+
+    def test_showing_something_it_was_not_told_to_is_stopped(self, client, anon_client, db):
+        """A screen showing something the server cannot name is a screen nobody
+        can control, which is the fault being fixed."""
+        token, zone_id, queue, cursor, state = self._screen(client, anon_client, uuid.uuid4())
+        self._session(db, zone_id, queue, cursor, state)
+
+        with client.websocket_connect(f"/api/renderers/ws?token={token}") as ws:
+            ws.send_json({"type": "state", "state": "playing", "position_ms": 3000,
+                          "item_id": str(uuid.uuid4())})
+            assert ws.receive_json() == {"type": "stop"}
+
+        assert self._state_of(db, zone_id) == "idle"
+
+    def test_a_room_already_playing_is_left_alone(self, client, anon_client, db):
+        item = uuid.uuid4()
+        token, zone_id, queue, cursor, _ = self._screen(client, anon_client, item)
+        self._session(db, zone_id, queue, cursor, "paused")
+
+        with client.websocket_connect(f"/api/renderers/ws?token={token}") as ws:
+            ws.send_json({"type": "state", "state": "playing", "position_ms": 1000,
+                          "item_id": str(item)})
+            ws.send_json({"type": "ping"})
+            assert ws.receive_json()["type"] == "pong", "a stop was sent to a working room"
+            assert self._state_of(db, zone_id) == "paused", "the tower's state was overwritten"
+
+    def test_a_screen_reporting_nothing_playing_changes_nothing(self, client, anon_client, db):
+        token, zone_id, queue, cursor, state = self._screen(client, anon_client, uuid.uuid4())
+        self._session(db, zone_id, queue, cursor, state)
+
+        with client.websocket_connect(f"/api/renderers/ws?token={token}") as ws:
+            ws.send_json({"type": "state", "state": "idle", "position_ms": 0})
+            ws.send_json({"type": "ping"})
+            assert ws.receive_json()["type"] == "pong"
+
+        assert self._state_of(db, zone_id) == "idle"
 
 
 class TestOneBadMessageIsNotFatal:

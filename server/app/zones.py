@@ -942,6 +942,12 @@ async def seek(
 
     from .renderers import hub
 
+    # Logged, because a screen that starts somewhere other than the beginning is
+    # otherwise unattributable: the only things that move a room's position are
+    # this endpoint and the screen's own remote, and only one of them leaves a
+    # trace. Reported once as an mp4 starting four seconds in.
+    log.info("%s: seek to %d ms, asked for by %s", zone.name, body.position_ms, user.handle)
+
     if not await hub.send(
         zone.renderer_id, {"type": "seek", "position_ms": body.position_ms}
     ):
