@@ -20,6 +20,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 
 from . import lanaddr
+from .ai_api import router as ai_router
 from .auth import ensure_bootstrap_code
 from .auth import router as auth_router
 from .backups import router as backups_router
@@ -180,6 +181,7 @@ from .standby import StandbyGate  # noqa: E402
 
 app.add_middleware(StandbyGate)
 
+app.include_router(ai_router)
 app.include_router(auth_router)
 app.include_router(backups_router)
 app.include_router(documents_router)
