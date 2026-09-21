@@ -198,15 +198,20 @@ Decisions are settled and recorded in CLAUDE.md and now in `docs/AI.md`.
    Spending is granted per account. Every attempt is recorded — refusals
    included, never the question or the answer — and readable at
    `/api/ai/history`
-2. ⬜ **Offline tagging pass** — one run over the library, cached in
+2. ⬜ **Whisper on the server, for spoken commands** — short utterances turned
+   into text on the PC, never sent anywhere: whisper.cpp on four efficiency
+   cores is far too slow to transcribe a video library and perfectly fast enough
+   for "play something mellow in the kitchen". The words then go to the command
+   layer, which calls the same API a person does
+3. ⬜ **Offline tagging pass** — one run over the library, cached in
    `item_metadata` with `origin='ai'`, so later questions filter locally first
-3. ⬜ **Commands** — play here, stop there, skip, build a list. Calls the same
+4. ⬜ **Commands** — play here, stop there, skip, build a list. Calls the same
    API as the interface, as the user, so permissions are enforced by the code
    that already enforces them
-4. ⬜ **Find things** — natural language over the catalog, results actionable
-5. ⬜ **Content search** — documents first (cheap and exact), then photos
+5. ⬜ **Find things** — natural language over the catalog, results actionable
+6. ⬜ **Content search** — documents first (cheap and exact), then photos
    (CLIP embeddings), then audio and video transcription on demand only
-6. ⬜ **Activity history** — what the AI did, readable in the app
+7. ⬜ **Activity history** — what the AI did, readable in the app
 
 **The AI cannot**: add or remove rooms · change permissions · act beyond the
 asking user's own access · delete anything without confirmation · send anything

@@ -81,6 +81,18 @@ and never overwriting them. Embeddings and earlier answers are cached the same
 way. Later questions filter locally first and only ask about what is not known
 yet — which also means it keeps working offline once warm.
 
+## Spoken commands stay in the house
+
+The words are turned into text **here**, by whisper.cpp on the PC, and never sent
+to a provider. That is a deliberate split: what you *said* is the most private
+thing in the whole feature, and the model that acts on it only ever needs the
+text.
+
+It is also the one speech job this machine can do. Transcribing a video library
+on four efficiency cores is far too slow to be worth starting; a five-second
+"play something mellow in the kitchen" is a fraction of a second. So speech is
+on demand, never bulk.
+
 ## What is built
 
 - ✅ The provider layer, the caps, the permission, and the record
@@ -88,6 +100,6 @@ yet — which also means it keeps working offline once warm.
 - ✅ `/api/ai/status` — whether it is on, which model, and for an administrator
   what has been spent this month.
 - ✅ `/api/ai/history` — what it has been asked to do.
-- ⬜ The tagging pass over the library, and the questions that use it: commands,
-  finding things, content search. Each one calls the layer above rather than a
-  provider.
+- ⬜ Whisper on the PC for spoken commands, and the tagging pass over the
+  library; then the questions that use them: commands, finding things, content
+  search. Each one calls the layer above rather than a provider.
