@@ -187,6 +187,19 @@ function Passkeys() {
         </div>
       ))}
 
+      {/* Said here, because it is here that somebody wonders what the badge
+          means and whether the old one is safe to remove. A device that took
+          the update while already signed in keeps its old passkey: the swap can
+          only remove the one this browser signed in with, and guessing could
+          take another device's. */}
+      {keys.some((k) => k.pc_only) && (
+        <p className="muted small">
+          A passkey marked <b>PC only</b> was made before passkeys moved to a name
+          the PC and the standby share. Once its device has a newer one listed
+          here, the old one can be removed.
+        </p>
+      )}
+
       <button
         className="compact"
         disabled={busy || !passkeysSupported()}
