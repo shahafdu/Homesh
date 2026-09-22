@@ -128,14 +128,38 @@ function TvText(props: { url: string; filename: string }) {
   return <pre className="tv-text">{text}</pre>;
 }
 
-/** Whether the box's own decoder is the thing holding this file.
+/** Whether the box's own decoder could take this file at all.
  *
- * Asked in several places -- which player to report position from, which one to
- * pause, whether the page should draw anything -- and every one of them has to
- * agree. They did not while the rule was written out separately each time.
+ * Could, not does. Which player is actually holding it is a fact about what has
+ * happened -- the web view is tried first now -- and it is kept in state rather
+ * than recomputed, because every place that asks (which player to report a
+ * position from, which one to pause, whether the page should draw anything) has
+ * to give the same answer.
  */
-function usingNative(cmd: Command | null): boolean {
+function nativeCapable(cmd: Command | null): boolean {
   return Boolean(cmd && cmd.kind === "video" && !cmd.transcoded && native());
+}
+
+/** Containers offered as direct play that Chromium's demuxer will not open.
+ *
+ * The server converts what no browser can decode at all (transcode.py names
+ * those), so what arrives here is a container the *platform* can read: Android's
+ * MediaPlayer opens Matroska and MPEG transport streams, and Chromium does not
+ * carry a demuxer for either. Sending them to the web view first only buys a
+ * failed load before the fallback, so they go straight to the box.
+ *
+ * Nothing else does. mp4, mov and webm go to Chromium, and that is the fix for
+ * the four-second skip: those files play correctly there -- they always did, and
+ * still do on a phone -- while the platform player started one of them four
+ * seconds in every single time, wherever it was told to begin.
+ */
+const BOX_DECODES_BETTER = new Set(["mkv", "ts", "m2ts", "ogm", "wtv"]);
+
+function onlyTheBoxCanDecode(cmd: Command | null): boolean {
+  if (!nativeCapable(cmd)) return false;
+  const name = cmd!.filename ?? "";
+  const ext = name.includes(".") ? name.split(".").pop()!.toLowerCase() : "";
+  return BOX_DECODES_BETTER.has(ext);
 }
 
 /** Where to fetch this file from in order to start it at a given moment.
@@ -307,6 +331,26 @@ export default function TvApp() {
   }, [now?.item_id, wake]);
   const [duration, setDuration] = useState(0);
 
+  /** Whether the box's own decoder is holding the file, rather than the web view.
+   *
+   * The web view goes first for anything it can take. It always did, by
+   * accident: while the bridge to the box's decoder was broken every direct-play
+   * video fell through to the web view, which plays them properly -- and fixing
+   * the bridge quietly handed them to Android's MediaPlayer instead. That player
+   * starts some mp4s four seconds in, reported from the room and reproduced:
+   * picture and sound both, instantly, every time, while the same file plays
+   * from the beginning on a phone.
+   *
+   * So Chromium first, and the box's decoder when Chromium says it cannot decode
+   * something -- which is what it is for, and the only reason it exists.
+   */
+  const [nativeHolds, setNativeHolds] = useState(false);
+  const nativeHoldsRef = useRef(false);
+  const holdNative = useCallback((yes: boolean) => {
+    nativeHoldsRef.current = yes;
+    setNativeHolds(yes);
+  }, []);
+
   /** Where the stream in the media element begins, in milliseconds.
    *
    * Zero for a real file, which starts at its own beginning and counts from
@@ -466,23 +510,21 @@ export default function TvApp() {
         base.current = cmd.transcoded ? (cmd.position_ms ?? 0) : 0;
         setPosition(cmd.position_ms ?? 0);
 
-        // Video goes to the box's own decoder where there is one -- but only
-        // when it is the original file. A stream still being encoded has no
-        // index, and Android's MediaPlayer cannot read one: handed a live
-        // transcode it opened the URL, failed and opened it again, 216 times
-        // for a single .avi. That is a regression I caused by fixing the
-        // bridge: while the bridge was broken every one of these quietly fell
-        // through to the web view, which plays them properly.
+        // The web view gets first refusal on video again.
         //
-        // So the two players are used for what each is good at. The box decodes
-        // what Chromium cannot, which is why it is here; Chromium reads a
-        // fragmented stream, which the box cannot.
-        if (cmd.kind === "video" && native() && !cmd.transcoded) {
-          native()!.play(cmd.url ?? "", cmd.position_ms ?? 0);
-          break;
-        }
+        // It used to have it, and mp4 played correctly. Then the bridge to the
+        // box's own player was fixed and every direct-play video went there
+        // instead -- which is when particular mp4s started four seconds in,
+        // always four, immediately, wherever they were told to begin. The file is
+        // not at fault: its sync table starts at sample one, it carries no edit
+        // list, and the same file plays from the beginning in a browser on a
+        // phone. So the player that gets it wrong stops getting it.
+        //
+        // The box keeps what it is genuinely needed for: the containers Chromium
+        // has no demuxer for, and anything it turns out to refuse.
+        holdNative(false);
 
-        // Anything else: put the box's player away first. It is a native view
+        // Put the box's player away first. It is a native view
         // sitting *over* the web app, so leaving it up meant a photograph or a
         // document sent after a film was drawn underneath one — visible only in
         // whatever strip of screen the player was not covering. It went
@@ -494,6 +536,12 @@ export default function TvApp() {
         // element to hand a source to. In a slideshow it does need an end,
         // which is the timer below.
         if (cmd.kind === "photo") break;
+
+        if (onlyTheBoxCanDecode(cmd)) {
+          holdNative(true);
+          native()!.play(cmd.url ?? "", cmd.position_ms ?? 0);
+          break;
+        }
         // The element mounts with this render, so defer until it exists.
         //
         // Stamped, because two play commands in quick succession — pressing
@@ -522,6 +570,15 @@ export default function TvApp() {
               if (e instanceof Error && e.name === "AbortError") return;
               if (generation.current !== mine) return;
 
+              // Chromium cannot decode it: hand it to the box, which can
+              // decode what Chromium will not touch. This is the whole reason
+              // the native player is here, and now the only time it is used.
+              if (nativeCapable(cmd)) {
+                holdNative(true);
+                native()!.play(cmd.url ?? "", cmd.position_ms ?? 0);
+                return;
+              }
+
               const why =
                 e instanceof Error && e.name === "NotSupportedError"
                   ? "this screen cannot decode that format"
@@ -546,7 +603,7 @@ export default function TvApp() {
         setPaused(false);
         setGesture("▶ Playing");
         wake();
-        if (usingNative(nowRef.current)) native()!.resume();
+        if (nativeHoldsRef.current) native()!.resume();
         // A slideshow has no media element to start; the clock above restarts
         // on its own when `paused` clears.
         else if (nowRef.current?.kind !== "photo") {
@@ -582,7 +639,7 @@ export default function TvApp() {
         // offset, which is also how the transcoded stream is moved through,
         // since a stream still being encoded has no index to seek in. Without
         // this branch the tower's bar moved and the television ignored it.
-        if (usingNative(nowRef.current)) {
+        if (nativeHoldsRef.current) {
           native()!.play(nowRef.current!.url ?? "", cmd.position_ms);
         } else if (media && nowRef.current?.transcoded) {
           // Not a seek at all: the encoder is started again from there. Setting
@@ -615,7 +672,7 @@ export default function TvApp() {
     // Only whichever player is actually holding the file. A transcode plays in
     // the media element even though the kind is video, and asking the box where
     // it had got to would answer for something it never opened.
-    const player = usingNative(nowRef.current) ? native() : null;
+    const player = nativeHoldsRef.current ? native() : null;
     if (!socket || socket.readyState !== WebSocket.OPEN) return;
     socket.send(
       JSON.stringify({
@@ -685,7 +742,7 @@ export default function TvApp() {
         // All of this in milliseconds. It mixed the two: `live` was seconds and
         // `duration` milliseconds, so the clamp never bit and the confirmation
         // on screen showed a time near zero however far you had moved.
-        const live = player && usingNative(now)
+        const live = player && nativeHoldsRef.current
           ? player.positionMs()
           : (media?.currentTime ?? 0) * 1000;
         const from = pendingSeek.current ?? live;
@@ -704,7 +761,7 @@ export default function TvApp() {
           pendingSeek.current = null;
           if (target == null) return;
           // The target is milliseconds; the media element wants seconds.
-          if (player && usingNative(now)) player.play(now!.url ?? "", target);
+          if (player && nativeHoldsRef.current) player.play(now!.url ?? "", target);
           else if (media) media.currentTime = target / 1000;
         }, 550);
       };
@@ -719,10 +776,10 @@ export default function TvApp() {
         case "MediaPlayPause":
         case "Enter":
         case " ": {
-          const playing = usingNative(now) ? (player?.isPlaying() ?? false) : !media?.paused;
+          const playing = nativeHoldsRef.current ? (player?.isPlaying() ?? false) : !media?.paused;
           setGesture(playing ? "❚❚ Paused" : "▶ Playing");
           report(playing ? "paused" : "playing");
-          if (player && usingNative(now)) {
+          if (player && nativeHoldsRef.current) {
             playing ? player.pause() : player.resume();
           } else if (media) {
             playing ? media.pause() : void media.play().catch(() => undefined);
@@ -781,7 +838,7 @@ export default function TvApp() {
   useEffect(() => {
     // Position while the box is playing: the media element knows nothing about
     // it, so it is polled and reported like any other progress.
-    if (phase !== "playing" || !usingNative(now)) return;
+    if (phase !== "playing" || !nativeHolds) return;
     const timer = window.setInterval(() => {
       const player = native();
       if (!player) return;
@@ -790,7 +847,7 @@ export default function TvApp() {
       report(player.isPlaying() ? "playing" : "paused");
     }, 2000);
     return () => window.clearInterval(timer);
-  }, [phase, now?.kind, report, takeDuration]);
+  }, [phase, nativeHolds, now?.kind, report, takeDuration]);
 
   // The page becomes glass while the box's own player is decoding.
   //
@@ -798,10 +855,10 @@ export default function TvApp() {
   // and a transparent panel over an opaque page is still an opaque page. The
   // film is behind all of it.
   useEffect(() => {
-    const over = usingNative(now) && phase === "playing";
+    const over = nativeHolds && phase === "playing";
     document.body.classList.toggle("over-native", over);
     return () => document.body.classList.remove("over-native");
-  }, [now, phase]);
+  }, [nativeHolds, phase]);
 
   useEffect(() => {
     // A screen may sit untouched for weeks, so tell the server we are still here
@@ -822,20 +879,36 @@ export default function TvApp() {
     const onPlay = () => report("playing");
     const onPause = () => report("paused");
     const onEnded = () => report("ended");
+    const onError = () => {
+      // Chromium gave up on it. Some formats reject play(); others load and then
+      // report an error, and both mean the same thing: hand it to the box's own
+      // decoder, which is why that player is here.
+      const cmd = nowRef.current;
+      const code = media.error?.code;
+      const cannotDecode =
+        code === MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED ||
+        code === MediaError.MEDIA_ERR_DECODE;
+      if (cannotDecode && !nativeHoldsRef.current && nativeCapable(cmd)) {
+        holdNative(true);
+        native()!.play(cmd!.url ?? "", cmd!.position_ms ?? 0);
+      }
+    };
 
     media.addEventListener("timeupdate", onTime);
     media.addEventListener("loadedmetadata", onMeta);
     media.addEventListener("play", onPlay);
     media.addEventListener("pause", onPause);
     media.addEventListener("ended", onEnded);
+    media.addEventListener("error", onError);
     return () => {
+      media.removeEventListener("error", onError);
       media.removeEventListener("timeupdate", onTime);
       media.removeEventListener("loadedmetadata", onMeta);
       media.removeEventListener("play", onPlay);
       media.removeEventListener("pause", onPause);
       media.removeEventListener("ended", onEnded);
     };
-  }, [phase, report, takeDuration]);
+  }, [phase, holdNative, report, takeDuration]);
 
   useEffect(() => {
     // Position is reported on a timer rather than on every frame: the server
@@ -897,7 +970,7 @@ export default function TvApp() {
     const paper = paperKind(now.filename ?? "");
 
     return (
-      <div className={`tv${usingNative(now) ? " over-native" : ""}`}>
+      <div className={`tv${nativeHolds ? " over-native" : ""}`}>
         <div className={`player${isPhoto ? " photo" : ""}`}>
           <div className="stage">
             {/* Hidden when the box has its own decoder: the native player is
@@ -910,7 +983,7 @@ export default function TvApp() {
               <video
                 ref={mediaRef}
                 playsInline
-                style={usingNative(now) ? { display: "none" } : undefined}
+                style={nativeHolds ? { display: "none" } : undefined}
               />
             )}
 

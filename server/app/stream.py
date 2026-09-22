@@ -19,7 +19,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy import text
 from starlette.concurrency import iterate_in_threadpool
 
-from . import audiocache, rewrap
+from . import audiocache
 from .access import may_access_item
 from .config import get_settings
 from .db import get_engine
@@ -235,10 +235,6 @@ async def stream(
     request: Request,
     t: str = Query(...),
     download: bool = Query(False, description="Send as an attachment rather than inline"),
-    plain: bool = Query(
-        False,
-        description="Serve a container-rewritten copy, for a screen that cannot read this one",
-    ),
 ) -> Response:
     """Serve file bytes. Authorised by the signed token, not by session cookie.
 
@@ -265,21 +261,12 @@ async def stream(
     connector, rel, filename, size, ext = resolve_playable(item_id)
     media_type = MIME.get(ext.lower(), "application/octet-stream")
 
-    # A copy whose container has been rewritten, for a screen that reads this one
-    # wrongly -- see rewrap.py. Asked for explicitly, by whoever knows the screen
-    # needs it, and never the default: the bytes served here are otherwise the
-    # file's own, which is what direct play means.
-    rewritten = await rewrap.ensure(item_id, claim.user_id) if plain else None
-    if rewritten is not None:
-        size = rewritten.stat().st_size
-        media_type = "video/mp4"
-
     # A track fetched from Drive once is read from disk ever after. The copy is
     # only used when it is whole and still the right size; when there is none,
     # one is fetched alongside this request rather than before it, so nothing
     # here waits for it. See audiocache.py.
-    cached = rewritten or (audiocache.hit(item_id, size) if size else None)
-    if rewritten is None and cached is None and audiocache.wanted(ext, size, connector):
+    cached = audiocache.hit(item_id, size) if size else None
+    if cached is None and audiocache.wanted(ext, size, connector):
         audiocache.want(item_id, size, connector, rel)
 
     start, end = 0, size - 1

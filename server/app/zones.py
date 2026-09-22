@@ -23,7 +23,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlalchemy import text
 
-from . import denon, lanaddr, occupancy, rewrap
+from . import denon, lanaddr, occupancy
 from .access import can_use_zone, may_access_item, zone_scope
 from .config import get_settings
 from .db import get_engine
@@ -659,23 +659,6 @@ async def _push_to_screen(zone: Zone, item_id: UUID, user: CurrentUser) -> dict:
         media_url = f"{base}/api/documents/{item_id}?t={token}"
     else:
         media_url = f"{base}/api/stream/{item_id}?t={token}"
-        # A screen reads some containers wrongly: one mp4 here plays from the
-        # start in a browser and four seconds in on the box, every time, because
-        # of a non-standard box in front of its index. Such a file is handed over
-        # rewritten -- same frames, ordinary container. Only for a screen, and
-        # only when the container is odd; see rewrap.py.
-        if kind == "video":
-            from .stream import resolve_playable
-
-            def container_is_odd() -> bool:
-                try:
-                    connector, rel, _name, _size, file_ext = resolve_playable(item_id)
-                except HTTPException:
-                    return False  # unreachable now; the play below will say so
-                return rewrap.odd_container(item_id, file_ext, connector, rel)
-
-            if await asyncio.to_thread(container_is_odd):
-                media_url += "&plain=1"
 
     # How long to hold a photograph, and how to leave it. Read from the session
     # rather than passed in, so a skip mid-slideshow keeps the settings the
