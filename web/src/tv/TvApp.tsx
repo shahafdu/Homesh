@@ -263,6 +263,8 @@ export default function TvApp() {
   // forever, which is why resuming a video went to the media element instead of
   // the box's own decoder. A ref is current whenever it is read.
   const nowRef = useRef<Command | null>(null);
+  /** The server build this page's code came from, learnt on the first connect. */
+  const servedBy = useRef<string | null>(null);
   /** Bumped by every play command, so a stale deferred start can be discarded. */
   const generation = useRef(0);
   /** Where held arrow presses have added up to, before the stream is moved. */
@@ -271,6 +273,11 @@ export default function TvApp() {
   useEffect(() => {
     nowRef.current = now;
   }, [now]);
+  /** Read from the socket's open handler, which was built on the first render. */
+  const phaseRef = useRef<Phase>("starting");
+  useEffect(() => {
+    phaseRef.current = phase;
+  }, [phase]);
   const [position, setPosition] = useState(0);
 
   // ── Showing that the remote was heard ─────────────────────────────────────
@@ -438,6 +445,36 @@ export default function TvApp() {
     }, 2000);
   }, []);
 
+  /** Reload when the server has been rebuilt, so a fix reaches the wall.
+   *
+   * The Android shell updates itself, but the interface inside it is a page
+   * loaded once and then kept for weeks: a screen goes on showing the code it
+   * started with long after the server has been rebuilt with a fix, and the only
+   * cure was to walk to each box and restart the app. The socket already drops
+   * when the server restarts, which is the signal -- all that was missing was
+   * asking, on the way back up, whether the code being served is still the code
+   * running here.
+   *
+   * Only while nothing is playing. Reloading mid-film to collect an improvement
+   * is not an improvement.
+   */
+  const takeTheNewBuild = useCallback(async () => {
+    try {
+      const res = await fetch("/api/health", { cache: "no-store" });
+      if (!res.ok) return;
+      const build = String(((await res.json()) as { version?: string }).version ?? "");
+      if (!build || build === "dev") return;
+      if (servedBy.current === null) {
+        servedBy.current = build;
+        return;
+      }
+      if (build !== servedBy.current && phaseRef.current !== "playing") location.reload();
+    } catch {
+      // Offline, or answered by something that is not the server yet. The next
+      // reconnect asks again.
+    }
+  }, []);
+
   // ── Command channel ───────────────────────────────────────────────────────
 
   const connect = useCallback(() => {
@@ -465,6 +502,8 @@ export default function TvApp() {
           app_version: native()?.appVersion?.() || "0.4.0 or older",
         }),
       );
+
+      void takeTheNewBuild();
     };
 
     socket.onclose = (event) => {
