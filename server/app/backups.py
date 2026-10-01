@@ -473,6 +473,28 @@ def restore(name: str, keep: tuple[str, ...] = ()) -> dict:
                 )
             )
 
+        # COPY writes the ids as they were but leaves each sequence where it
+        # stood, so the next insert reuses an id already in the table. On the
+        # standby that was every sign-in: the passkey checked out and then the
+        # audit row for it collided, and the person saw a 500.
+        serials = conn.execute(
+            text(
+                "SELECT table_name, column_name, "
+                "pg_get_serial_sequence(format('public.%I', table_name), column_name) AS seq "
+                "FROM information_schema.columns WHERE table_schema = 'public'"
+            )
+        ).all()
+        for table, column, seq in serials:
+            if seq is None:
+                continue
+            conn.execute(
+                text(
+                    f'SELECT setval(:seq, COALESCE((SELECT max("{column}") '  # noqa: S608 - from the catalog
+                    f'FROM public."{table}"), 0) + 1, false)'
+                ),
+                {"seq": seq},
+            )
+
     total = sum(counts.values())
     log.warning("restored %s: %d rows across %d tables", name, total, len(counts))
     return {"restored": name, "rows": total, "tables": counts}
