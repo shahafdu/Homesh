@@ -94,6 +94,27 @@ class TestTheRoundTrip:
             back = conn.execute(text("SELECT credential_id FROM credentials")).scalar_one()
         assert bytes(back) == b"credential-bytes"
 
+    def test_the_next_row_after_a_restore_gets_a_fresh_id(self, db, user):
+        """A fresh standby's counters start at one, and the backup it is given
+        is full of ids above that. Every sign-in there failed on the audit row
+        until the sequences were moved past what came back."""
+        with db.begin() as conn:
+            for _ in range(3):
+                conn.execute(
+                    text("INSERT INTO audit_log (user_id, event) VALUES (:u, 'test')"),
+                    {"u": str(user.id)},
+                )
+        taken = make_backup()
+        with db.begin() as conn:
+            conn.execute(text("SELECT setval(pg_get_serial_sequence('audit_log', 'id'), 1, false)"))
+
+        restore(taken.name)
+        with db.begin() as conn:
+            conn.execute(
+                text("INSERT INTO audit_log (user_id, event) VALUES (:u, 'after')"),
+                {"u": str(user.id)},
+            )
+
     def test_a_restore_reports_what_it_moved(self, db, user):
         _make_playlist(db, user, "One")
         taken = make_backup()
