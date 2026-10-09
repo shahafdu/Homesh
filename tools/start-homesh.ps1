@@ -266,6 +266,40 @@ function Install-Watcher {
     }
 }
 
+function Install-StartAtSignin {
+    <#
+        Register the task that starts Homesh when you sign in.
+
+        Sign-in rather than boot, because Docker Desktop is a per-user install
+        and does not run until somebody is signed in; a task at boot as SYSTEM
+        would find no engine to start. Its own task rather than Docker's
+        Startup-apps entry, which was found switched off after a restart with
+        nothing to say so. Idempotent, like the watcher.
+    #>
+    $name = 'Homesh - start at sign-in'
+    if (Get-ScheduledTask -TaskName $name -ErrorAction SilentlyContinue) { return }
+
+    $shim = Join-Path $PSScriptRoot 'start-at-signin.vbs'
+    $action = New-ScheduledTaskAction -Execute 'wscript.exe' `
+        -Argument ('"{0}"' -f $shim) `
+        -WorkingDirectory (Get-HomeshRepo)
+    $trigger = New-ScheduledTaskTrigger -AtLogOn -User "$env:USERDOMAIN\$env:USERNAME"
+    # A cold engine on a mini PC takes minutes; the script's own wait is four.
+    $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries `
+        -DontStopIfGoingOnBatteries -StartWhenAvailable `
+        -ExecutionTimeLimit (New-TimeSpan -Minutes 15)
+
+    try {
+        Register-ScheduledTask -TaskName $name -Action $action -Trigger $trigger `
+            -Settings $settings `
+            -Description ('Starts Docker and Homesh when you sign in, and re-attaches ' +
+            'the drive. Installed by Start Homesh; the log is in %LOCALAPPDATA%\Homesh.') | Out-Null
+        Write-Host '  Homesh will now start by itself when you sign in' -ForegroundColor DarkGray
+    } catch {
+        Write-Host "  could not set Homesh to start at sign-in: $($_.Exception.Message)" -ForegroundColor Yellow
+    }
+}
+
 # ---- follow the storage ---------------------------------------------------
 
 if ($Sync) {
@@ -363,6 +397,7 @@ Start-Engine
 # that disk. Setting it aside costs the files on that drive and keeps the rest.
 Sync-HomeshGrants | Out-Null
 Install-Watcher
+Install-StartAtSignin
 
 Write-Host 'Starting Homesh...' -ForegroundColor Cyan
 
