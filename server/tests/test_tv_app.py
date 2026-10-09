@@ -142,9 +142,31 @@ class TestWhereThePhoneFallsBack:
 
     def test_the_standby_says_what_it_is_and_names_nothing(self, anon_client, monkeypatch):
         body = self._address(anon_client, monkeypatch, HOMESH_ROLE="standby",
-                             STANDBY_ORIGIN="https://standby.example.ts.net")
+                             STANDBY_ORIGIN="https://standby.example.ts.net",
+                             PHONE_APPS="Notes|https://example.ts.net:8443")
         assert body["role"] == "standby"
         assert body["standby"] is None
+        assert body["apps"] == []
+
+    def test_the_pc_offers_other_apps_in_order(self, anon_client, monkeypatch):
+        body = self._address(
+            anon_client, monkeypatch,
+            PHONE_APPS="Notes|https://example.ts.net:8443; Trips | https://example.ts.net:8444",
+        )
+        assert body["apps"] == [
+            {"name": "Notes", "url": "https://example.ts.net:8443"},
+            {"name": "Trips", "url": "https://example.ts.net:8444"},
+        ]
+
+    def test_a_mistyped_app_is_skipped_not_fatal(self, anon_client, monkeypatch):
+        body = self._address(
+            anon_client, monkeypatch,
+            PHONE_APPS="No address;Bad|javascript:alert(1);Good|https://example.ts.net:8443",
+        )
+        assert body["apps"] == [{"name": "Good", "url": "https://example.ts.net:8443"}]
+
+    def test_no_apps_configured_is_an_empty_list(self, anon_client, monkeypatch):
+        assert self._address(anon_client, monkeypatch, PHONE_APPS="")["apps"] == []
 
 
 class TestTheAddressForATelevision:
