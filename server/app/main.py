@@ -296,6 +296,9 @@ def tv_address() -> Response:
             "role": role(),
             # Where to go when the PC does not answer. Only the primary says.
             "standby": (standby_at or None) if role() == "primary" else None,
+            # Other apps to offer beside Homesh. Only the primary says, for the
+            # same reason: the phone learns its configuration from the PC.
+            "apps": phone_apps(get_settings().phone_apps) if role() == "primary" else [],
             "lan": lan or None,
             # The address that works from outside the house, which is a
             # different question from the one above and the one a phone away
@@ -314,6 +317,22 @@ def tv_address() -> Response:
             "Homesh once from a device on your home network.",
         }
     )
+
+
+def phone_apps(configured: str) -> list[dict[str, str]]:
+    """Parse PHONE_APPS into buttons, dropping what is not a web address.
+
+    A malformed entry is skipped rather than refused: it is a line somebody
+    typed into .env by hand, and one typo should not take the others, or the
+    address endpoint the phone depends on, down with it.
+    """
+    apps = []
+    for entry in configured.split(";"):
+        name, _, url = entry.partition("|")
+        name, url = name.strip(), url.strip()
+        if name and url.startswith(("https://", "http://")):
+            apps.append({"name": name, "url": url})
+    return apps
 
 
 @lru_cache(maxsize=4)

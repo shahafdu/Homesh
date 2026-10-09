@@ -15,6 +15,7 @@ import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
+import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.InputStream;
@@ -64,6 +65,11 @@ public final class PhoneActivity extends Activity {
     private static final String KEY_ORIGIN = "origin";
     /** The standby on Oracle, tried when neither of the PC's addresses answers. */
     private static final String KEY_STANDBY = "standby";
+    /**
+     * Other web apps to offer beside Homesh, as the PC last listed them: a JSON
+     * array of {name, url}. Configured on the PC (PHONE_APPS), never in here.
+     */
+    private static final String KEY_APPS = "apps";
 
     /** Tailscale's own package. Declared in <queries> so it can be seen at all. */
     private static final String TAILSCALE = "com.tailscale.ipn";
@@ -74,6 +80,8 @@ public final class PhoneActivity extends Activity {
     private Button searchAgain;
     private Button changeAddress;
     private LinearLayout root;
+    /** One button per app in KEY_APPS, rebuilt whenever the PC lists them again. */
+    private LinearLayout apps;
 
     /** Which version this is, and whether a newer one is waiting. */
     private TextView about;
@@ -127,6 +135,9 @@ public final class PhoneActivity extends Activity {
             else check(false);
         });
         openTailscale = button("Open Tailscale", v -> launchTailscale());
+        apps = new LinearLayout(this);
+        apps.setOrientation(LinearLayout.VERTICAL);
+        showApps();
         searchAgain = button("Search on this network", v -> check(true));
         changeAddress = button("Change the address",
                 v -> startActivity(new Intent(this, SetupActivity.class)));
@@ -145,6 +156,7 @@ public final class PhoneActivity extends Activity {
         root.addView(message);
         root.addView(openHomesh);
         root.addView(openTailscale);
+        root.addView(apps);
         root.addView(searchAgain);
         root.addView(changeAddress);
         root.addView(about);
@@ -184,6 +196,7 @@ public final class PhoneActivity extends Activity {
         int visibility = show ? View.VISIBLE : View.GONE;
         openTailscale.setVisibility(
                 show && tailscaleInstalled() ? View.VISIBLE : View.GONE);
+        apps.setVisibility(visibility);
         searchAgain.setVisibility(visibility);
         changeAddress.setVisibility(visibility);
         // Only offered once something has answered; otherwise it is a button
@@ -299,11 +312,50 @@ public final class PhoneActivity extends Activity {
             if (standby != null && !standby.isEmpty() && !"null".equals(standby)) {
                 prefs.edit().putString(KEY_STANDBY, standby).apply();
             }
+            // Replaced wholesale, an empty list included: an app removed on the
+            // PC should disappear here, not linger from an older answer.
+            JSONArray listed = json.optJSONArray("apps");
+            if (listed != null) {
+                prefs.edit().putString(KEY_APPS, listed.toString()).apply();
+                runOnUiThread(this::showApps);
+            }
         } catch (Exception e) {
             // Knowing the other address is a convenience, not a requirement.
             Log.i(TAG, "could not learn the other address: " + e.getMessage());
         } finally {
             if (conn != null) conn.disconnect();
+        }
+    }
+
+    /** A button for each app the PC listed, in the order it listed them. */
+    private void showApps() {
+        apps.removeAllViews();
+        String stored = getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY_APPS, "[]");
+        try {
+            JSONArray list = new JSONArray(stored);
+            for (int i = 0; i < list.length(); i++) {
+                JSONObject app = list.getJSONObject(i);
+                String name = app.optString("name", "");
+                String url = app.optString("url", "");
+                if (name.isEmpty() || !(url.startsWith("https://") || url.startsWith("http://"))) continue;
+                apps.addView(button("Open " + name, v -> openApp(name, url)));
+            }
+        } catch (Exception e) {
+            Log.i(TAG, "could not read the app list: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Another app, in the same kind of tab as Homesh.
+     *
+     * <p>Not marked as handed off: closing it should come back to this screen
+     * as it was, not to "Homesh was open".
+     */
+    private void openApp(String name, String url) {
+        try {
+            startActivity(browserIntent(Uri.parse(url)));
+        } catch (Exception e) {
+            message.setText("No browser on this phone would open " + name + ".");
         }
     }
 

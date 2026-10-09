@@ -86,6 +86,12 @@ class Settings(BaseSettings):
     # tools/deploy-standby.ps1; an address, so configuration and never code.
     standby_origin: str = ""
 
+    # Other web apps on the same machines, offered as buttons in the phone app
+    # beside "Open Homesh". `Name|https://address;Name|https://address`. Kept
+    # in .env for the same reason as the line above: the addresses describe
+    # one particular tailnet, and this repository is public.
+    phone_apps: str = ""
+
     media_url_ttl_minutes: int = Field(default=5, ge=1, le=60)
 
     # Receivers pull for the length of a whole track or film, so the short browser
