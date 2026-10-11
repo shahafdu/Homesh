@@ -230,3 +230,43 @@ function Invoke-HomeshCompose {
         Pop-Location
     }
 }
+
+function Get-HomeshLanAddress {
+    <#
+        This PC's address on the house network: the one on the interface that
+        carries the default route, lowest metric first.
+
+        Not "the first IPv4 address", which on this machine is as likely to be
+        Tailscale's or the virtual switch Docker and WSL make. Those are skipped
+        by name and by range, since neither is reachable from a phone at home.
+    #>
+    $routes = Get-NetRoute -DestinationPrefix '0.0.0.0/0' -AddressFamily IPv4 -ErrorAction SilentlyContinue |
+        Sort-Object { $_.RouteMetric + $_.InterfaceMetric }
+    foreach ($route in $routes) {
+        $address = Get-NetIPAddress -InterfaceIndex $route.InterfaceIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue |
+            Where-Object {
+                $_.InterfaceAlias -notmatch 'Tailscale|vEthernet|WSL|Docker' -and
+                $_.IPAddress -notlike '169.254.*' -and $_.IPAddress -notlike '100.*'
+            } |
+            Select-Object -First 1
+        if ($address) { return $address.IPAddress }
+    }
+    return $null
+}
+
+function Set-HomeshEnvValue([string]$key, [string]$value) {
+    <#
+        Replace or add one line of .env, writing UTF-8 without a byte-order
+        mark: PowerShell 5.1's "utf8" adds one, and an editor that later saves
+        the file back in the local code page is how .env ends up looking
+        corrupt. See CLAUDE.md.
+    #>
+    $path = Join-Path (Get-HomeshRepo) '.env'
+    $lines = @([IO.File]::ReadAllLines($path))
+    if ($lines -match "^$key=") {
+        $lines = $lines | ForEach-Object { if ($_ -match "^$key=") { "$key=$value" } else { $_ } }
+    } else {
+        $lines += "$key=$value"
+    }
+    [IO.File]::WriteAllLines($path, [string[]]$lines, (New-Object Text.UTF8Encoding($false)))
+}

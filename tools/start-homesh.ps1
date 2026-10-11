@@ -300,6 +300,37 @@ function Install-StartAtSignin {
     }
 }
 
+function Update-LanAddress {
+    <#
+        Keep LAN_BASE_URL pointing at this PC.
+
+        The router hands out addresses, and after a restart this PC came back
+        with a different one. The server went on naming the old address, a
+        phone at home without Tailscale found nothing there, and it fell back
+        to the standby with the PC up and healthy. So every start checks, and
+        rewrites the line only when the address in it is no longer this
+        machine's -- a DHCP reservation on the router makes this a no-op.
+
+        Through configure-network.ps1, which also finds the receiver again: a
+        lease change that moved this PC may well have moved it too.
+    #>
+    $line = Select-String -Path (Join-Path (Get-HomeshRepo) '.env') -Pattern '^LAN_BASE_URL=(.*)$' |
+        Select-Object -First 1
+    $configured = if ($line) { $line.Matches[0].Groups[1].Value.Trim().Trim('"') } else { '' }
+    $configuredHost = ''
+    if ($configured) { try { $configuredHost = ([uri]$configured).Host } catch { } }
+
+    $mine = @(Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue | ForEach-Object IPAddress)
+    if ($configuredHost -and ($mine -contains $configuredHost)) { return }
+
+    Write-Host "This PC's address on the house network has changed; updating it." -ForegroundColor Yellow
+    try {
+        & (Join-Path $PSScriptRoot 'configure-network.ps1') | Out-Null
+    } catch {
+        Write-Host "  could not update it: $($_.Exception.Message)" -ForegroundColor Yellow
+    }
+}
+
 # ---- follow the storage ---------------------------------------------------
 
 if ($Sync) {
@@ -389,6 +420,7 @@ if ($Stop) {
 # ---- start ----------------------------------------------------------------
 
 Start-Engine
+Update-LanAddress
 
 # Before anything is started, settle which granted folders are actually here.
 # A folder on storage that is switched off cannot be mounted, and Docker's
