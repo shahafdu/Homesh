@@ -4,7 +4,7 @@
 
 .DESCRIPTION
     Addresses are configuration, never code. This script derives them and writes
-    them to .env, which is not tracked — so the repository keeps the logic and the
+    them to .env, which is not tracked -- so the repository keeps the logic and the
     house keeps its addresses.
 
     Two values are produced:
@@ -31,6 +31,7 @@ param(
     [switch]$Show
 )
 
+. "$PSScriptRoot\homesh-common.ps1"
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path -Parent $PSScriptRoot
 Set-Location $repo
@@ -49,7 +50,7 @@ function Get-LocalIPv4Address {
         Select-Object -Unique
 }
 
-# ── Find the receiver ───────────────────────────────────────────────────────
+# -- Find the receiver -------------------------------------------------------
 
 Write-Host "Discovering the receiver over SSDP..." -ForegroundColor Cyan
 
@@ -103,7 +104,7 @@ if (-not $denon) {
     Write-Host "  found receiver at $(Hide-Address $denon)" -ForegroundColor Green
 }
 
-# ── Pick the interface that can actually reach it ────────────────────────────
+# -- Pick the interface that can actually reach it ----------------------------
 
 $locals = @(Get-LocalIPv4Address)
 $chosen = $null
@@ -115,36 +116,23 @@ if ($denon) {
     $chosen = $locals | Where-Object { $_.StartsWith("$prefix.") } | Select-Object -First 1
 }
 if (-not $chosen) {
-    # Fall back to whichever interface carries the default route.
-    $best = Get-WmiObject Win32_IP4RouteTable |
-        Where-Object { $_.Destination -eq '0.0.0.0' } |
-        Sort-Object Metric1 | Select-Object -First 1
-    if ($best) {
-        $chosen = $locals | Where-Object { $_ -eq $best.InterfaceIndex } | Select-Object -First 1
-    }
-    if (-not $chosen) { $chosen = $locals | Select-Object -First 1 }
+    # Whichever interface carries the default route. This used to compare an
+    # address with an interface number, which never matched, so with the
+    # receiver off it took the first address on the machine -- often Tailscale's
+    # or Docker's, neither of which a phone at home can reach.
+    $chosen = Get-HomeshLanAddress
 }
 
 if (-not $chosen) { throw "Could not determine this machine's LAN address." }
 Write-Host "  this machine is $(Hide-Address $chosen)" -ForegroundColor Green
 
-# ── Write to .env ───────────────────────────────────────────────────────────
+# -- Write to .env -----------------------------------------------------------
 
 if (-not (Test-Path .env)) { throw ".env not found. Copy .env.example first." }
 
 $lanBase = "http://${chosen}:$Port"
-$lines = Get-Content .env
-
-function Set-EnvValue([string[]]$content, [string]$key, [string]$value) {
-    if ($content -match "^$key=") {
-        return $content | ForEach-Object { if ($_ -match "^$key=") { "$key=$value" } else { $_ } }
-    }
-    return $content + "$key=$value"
-}
-
-if ($denon) { $lines = Set-EnvValue $lines 'DENON_HOST' $denon }
-$lines = Set-EnvValue $lines 'LAN_BASE_URL' $lanBase
-Set-Content .env -Value $lines -Encoding utf8
+if ($denon) { Set-HomeshEnvValue 'DENON_HOST' $denon }
+Set-HomeshEnvValue 'LAN_BASE_URL' $lanBase
 
 Write-Host ""
 Write-Host "Wrote to .env (untracked):" -ForegroundColor Cyan
