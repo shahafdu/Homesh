@@ -201,7 +201,7 @@ and not started.
    Spending is granted per account. Every attempt is recorded and readable at
    `/api/ai/history`
 2. ⬜ **Spike** — EmbeddingGemma 2 on Hebrew and English, face models across
-   ages, two Hebrew Whisper builds, the old laptop's GPU. Decides the rest
+   ages, two Hebrew Whisper builds. Decides the rest
 3. ⬜ **Settings → AI** — a daily catalogue of free models; per job an ordered
    list, Gemini Flash for chat and commands, OpenRouter free models for bulk
    work, each falling back to the next

@@ -203,11 +203,16 @@ run so that the PC stays usable for everything else on it:
 ### A GPU, or another machine
 
 The worker takes jobs from the queue, so it can run anywhere that reaches the
-server — including the laptop. Whether its twelve-year-old GPU helps is a
-question for the spike rather than a guess: GPUs of that generation (Maxwell) are
-being dropped by current CUDA, so the likely route is Vulkan through
-whisper.cpp / llama.cpp, or simply the laptop's CPU — four full-speed cores
-may outrun four efficiency cores without the GPU at all. Measured, then decided.
+server — a machine with a usable GPU, if one ever arrives.
+
+**The old laptop is not that machine** (checked October 2026). It is a Dell
+Inspiron N5110: Intel HD 3000, and on some builds a GeForce GT 525M or 540M —
+Fermi, which CUDA dropped around 2016 and which has no Vulkan driver, so no
+current runtime can use it. Its 2011 Core i3/i5/i7 is no faster than this PC's
+Intel N95 across four cores, at best, and lacks the AVX2 and VNNI instructions
+that current inference code is built around. The N95 does the work.
+
+---
 
 ## 6. History and audit — everything the AI was asked and did
 
@@ -266,7 +271,6 @@ All of it `origin='ai'`, beside the file's own tags, never instead of them.
    - Faces: YuNet + SFace against InsightFace on a few hundred family photos,
      including the same people as children.
    - Whisper: ivrit.ai against Whisper-Hebrish on a few recordings of yours.
-   - The laptop: CPU and GPU against this PC, if it is to hand.
 2. **Settings → AI**, the model catalogue, per-job lists, Gemini beside
    OpenRouter.
 3. **The background worker** — queue, night window, limits, pause, progress.
@@ -286,7 +290,8 @@ Deliberately not in the plan above; worth revisiting when something changes:
 - **Speech in home videos** — find clips with speech, transcribe only those,
   overnight over weeks. Optional; nothing above depends on it. A GPU makes it
   realistic.
-- **A GPU** for all of the above — re-measure the laptop, or any newer card.
+- **A GPU** for all of the above — any card from the last several years; the
+  worker already runs wherever it is pointed.
 - **Captions for photos by a vision model** — would send the photo out, so only
   ever on an explicit request, never in bulk.
 - **A wake word.**
