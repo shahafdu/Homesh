@@ -59,6 +59,10 @@ many tokens, how much it cost and how long it took.
 copy of the content. `/api/ai/history` reads it back, administrators only,
 because it names who asked for what across the whole household.
 
+**Changing, by agreement (October 2026):** the plan keeps each person's own
+questions as a history they can search, repeat and clear, and adds a searchable
+audit log of every action. See `AI_PLAN.md`, section 6.
+
 ## The AI holds no privileges of its own
 
 It calls the same authenticated API the interface calls, as the person who asked,
@@ -100,6 +104,9 @@ on demand, never bulk.
 - ✅ `/api/ai/status` — whether it is on, which model, and for an administrator
   what has been spent this month.
 - ✅ `/api/ai/history` — what it has been asked to do.
+- ⬜ Everything else is planned in **`AI_PLAN.md`** — embeddings, video, faces,
+  the model catalogue, the background worker, history, voice and tagging, with
+  the order to build them in.
 - ⬜ Whisper on the PC for spoken commands, and the tagging pass over the
   library; then the questions that use them: commands, finding things, content
   search. Each one calls the layer above rather than a provider.
