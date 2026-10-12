@@ -122,12 +122,12 @@ routinely breaks another, and the tracker is what makes that visible.
 | 3 · Control tower & zones | ✅ done | Denon verified against the real receiver; rooms, sessions, transport, seek, volume, occupancy, the tower UI |
 | 4 · TV apps | ✅ done | Android TV app in daily use, **with its own video player** for what a WebView cannot decode. No Gradle: aapt2/javac/d8/apksigner, 33 KB, built by CI every commit. A phone launcher app too (`docs/PHONE_APP.md`). webOS dropped; Tizen only if a screen turns out to have no box |
 | 5 · Playlists & music intelligence | 🔨 | Winamp import done — 41 lists, 98.6% matched, sharing and reordering work. AcoustID tag repair not started |
-| 6 · AI | ⬜ | See **AI design decisions** below — agreed with Shahaf, not yet built. Backups landed first, deliberately |
+| 6 · AI | ⬜ | See **AI design decisions** below, and the full plan in `docs/AI_PLAN.md` (October 2026: embeddings, video, faces, model catalogue, night worker, history). Not yet built. Backups landed first, deliberately |
 | 7 · Photo availability | ⬜ | RAID→Drive sync, Wake-on-LAN, Takeout gap-fill |
 | 8 · Optional transcode | ❌ overtaken | It was never optional for this library — see §3.2.1 of ARCHITECTURE for what actually happened |
 | 9 · Public release | 🔨 | Public since August. Docs current as of 14 September 2026; screenshots outstanding |
 
-**Tests: 692 passing. Migrations: 026. Lint: clean. CI green.**
+**Tests: 696 passing. Migrations: 026. Lint: clean. CI green.**
 
 ### AI design decisions — agreed, not yet built
 
@@ -310,7 +310,8 @@ tools/            probe-denon.ps1, configure-network.ps1, run-tests.ps1,
                   standby.cmd" — the jobs done by double-click rather than
                   through a terminal
 docs/             ARCHITECTURE.md, USER_GUIDE.md, TV_APP.md, PHONE_APP.md,
-                  OFFSITE_BACKUPS.md, STANDBY.md, AI.md, TLS.md
+                  OFFSITE_BACKUPS.md, STANDBY.md, AI.md, AI_PLAN.md,
+                  TLS.md
 ```
 
 ---

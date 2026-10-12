@@ -190,29 +190,32 @@ not decisions waiting on anybody.
 
 ## AI — the layer is built, the uses are not
 
-Decisions are settled and recorded in CLAUDE.md and now in `docs/AI.md`.
+Decisions are settled and recorded in CLAUDE.md and `docs/AI.md`; **what comes
+next is planned in [`docs/AI_PLAN.md`](docs/AI_PLAN.md)**, agreed October 2026
+and not started.
 
 1. 🟡 **Provider layer** — OpenRouter with **gpt-oss**, free tier by default; the
    key lives in `.env` and the guards refuse one that reaches the repo. A paid
    model is refused outright while the monthly cap is zero, which it is until
    set; above zero the month's spend is summed and checked *before* each call.
-   Spending is granted per account. Every attempt is recorded — refusals
-   included, never the question or the answer — and readable at
+   Spending is granted per account. Every attempt is recorded and readable at
    `/api/ai/history`
-2. ⬜ **Whisper on the server, for spoken commands** — short utterances turned
-   into text on the PC, never sent anywhere: whisper.cpp on four efficiency
-   cores is far too slow to transcribe a video library and perfectly fast enough
-   for "play something mellow in the kitchen". The words then go to the command
-   layer, which calls the same API a person does
-3. ⬜ **Offline tagging pass** — one run over the library, cached in
-   `item_metadata` with `origin='ai'`, so later questions filter locally first
-4. ⬜ **Commands** — play here, stop there, skip, build a list. Calls the same
-   API as the interface, as the user, so permissions are enforced by the code
-   that already enforces them
-5. ⬜ **Find things** — natural language over the catalog, results actionable
-6. ⬜ **Content search** — documents first (cheap and exact), then photos
-   (CLIP embeddings), then audio and video transcription on demand only
-7. ⬜ **Activity history** — what the AI did, readable in the app
+2. ⬜ **Spike** — EmbeddingGemma 2 on Hebrew and English, face models across
+   ages, two Hebrew Whisper builds, the old laptop's GPU. Decides the rest
+3. ⬜ **Settings → AI** — a daily catalogue of free models; per job an ordered
+   list, Gemini Flash for chat and commands, OpenRouter free models for bulk
+   work, each falling back to the next
+4. ⬜ **Background worker** — nights only by default, capped CPU and memory,
+   resumable, pausable
+5. ⬜ **Embeddings** — photos, the 6,313 clips among them (frames and sound),
+   documents; then a search box that works on the standby
+6. ⬜ **Faces** — named people across the years, with confirm / reject / merge /
+   split that no later run overrides
+7. ⬜ **History and audit** — your questions, searchable and repeatable and
+   clearable; every action, searchable and kept
+8. ⬜ **Chat and commands** · 9. ⬜ **Voice** (Hebrew-tuned Whisper) ·
+   10. ⬜ **Tagging**
+11. 💤 **Later** — speech in home videos, a GPU, photo captions, a wake word
 
 **The AI cannot**: add or remove rooms · change permissions · act beyond the
 asking user's own access · delete anything without confirmation · send anything
