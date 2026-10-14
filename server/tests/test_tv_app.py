@@ -154,8 +154,29 @@ class TestWhereThePhoneFallsBack:
             PHONE_APPS="Notes|https://example.ts.net:9101; Trips | https://example.ts.net:9102",
         )
         assert body["apps"] == [
-            {"name": "Notes", "url": "https://example.ts.net:9101"},
-            {"name": "Trips", "url": "https://example.ts.net:9102"},
+            {"name": "Notes", "url": "https://example.ts.net:9101", "standby": None},
+            {"name": "Trips", "url": "https://example.ts.net:9102", "standby": None},
+        ]
+
+    def test_an_app_can_name_its_copy_on_the_standby(self, anon_client, monkeypatch):
+        """The phone falls back to it when the PC's copy does not answer."""
+        body = self._address(
+            anon_client, monkeypatch,
+            PHONE_APPS="Trips|https://example.ts.net:9102|https://standby.example.ts.net:9102 ",
+        )
+        assert body["apps"] == [{
+            "name": "Trips",
+            "url": "https://example.ts.net:9102",
+            "standby": "https://standby.example.ts.net:9102",
+        }]
+
+    def test_a_mistyped_standby_address_keeps_the_button(self, anon_client, monkeypatch):
+        body = self._address(
+            anon_client, monkeypatch,
+            PHONE_APPS="Trips|https://example.ts.net:9102|standby.example.ts.net:9102",
+        )
+        assert body["apps"] == [
+            {"name": "Trips", "url": "https://example.ts.net:9102", "standby": None},
         ]
 
     def test_a_mistyped_app_is_skipped_not_fatal(self, anon_client, monkeypatch):
@@ -163,7 +184,9 @@ class TestWhereThePhoneFallsBack:
             anon_client, monkeypatch,
             PHONE_APPS="No address;Bad|javascript:alert(1);Good|https://example.ts.net:9101",
         )
-        assert body["apps"] == [{"name": "Good", "url": "https://example.ts.net:9101"}]
+        assert body["apps"] == [
+            {"name": "Good", "url": "https://example.ts.net:9101", "standby": None},
+        ]
 
     def test_no_apps_configured_is_an_empty_list(self, anon_client, monkeypatch):
         assert self._address(anon_client, monkeypatch, PHONE_APPS="")["apps"] == []

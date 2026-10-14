@@ -67,7 +67,8 @@ public final class PhoneActivity extends Activity {
     private static final String KEY_STANDBY = "standby";
     /**
      * Other web apps to offer beside Homesh, as the PC last listed them: a JSON
-     * array of {name, url}. Configured on the PC (PHONE_APPS), never in here.
+     * array of {name, url, standby}, the last the same app's address on the
+     * standby, or null. Configured on the PC (PHONE_APPS), never in here.
      */
     private static final String KEY_APPS = "apps";
 
@@ -337,21 +338,77 @@ public final class PhoneActivity extends Activity {
                 JSONObject app = list.getJSONObject(i);
                 String name = app.optString("name", "");
                 String url = app.optString("url", "");
-                if (name.isEmpty() || !(url.startsWith("https://") || url.startsWith("http://"))) continue;
-                apps.addView(button("Open " + name, v -> openApp(name, url)));
+                if (name.isEmpty() || !isWeb(url)) continue;
+                String standby = app.isNull("standby") ? null : app.optString("standby", null);
+                String fallback = isWeb(standby) ? standby : null;
+                apps.addView(button("Open " + name, v -> openApp(name, url, fallback)));
             }
         } catch (Exception e) {
             Log.i(TAG, "could not read the app list: " + e.getMessage());
         }
     }
 
+    private static boolean isWeb(String url) {
+        return url != null && (url.startsWith("https://") || url.startsWith("http://"));
+    }
+
     /**
-     * Another app, in the same kind of tab as Homesh.
+     * Another app, in the same kind of tab as Homesh -- from the PC when it
+     * answers, from the standby when it does not.
+     *
+     * <p>The same order as Homesh itself, for the same reason: the PC's copy is
+     * the one changes belong to, so the standby's is for when there is no
+     * choice. An app with no copy on the standby opens straight away, with no
+     * check in front of it -- there would be nowhere else to go.
      *
      * <p>Not marked as handed off: closing it should come back to this screen
      * as it was, not to "Homesh was open".
      */
-    private void openApp(String name, String url) {
+    private void openApp(String name, String url, String standby) {
+        if (standby == null) {
+            launchApp(name, url);
+            return;
+        }
+        message.setText("Opening " + name + "…");
+        new Thread(() -> {
+            if (answers(url)) {
+                runOnUiThread(() -> launchApp(name, url));
+            } else if (answers(standby)) {
+                runOnUiThread(() -> {
+                    launchApp(name, standby);
+                    message.setText("Your PC is off, so " + name + " opened on the standby.");
+                });
+            } else {
+                runOnUiThread(() -> message.setText(
+                        name + " is not answering, on the PC or on the standby."));
+            }
+        }).start();
+    }
+
+    /**
+     * Whether a web address answers at all. The other apps are not Homesh and
+     * have no /api/health to ask, so any reply short of a server error counts:
+     * a sign-in redirect is still a machine that is up, and a dead one throws
+     * before it replies. Here rather than in Server, which the TV app shares --
+     * its version guard hashes the sources, and a change there would offer
+     * every screen an update to code no screen runs.
+     */
+    private static boolean answers(String url) {
+        HttpURLConnection conn = null;
+        try {
+            conn = (HttpURLConnection) new URL(url).openConnection();
+            conn.setConnectTimeout(4000);
+            conn.setReadTimeout(4000);
+            conn.setInstanceFollowRedirects(false);
+            return conn.getResponseCode() < 500;
+        } catch (Exception e) {
+            return false;
+        } finally {
+            if (conn != null) conn.disconnect();
+        }
+    }
+
+    private void launchApp(String name, String url) {
         try {
             startActivity(browserIntent(Uri.parse(url)));
         } catch (Exception e) {
