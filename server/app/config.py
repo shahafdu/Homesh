@@ -87,7 +87,9 @@ class Settings(BaseSettings):
     standby_origin: str = ""
 
     # Other web apps on the same machines, offered as buttons in the phone app
-    # beside "Open Homesh". `Name|https://address;Name|https://address`. Kept
+    # beside "Open Homesh". `Name|https://pc-address|https://standby-address`,
+    # separated by ';', the standby's address optional: with it, the phone
+    # falls back to the standby's copy when the PC's does not answer. Kept
     # in .env for the same reason as the line above: the addresses describe
     # one particular tailnet, and this repository is public.
     phone_apps: str = ""

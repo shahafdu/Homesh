@@ -49,6 +49,19 @@ which is deliberately not the server — the app has to be installable when the
 server cannot be reached, which is the situation it exists for. Your own server
 offers the same build at `/phone`.
 
+## Other apps beside Homesh
+
+`PHONE_APPS` in the PC's `.env` lists other web apps to offer as buttons under
+**Open Homesh** -- `Name|address on the PC`, separated by semicolons. The phone
+learns the list from the PC, never from the standby, and replaces it whole each
+time, so an app removed on the PC disappears from the phone too.
+
+An optional third field is the same app's address on the standby:
+`Name|address on the PC|address on the standby`. With it, the button tries the
+PC's copy first and opens the standby's only when the PC's does not answer --
+the same order as Homesh itself -- and says on the screen that it did. Without
+it, the button opens the PC's address straight away, as before. From 1.5.0.
+
 ## Which version, and updating it
 
 The version installed is shown at the bottom of the screen, under the buttons.

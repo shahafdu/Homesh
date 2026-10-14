@@ -109,6 +109,10 @@ So the phone app needs to reach the PC once, with the standby configured, before
 the fallback exists -- which is the ordinary case, since the PC is on most of
 the time.
 
+Other apps the phone offers beside Homesh follow the same order when they are
+also kept on the standby: give each its standby address as the third field of
+its `PHONE_APPS` entry (see `docs/PHONE_APP.md`).
+
 **One passkey for both machines.** A passkey belongs to a name -- WebAuthn's
 "relying party id" -- and works only where that name applies. Passkeys used to
 belong to the PC's full host name, so the standby, under a different one, could

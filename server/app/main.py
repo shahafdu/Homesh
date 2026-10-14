@@ -319,19 +319,25 @@ def tv_address() -> Response:
     )
 
 
-def phone_apps(configured: str) -> list[dict[str, str]]:
+def phone_apps(configured: str) -> list[dict[str, str | None]]:
     """Parse PHONE_APPS into buttons, dropping what is not a web address.
+
+    Each entry is `Name|address on the PC|address on the standby`, the last
+    optional: the phone opens the PC's copy when it answers and the standby's
+    when it does not, the same order it follows for Homesh itself.
 
     A malformed entry is skipped rather than refused: it is a line somebody
     typed into .env by hand, and one typo should not take the others, or the
-    address endpoint the phone depends on, down with it.
+    address endpoint the phone depends on, down with it. A malformed standby
+    address costs only the fallback, not the button.
     """
-    apps = []
+    web = ("https://", "http://")
+    apps: list[dict[str, str | None]] = []
     for entry in configured.split(";"):
-        name, _, url = entry.partition("|")
-        name, url = name.strip(), url.strip()
-        if name and url.startswith(("https://", "http://")):
-            apps.append({"name": name, "url": url})
+        name, url, standby, *_ = [*(part.strip() for part in entry.split("|")), "", ""]
+        if name and url.startswith(web):
+            fallback = standby if standby.startswith(web) else None
+            apps.append({"name": name, "url": url, "standby": fallback})
     return apps
 
 
