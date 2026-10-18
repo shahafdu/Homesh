@@ -178,3 +178,75 @@ def test_an_expired_token_is_always_replaced(seconds):
     fake = FakeCreds(seconds_left=seconds)
     creds._creds = fake
     assert creds.token() == "refreshed-1"
+
+
+class TestAReadThatBreaksOffIsResumed:
+    """The headers have gone out with a length by the time Drive cuts a read, so
+    a short body cannot be reported -- the browser only sees the connection
+    fail, and pdf.js abandons the whole document over one missing chunk."""
+
+    DATA = bytes(range(256)) * 4096  # 1 MiB, every byte telling where it is from
+
+    class Response:
+        def __init__(self, body: bytes, cut_after: int | None):
+            self.status_code = 206
+            self.body, self.cut_after = body, cut_after
+
+        def iter_bytes(self, chunk_size: int):
+            import httpx
+
+            for i in range(0, len(self.body), chunk_size):
+                if self.cut_after is not None and i >= self.cut_after:
+                    raise httpx.ReadError("connection reset")
+                yield self.body[i:i + chunk_size]
+
+    class Client:
+        def __init__(self, data: bytes, cuts: list[int | None]):
+            self.data, self.cuts, self.ranges = data, list(cuts), []
+
+        def stream(self, _method, _url, params=None, headers=None):
+            from contextlib import contextmanager
+
+            first, _, last = headers["Range"].removeprefix("bytes=").partition("-")
+            body = self.data[int(first):(int(last) + 1) if last else None]
+            self.ranges.append(headers["Range"])
+            cut = self.cuts.pop(0) if self.cuts else None
+
+            @contextmanager
+            def opened():
+                yield TestAReadThatBreaksOffIsResumed.Response(body, cut)
+
+            return opened()
+
+    def _connector(self, monkeypatch, cuts):
+        import app.sources.gdrive as gdrive
+
+        drive = GoogleDriveConnector("root", Path("/nowhere/key.json"))
+        drive.remember("book.pdf", "file-id")
+        client = self.Client(self.DATA, cuts)
+        monkeypatch.setattr(drive, "_http", lambda: client)
+        monkeypatch.setattr(drive.creds, "token", lambda: "token")
+        monkeypatch.setattr(gdrive, "RESUME_PAUSE", 0)
+        return drive, client
+
+    def test_it_picks_up_from_the_byte_it_reached(self, monkeypatch):
+        drive, client = self._connector(monkeypatch, cuts=[512 * 1024])
+        got = b"".join(drive.open_range("book.pdf", 1000, len(self.DATA) - 1))
+        assert got == self.DATA[1000:]
+        assert client.ranges == [f"bytes=1000-{len(self.DATA) - 1}",
+                                 f"bytes={1000 + 512 * 1024}-{len(self.DATA) - 1}"]
+
+    def test_an_open_ended_range_stays_open_ended(self, monkeypatch):
+        drive, client = self._connector(monkeypatch, cuts=[256 * 1024])
+        assert b"".join(drive.open_range("book.pdf")) == self.DATA
+        assert client.ranges[-1] == f"bytes={256 * 1024}-"
+
+    def test_an_outage_is_given_up_on(self, monkeypatch):
+        import httpx
+
+        from app.sources.gdrive import RESUMES
+
+        drive, client = self._connector(monkeypatch, cuts=[0] * (RESUMES + 1))
+        with pytest.raises(httpx.ReadError):
+            b"".join(drive.open_range("book.pdf"))
+        assert len(client.ranges) == RESUMES + 1
