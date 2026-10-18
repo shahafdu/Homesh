@@ -35,6 +35,11 @@ export default function PdfView(props: { url: string; title: string }) {
   const host = useRef<HTMLDivElement | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pages, setPages] = useState(0);
+  // Bumped to open the document again. A document over Drive is opened with a
+  // handful of range requests, and one that fails takes the whole document
+  // with it -- so a dropped connection for a few seconds left a book that
+  // could only be reopened by leaving it and coming back.
+  const [attempt, setAttempt] = useState(0);
 
   // Everything the observer callback needs, out of React's way: it runs far
   // more often than anything should re-render.
@@ -222,7 +227,19 @@ export default function PdfView(props: { url: string; title: string }) {
         if (cancelled) watcher.disconnect();
         else observer.current = watcher;
       } catch (e) {
-        if (!cancelled) setError(e instanceof Error ? e.message : String(e));
+        if (cancelled) return;
+        // Once by itself, quietly: the usual cause is a moment's loss of
+        // connection, and the second try simply works.
+        if (attempt === 0) {
+          setAttempt(1);
+          return;
+        }
+        const said = e instanceof Error ? e.message : String(e);
+        setError(
+          /fetch|network/i.test(said)
+            ? "the connection dropped while it was being read."
+            : said,
+        );
       }
     })();
 
@@ -243,11 +260,25 @@ export default function PdfView(props: { url: string; title: string }) {
       doc.current = null;
       void held?.destroy?.();
     };
-  }, [props.url, draw, release]);
+  }, [props.url, attempt, draw, release]);
 
   return (
     <div className="pdf">
-      {error && <div className="error">Could not display this document: {error}</div>}
+      {error && (
+        <div className="error">
+          Could not display this document: {error}{" "}
+          <button
+            type="button"
+            onClick={() => {
+              setError(null);
+              setPages(0);
+              setAttempt((n) => n + 1);
+            }}
+          >
+            Try again
+          </button>
+        </div>
+      )}
       {!error && pages === 0 && <p className="muted">Opening {props.title}…</p>}
       <div ref={host} className="pdf-pages" />
     </div>

@@ -85,6 +85,14 @@ REFRESH_TIMEOUT = 20.0
 AVAILABLE_FOR = 60.0
 
 
+# How often a read that breaks off is picked up again, and the pause before
+# each. A dropped connection to Google is usually a few seconds of the house's
+# own internet; a minute of it is an outage, and waiting longer only holds a
+# browser's request open for something that is not coming.
+RESUMES = 3
+RESUME_PAUSE = 1.0
+
+
 class DriveError(Exception):
     pass
 
@@ -427,33 +435,51 @@ class GoogleDriveConnector:
         if file_id is None:
             raise FileNotFoundError(path)
 
-        headers = {"Range": f"bytes={start}-{'' if end is None else end}"}
         # One client per connector, kept open. A new one per range request meant
         # a fresh TCP connection and TLS handshake to Google every time, and a
         # browser asks for several ranges to play one song — so the handshake was
         # a large share of the wait before any audio arrived.
         client = self._http()
-        began = time.monotonic()
-        try:
-            with client.stream(
-                "GET",
-                f"{API}/files/{file_id}",
-                params={"alt": "media", "supportsAllDrives": "true"},
-                headers={"Authorization": f"Bearer {self.creds.token()}", **headers},
-            ) as response:
-                if response.status_code not in (200, 206):
-                    raise DriveError(f"download failed: {response.status_code}")
-                waited = time.monotonic() - began
-                if waited > 5:
-                    log.warning("drive took %.1fs to begin %s", waited, rel)
-                yield from response.iter_bytes(chunk_size=256 * 1024)
-        except httpx.PoolTimeout as exc:
-            # Every connection to this folder is in use. Refusing is the right
-            # answer and used to be impossible: with no pool timeout the read
-            # simply waited, inside a response whose headers had already gone
-            # out, so the screen showed a film that was never going to start.
-            log.warning("too many reads at once for this folder; refused %s", rel)
-            raise DriveError("too many reads at once from this folder") from exc
+
+        # A read that breaks off is picked up from the byte it reached. By then
+        # the response's headers have gone out with a length, so a short body
+        # is not an error anybody can be told about: the browser sees the
+        # connection fail, and pdf.js gives up on the whole document over one
+        # missing chunk -- "Failed to fetch" on a 65 MB book, while the house's
+        # internet dropped for a few seconds and Drive cut the read.
+        sent = 0
+        for attempt in range(RESUMES + 1):
+            began = time.monotonic()
+            at = start + sent
+            headers = {"Range": f"bytes={at}-{'' if end is None else end}"}
+            try:
+                with client.stream(
+                    "GET",
+                    f"{API}/files/{file_id}",
+                    params={"alt": "media", "supportsAllDrives": "true"},
+                    headers={"Authorization": f"Bearer {self.creds.token()}", **headers},
+                ) as response:
+                    if response.status_code not in (200, 206):
+                        raise DriveError(f"download failed: {response.status_code}")
+                    waited = time.monotonic() - began
+                    if waited > 5:
+                        log.warning("drive took %.1fs to begin %s", waited, rel)
+                    for chunk in response.iter_bytes(chunk_size=256 * 1024):
+                        sent += len(chunk)
+                        yield chunk
+                return
+            except httpx.PoolTimeout as exc:
+                # Every connection to this folder is in use. Refusing is the right
+                # answer and used to be impossible: with no pool timeout the read
+                # simply waited, inside a response whose headers had already gone
+                # out, so the screen showed a film that was never going to start.
+                log.warning("too many reads at once for this folder; refused %s", rel)
+                raise DriveError("too many reads at once from this folder") from exc
+            except httpx.TransportError:
+                if attempt == RESUMES:
+                    raise
+                log.warning("drive read of %s broke off at byte %d; resuming", rel, start + sent)
+                time.sleep(RESUME_PAUSE * (attempt + 1))
 
     @staticmethod
     def is_exportable_only(mime: str | None) -> bool:
