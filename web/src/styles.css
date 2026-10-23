@@ -1266,7 +1266,52 @@ button.danger {
 /* A document drawn into the page. Scrolls as one continuous run of pages, which
    is how a phone expects to read; each page keeps a visible edge so the break is
    obvious. */
-.pdf { width: 100%; height: 100%; overflow: auto; }
+.pdf {
+  width: 100%; height: 100%;
+  display: flex; flex-direction: column;
+}
+/* The pages scroll; the bar above them does not, so the page number and the
+   search box stay where they are while the document moves under them. */
+.pdf-scroll { flex: 1; min-height: 0; overflow: auto; position: relative; }
+
+/* Page N of M, and search, above a document. */
+.doc-bar {
+  flex: none;
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px;
+  padding: 0 4px 10px;
+}
+.doc-page { font-size: 13px; color: var(--muted); white-space: nowrap; }
+.doc-page-box {
+  width: auto; padding: 4px 6px; text-align: center;
+  font: inherit; color: var(--ink);
+  background: var(--surface); border: 1px solid var(--line); border-radius: 6px;
+}
+.doc-search { flex: 1; min-width: 220px; display: flex; align-items: center; gap: 6px; }
+.doc-search-box {
+  flex: 1; min-width: 0; padding: 7px 10px;
+  font: inherit; font-size: 14px; color: var(--ink);
+  background: var(--surface); border: 1px solid var(--line); border-radius: 8px;
+}
+.doc-search-status { font-size: 12px; color: var(--muted); white-space: nowrap; }
+.doc-btn {
+  flex: none; width: 34px; height: 32px;
+  background: transparent; color: var(--ink);
+  border: 1px solid var(--line); border-radius: 8px;
+  font-size: 18px; line-height: 1; cursor: pointer;
+}
+.doc-btn:hover { background: var(--surface); }
+/* Sixteen pixels, or a phone's browser zooms the page in to type and leaves it
+   zoomed afterwards. */
+@media (max-width: 640px) {
+  .doc-search-box, .doc-page-box { font-size: 16px; }
+  .doc-search { min-width: 100%; }
+}
+
+/* A plain-text document with the same bar. */
+.doc { width: 100%; max-width: 78ch; height: 100%; display: flex; flex-direction: column; }
+.doc .v-text { flex: 1; min-height: 0; height: auto; max-width: none; }
+.doc-hit { background: #ffe27a; color: #1f1b16; border-radius: 2px; }
+.doc-hit.current { background: #ff9f43; outline: 2px solid var(--accent); }
 .pdf-pages { display: flex; flex-direction: column; gap: 12px; padding: 4px; }
 .pdf-page {
   display: block; width: 100%; height: auto;
@@ -1663,9 +1708,20 @@ button.danger {
    pages arrive — and so that "what is in view" means something, which is what
    lazy drawing depends on. */
 .pdf-slot {
+  position: relative;
   width: 100%;
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: 4px;
 }
 .pdf-slot .pdf-page { display: block; border: 0; border-radius: 4px; }
+
+/* Search matches, laid over the drawn page. Multiplied, so the type shows
+   through the colour rather than being covered by it. */
+.pdf-marks { position: absolute; inset: 0; pointer-events: none; }
+.pdf-hit {
+  position: absolute;
+  background: rgba(255, 205, 40, .45); mix-blend-mode: multiply;
+  border-radius: 2px;
+}
+.pdf-hit.current { background: rgba(255, 130, 0, .6); outline: 2px solid #e06a00; }
