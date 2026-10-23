@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "./api";
 import PdfView from "./PdfView";
 import RawView from "./RawView";
+import TextView from "./TextView";
 import FileActions from "./FileActions";
 import PlayTo from "./PlayTo";
 import { useSwipe } from "./Slideshow";
@@ -151,7 +152,7 @@ export default function Viewer(props: {
     // there is somewhere to scroll to, and change file once there is not. The
     // direction matters: swiping left goes to the next file, and that is only
     // ours when the content has no more to reveal on its right.
-    const scroller = target.closest<HTMLElement>(".raw-body, .pdf, .v-text");
+    const scroller = target.closest<HTMLElement>(".raw-body, .pdf-scroll, .v-text");
     if (scroller) {
       const slack = scroller.scrollWidth - scroller.clientWidth;
       if (slack <= 1) return true;   // nothing to scroll; the gesture is ours
@@ -198,6 +199,13 @@ export default function Viewer(props: {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      // Typing in a box is not navigating. The arrows move the caret in a
+      // document's search, and Escape leaves the box rather than the file.
+      const target = e.target as HTMLElement | null;
+      if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA")) {
+        if (e.key === "Escape") target.blur();
+        return;
+      }
       if (e.key === "Escape") closeRef.current();
       else if (e.key === "ArrowRight") step(1);
       else if (e.key === "ArrowLeft") step(-1);
@@ -508,7 +516,7 @@ export default function Viewer(props: {
             </div>
           )}
 
-          {url && file.kind === "doc" && text !== null && <pre className="v-text">{text}</pre>}
+          {url && file.kind === "doc" && text !== null && <TextView text={text} />}
 
           {url && file.kind === "doc" && text === null && previewable && (
             // An office document is rendered by the server and arrives as a PDF;
