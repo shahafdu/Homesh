@@ -24,7 +24,10 @@ export type SearchState =
  * A browser's own find cannot see a PDF -- the pages are pictures drawn into a
  * canvas -- and a phone's browser hides find behind a menu if it has one at
  * all. So a document carries its own, and Ctrl+F opens it rather than the
- * browser's, which would find nothing. */
+ * browser's, which would find nothing.
+ *
+ * Folded to a magnifier until it is wanted. It lives in the viewer's control
+ * row, and an open box there is a row's width that most documents never use. */
 export default function DocSearch(props: {
   state: SearchState;
   onSearch: (query: string) => void;
@@ -33,12 +36,14 @@ export default function DocSearch(props: {
 }) {
   const box = useRef<HTMLInputElement | null>(null);
   const [query, setQuery] = useState("");
+  const [open, setOpen] = useState(false);
   const { state } = props;
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "f") {
         e.preventDefault();
+        setOpen(true);
         box.current?.focus();
         box.current?.select();
       }
@@ -47,14 +52,34 @@ export default function DocSearch(props: {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
+  useEffect(() => {
+    if (open) box.current?.focus();
+  }, [open]);
+
+  const close = () => {
+    setQuery("");
+    if (box.current) box.current.dataset.last = "";
+    props.onClear();
+    setOpen(false);
+  };
+
+  if (!open) {
+    return (
+      <button type="button" className="v-btn doc-find" onClick={() => setOpen(true)}
+        aria-label="Search in this document" title="Search in this document (Ctrl+F)">
+        <FindGlyph />
+      </button>
+    );
+  }
+
   const found = state.phase === "idle" ? 0 : state.found;
   const status =
     state.phase === "searching"
-      ? `${found} found · page ${state.done} of ${state.of}…`
+      ? `${found} · p${state.done}/${state.of}…`
       : state.phase === "done"
         ? found === 0
-          ? "Not found"
-          : `${state.at + 1} of ${found}`
+          ? "None"
+          : `${state.at + 1}/${found}`
         : "";
 
   return (
@@ -76,7 +101,7 @@ export default function DocSearch(props: {
         ref={box}
         type="search"
         className="doc-search-box"
-        placeholder="Search in this document"
+        placeholder="Search"
         aria-label="Search in this document"
         value={query}
         enterKeyHint="search"
@@ -91,6 +116,12 @@ export default function DocSearch(props: {
           if (e.key === "Enter" && e.shiftKey) {
             e.preventDefault();
             props.onStep(-1);
+          } else if (e.key === "Escape") {
+            // Folds the search, and goes no further: the viewer would
+            // otherwise take the same Escape as "close the document".
+            e.preventDefault();
+            e.stopPropagation();
+            close();
           }
         }}
       />
@@ -111,6 +142,20 @@ export default function DocSearch(props: {
           </button>
         </>
       )}
+      <button type="button" className="doc-btn" onClick={close}
+        aria-label="Close the search" title="Close the search (Esc)">
+        ✕
+      </button>
     </form>
+  );
+}
+
+function FindGlyph() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      strokeWidth="2.2" strokeLinecap="round" aria-hidden="true">
+      <circle cx="10.5" cy="10.5" r="6.5" />
+      <path d="M15.5 15.5 21 21" />
+    </svg>
   );
 }

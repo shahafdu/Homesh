@@ -1045,7 +1045,7 @@ export default function TvApp() {
               // drawn, the old canvas underneath, and the new name over them.
               <div className="tv-paper" key={now.item_id}>
                 {paper === "pdf" ? (
-                  <PdfView url={now.url} title={now.filename ?? "Document"} tools={false} />
+                  <PdfView url={now.url} title={now.filename ?? "Document"} />
                 ) : (
                   <TvText url={now.url} filename={now.filename ?? ""} />
                 )}

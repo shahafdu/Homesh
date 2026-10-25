@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
 import DocSearch, { pattern, type SearchState } from "./DocSearch";
 
@@ -48,11 +49,11 @@ type Hit = { page: number; start: number; end: number };
  *  search of a rulebook would otherwise mark every page solid. */
 const HIT_LIMIT = 2000;
 
-/** `tools` is the page number and search above the document. Off on a
- *  television, where the only input is a remote's direction keys: a search box
- *  there is a focus trap, not a feature. */
-export default function PdfView(props: { url: string; title: string; tools?: boolean }) {
-  const tools = props.tools ?? true;
+/** `bar` is where the page number and search go: a place in the viewer's own
+ *  control row, so they cost no height of their own. Absent on a television,
+ *  where the only input is a remote's direction keys and a search box is a
+ *  focus trap, not a feature. */
+export default function PdfView(props: { url: string; title: string; bar?: HTMLElement | null }) {
   const host = useRef<HTMLDivElement | null>(null);
   const scroller = useRef<HTMLDivElement | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -482,8 +483,8 @@ export default function PdfView(props: { url: string; title: string; tools?: boo
 
   return (
     <div className="pdf">
-      {tools && pages > 0 && (
-        <div className="doc-bar">
+      {props.bar && pages > 0 && createPortal(
+        <>
           <form
             className="doc-page"
             onSubmit={(e) => {
@@ -494,7 +495,6 @@ export default function PdfView(props: { url: string; title: string; tools?: boo
               (document.activeElement as HTMLElement | null)?.blur();
             }}
           >
-            Page{" "}
             <input
               className="doc-page-box"
               inputMode="numeric"
@@ -508,8 +508,8 @@ export default function PdfView(props: { url: string; title: string; tools?: boo
               }}
               onChange={(e) => setJump(e.target.value.replace(/\D/g, ""))}
               onBlur={() => setJump(null)}
-            />{" "}
-            of {pages}
+            />
+            <span className="doc-of">/ {pages}</span>
           </form>
           <DocSearch
             state={search}
@@ -522,7 +522,8 @@ export default function PdfView(props: { url: string; title: string; tools?: boo
               setSearch({ phase: "idle" });
             }}
           />
-        </div>
+        </>,
+        props.bar,
       )}
       {error && (
         <div className="error">

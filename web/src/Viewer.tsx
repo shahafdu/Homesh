@@ -94,6 +94,8 @@ export default function Viewer(props: {
   // reach: a document is rendered to PDF on the server the first time.
   const [printing, setPrinting] = useState(false);
   const [printNote, setPrintNote] = useState<string | null>(null);
+  // Where a document's page number and search are drawn, in the header row.
+  const [docBar, setDocBar] = useState<HTMLElement | null>(null);
   const [showActions, setShowActions] = useState(false);
   /** Whether the header is showing the whole filename or one line of it. */
   const [wholeName, setWholeName] = useState(false);
@@ -320,6 +322,12 @@ export default function Viewer(props: {
             </button>
           </div>
 
+          {/* The document's page number and search, filled in by the view
+              below. Here rather than in a bar of their own above the pages:
+              that was a second header, and on a phone it took a fifth of the
+              screen to say "page 1 of 27". */}
+          {file.kind === "doc" && <span className="v-doc" ref={setDocBar} />}
+
           <span className="v-gap" />
 
         <div className="v-actions">
@@ -516,7 +524,7 @@ export default function Viewer(props: {
             </div>
           )}
 
-          {url && file.kind === "doc" && text !== null && <TextView text={text} />}
+          {url && file.kind === "doc" && text !== null && <TextView text={text} bar={docBar} />}
 
           {url && file.kind === "doc" && text === null && previewable && (
             // An office document is rendered by the server and arrives as a PDF;
@@ -526,6 +534,7 @@ export default function Viewer(props: {
             <PdfView
               url={needsConversion(file.ext) ? documentUrl(file.item_id) : url}
               title={file.filename}
+              bar={docBar}
             />
           )}
 

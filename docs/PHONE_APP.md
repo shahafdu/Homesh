@@ -57,10 +57,50 @@ learns the list from the PC, never from the standby, and replaces it whole each
 time, so an app removed on the PC disappears from the phone too.
 
 An optional third field is the same app's address on the standby:
-`Name|address on the PC|address on the standby`. With it, the button tries the
-PC's copy first and opens the standby's only when the PC's does not answer --
-the same order as Homesh itself -- and says on the screen that it did. Without
-it, the button opens the PC's address straight away, as before. From 1.5.0.
+`Name|address on the PC|address on the standby`. Without it, the button opens
+the PC's address straight away in a tab, the way Homesh opens.
+
+With it, the app opens in a screen of the phone app's own (from 1.6.0), which
+keeps it on whichever machine is answering:
+
+- **Opening** asks both machines at once. The PC is used if it answers within
+  2.5 seconds, the standby otherwise, so a PC that is off or overloaded costs a
+  couple of seconds rather than the sum of two timeouts.
+- **A page on the PC** that fails, returns a server error, or is still loading
+  after 8 seconds moves the app to the standby, if the standby answers.
+- **Once a minute while it is on screen**, a keepalive asks the PC. A PC that
+  does not answer quickly moves the app to the standby, and a PC that answers
+  again moves it back. The move back waits while something is being typed, so
+  a reload never takes half a sentence with it.
+
+The page keeps its place, since the same path is opened on the other machine. A
+strip at the top says when the app is on the standby, and tapping it checks the
+PC there and then.
+
+Why not a tab, like Homesh: once a Custom Tab is showing, the phone app is
+behind it, and Android 15 onwards does not let an app behind another one start
+anything. So a tab can be pointed at the right machine when it opens, and never
+corrected afterwards. The cost of a WebView is a cookie jar of its own and no
+passkeys or Google sign-in. Each app is signed into once there, with its PIN.
+Homesh needs its passkey, so it stays in a tab.
+
+### What the phone keeps, and how
+
+The addresses come from the PC at run time: the PC's on the house network and
+its tailnet name, the standby's, and this list of apps. None of them is in the
+app or in this repository. The phone has to remember them, because the time it
+needs the standby's address is when the PC is off and cannot be asked.
+
+They are stored encrypted (from 1.6.0), with AES-GCM under a key made in the
+Android Keystore. The key cannot be read out by the app or by anybody else,
+and on most phones it is held in hardware, so a copy of the app's files holds
+only ciphertext. Values stored in the clear by an older version are encrypted
+the first time they are read. Below Android 6, which has no Keystore AES,
+nothing is kept, and the phone asks the PC each time.
+
+One exception: an app opened in its own screen is a WebView, and a WebView keeps
+its own history and cookies, which name the app's address. That data is private
+to the phone app, like everything else it stores, but it is not encrypted by it.
 
 ## Which version, and updating it
 
