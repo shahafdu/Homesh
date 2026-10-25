@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
 import DocSearch, { pattern, type SearchState } from "./DocSearch";
 
@@ -7,7 +8,7 @@ import DocSearch, { pattern, type SearchState } from "./DocSearch";
 const MARK_LIMIT = 2000;
 
 /** A plain-text document, with the same search a PDF has. */
-export default function TextView(props: { text: string }) {
+export default function TextView(props: { text: string; bar?: HTMLElement | null }) {
   const [query, setQuery] = useState("");
   const [at, setAt] = useState(0);
   const marks = useRef<(HTMLElement | null)[]>([]);
@@ -39,7 +40,7 @@ export default function TextView(props: { text: string }) {
 
   return (
     <div className="doc">
-      <div className="doc-bar">
+      {props.bar && createPortal(
         <DocSearch
           state={state}
           onSearch={(q) => {
@@ -48,8 +49,9 @@ export default function TextView(props: { text: string }) {
           }}
           onStep={(d) => pieces.found && setAt((i) => (i + d + pieces.found) % pieces.found)}
           onClear={() => setQuery("")}
-        />
-      </div>
+        />,
+        props.bar,
+      )}
       <pre className="v-text">
         {pieces.parts.map((p, i) => {
           if (typeof p === "string") return p;

@@ -1,8 +1,6 @@
 package com.homesh.tv;
 
-import android.content.Context;
 import android.content.Intent;
-import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
 import android.graphics.Color;
@@ -61,7 +59,6 @@ import android.app.Activity;
 public final class PhoneActivity extends Activity {
 
     private static final String TAG = "HomeshPhone";
-    private static final String PREFS = "homesh.phone";
     private static final String KEY_ORIGIN = "origin";
     /** The standby on Oracle, tried when neither of the PC's addresses answers. */
     private static final String KEY_STANDBY = "standby";
@@ -71,9 +68,14 @@ public final class PhoneActivity extends Activity {
      * standby, or null. Configured on the PC (PHONE_APPS), never in here.
      */
     private static final String KEY_APPS = "apps";
+    /** The PC's address on the house network, learned or typed. */
+    private static final String KEY_LAN = "lan";
 
     /** Tailscale's own package. Declared in <queries> so it can be seen at all. */
     private static final String TAILSCALE = "com.tailscale.ipn";
+
+    /** The longest the opening check waits: Server's own timeout, plus slack. */
+    private static final long PATIENT_MS = 5000;
 
     private TextView message;
     private Button openHomesh;
@@ -109,6 +111,13 @@ public final class PhoneActivity extends Activity {
      */
     private boolean handedOff;
 
+    /**
+     * Whether one of the other apps was opened over this screen. Coming back
+     * from it is coming back to this screen as it was -- not a reason to check
+     * and open Homesh, which is what returning otherwise does.
+     */
+    private boolean inApp;
+
     @Override
     protected void onCreate(Bundle state) {
         super.onCreate(state);
@@ -140,8 +149,15 @@ public final class PhoneActivity extends Activity {
         apps.setOrientation(LinearLayout.VERTICAL);
         showApps();
         searchAgain = button("Search on this network", v -> check(true));
-        changeAddress = button("Change the address",
-                v -> startActivity(new Intent(this, SetupActivity.class)));
+        changeAddress = button("Change the address", v -> {
+            // The setup screen is the television's too, and reads the address
+            // from the plain store. Put there for as long as that screen is
+            // open, so the box shows the current address and backing out
+            // returns here; lan() takes it back into the vault on return.
+            String current = lan();
+            if (current != null) Prefs.setServer(this, current);
+            startActivity(new Intent(this, SetupActivity.class));
+        });
 
         // Which build is installed, said on the screen rather than buried in
         // Android's app settings -- it is the first question when something
@@ -170,6 +186,14 @@ public final class PhoneActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
+
+        if (inApp) {
+            inApp = false;
+            message.setText("");
+            if (reachedAt != null) openHomesh.setVisibility(View.VISIBLE);
+            showActions(true);
+            return;
+        }
 
         if (handedOff) {
             // Back from the tab, on purpose. Offer to open it again rather than
@@ -218,16 +242,20 @@ public final class PhoneActivity extends Activity {
         checking = true;
 
         new Thread(() -> {
-            SharedPreferences prefs = getSharedPreferences(PREFS, Context.MODE_PRIVATE);
-            String lan = Prefs.server(this);
-            String origin = prefs.getString(KEY_ORIGIN, null);
-            String standby = prefs.getString(KEY_STANDBY, null);
+            String lan = lan();
+            String origin = Vault.get(this, KEY_ORIGIN);
+            String standby = Vault.get(this, KEY_STANDBY);
 
             // The PC first, by either of its addresses: it is the stronger
             // machine, it holds every file, and it is where changes belong. The
             // standby only when neither answers -- the PC is off, not merely
             // slow -- so being at home with the PC on never touches Oracle.
-            String reachable = firstThatAnswers(origin, lan);
+            // All three are asked at once, so a PC that is off costs one
+            // timeout before the standby opens, not three in a row.
+            boolean standbyNow = !sweep && standby != null;
+            String reachable = Reach.pick(new String[] {origin, lan},
+                    standbyNow ? new String[] {standby} : new String[0],
+                    Server::reachable, PATIENT_MS, PATIENT_MS);
 
             // A search of this network looks for the PC, so it comes before the
             // standby: somebody who pressed it expects the PC to be here.
@@ -235,20 +263,20 @@ public final class PhoneActivity extends Activity {
                 runOnUiThread(() -> message.setText("Searching this network…"));
                 String found = Discovery.find();
                 if (found != null) {
-                    Prefs.setServer(this, found);
+                    Vault.put(this, KEY_LAN, found);
                     reachable = found;
                 }
-            }
-
-            if (reachable == null && standby != null) {
-                runOnUiThread(() -> message.setText("Your PC is not answering. Trying the standby…"));
-                if (Server.reachable(standby)) reachable = standby;
+                if (reachable == null && standby != null) {
+                    runOnUiThread(() -> message.setText(
+                            "Your PC is not answering. Trying the standby…"));
+                    if (Server.reachable(standby)) reachable = standby;
+                }
             }
 
             if (reachable != null) {
                 // Learned while it is possible to learn it, so the next time the
                 // phone is away from home it already knows where to look.
-                rememberOrigin(reachable, prefs);
+                rememberOrigin(reachable);
                 String go = reachable;
                 boolean onStandby = reachable.equals(standby);
                 runOnUiThread(() -> {
@@ -279,7 +307,7 @@ public final class PhoneActivity extends Activity {
     }
 
     /** Ask the server where else it can be reached, and keep the answer. */
-    private void rememberOrigin(String base, SharedPreferences prefs) {
+    private void rememberOrigin(String base) {
         HttpURLConnection conn = null;
         try {
             conn = (HttpURLConnection) new URL(base + "/tv.address").openConnection();
@@ -305,19 +333,19 @@ public final class PhoneActivity extends Activity {
             String lan = json.optString("lan", null);
             String standby = json.optString("standby", null);
             if (origin != null && !origin.isEmpty() && !"null".equals(origin)) {
-                prefs.edit().putString(KEY_ORIGIN, origin).apply();
+                Vault.put(this, KEY_ORIGIN, origin);
             }
             if (lan != null && !lan.isEmpty() && !"null".equals(lan)) {
-                Prefs.setServer(this, lan);
+                Vault.put(this, KEY_LAN, lan);
             }
             if (standby != null && !standby.isEmpty() && !"null".equals(standby)) {
-                prefs.edit().putString(KEY_STANDBY, standby).apply();
+                Vault.put(this, KEY_STANDBY, standby);
             }
             // Replaced wholesale, an empty list included: an app removed on the
             // PC should disappear here, not linger from an older answer.
             JSONArray listed = json.optJSONArray("apps");
             if (listed != null) {
-                prefs.edit().putString(KEY_APPS, listed.toString()).apply();
+                Vault.put(this, KEY_APPS, listed.toString());
                 runOnUiThread(this::showApps);
             }
         } catch (Exception e) {
@@ -328,10 +356,27 @@ public final class PhoneActivity extends Activity {
         }
     }
 
+    /**
+     * The PC's house address, from the vault.
+     *
+     * <p>Setup, which is shared with the television, writes what was typed to
+     * the plain store. It is moved into the vault here and removed from there,
+     * so it stays in the clear only while the setup screen is open.
+     */
+    private String lan() {
+        String typed = Prefs.server(this);
+        if (typed != null) {
+            Vault.put(this, KEY_LAN, typed);
+            Prefs.of(this).edit().clear().apply();
+        }
+        return Vault.get(this, KEY_LAN);
+    }
+
     /** A button for each app the PC listed, in the order it listed them. */
     private void showApps() {
         apps.removeAllViews();
-        String stored = getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY_APPS, "[]");
+        String stored = Vault.get(this, KEY_APPS);
+        if (stored == null) stored = "[]";
         try {
             JSONArray list = new JSONArray(stored);
             for (int i = 0; i < list.length(); i++) {
@@ -353,65 +398,31 @@ public final class PhoneActivity extends Activity {
     }
 
     /**
-     * Another app, in the same kind of tab as Homesh -- from the PC when it
-     * answers, from the standby when it does not.
+     * Another app beside Homesh.
      *
-     * <p>The same order as Homesh itself, for the same reason: the PC's copy is
-     * the one changes belong to, so the standby's is for when there is no
-     * choice. An app with no copy on the standby opens straight away, with no
-     * check in front of it -- there would be nowhere else to go.
-     *
-     * <p>Not marked as handed off: closing it should come back to this screen
-     * as it was, not to "Homesh was open".
+     * <p>One with a copy on the standby opens in AppActivity, which keeps it on
+     * whichever machine is answering and moves it while it is open -- a Custom
+     * Tab cannot be moved once it is showing (AppActivity says why). One with
+     * no copy has nowhere else to go, so it opens straight away in the same
+     * kind of tab as Homesh, signed in as the browser is.
      */
     private void openApp(String name, String url, String standby) {
+        inApp = true;
         if (standby == null) {
             launchApp(name, url);
             return;
         }
-        message.setText("Opening " + name + "…");
-        new Thread(() -> {
-            if (answers(url)) {
-                runOnUiThread(() -> launchApp(name, url));
-            } else if (answers(standby)) {
-                runOnUiThread(() -> {
-                    launchApp(name, standby);
-                    message.setText("Your PC is off, so " + name + " opened on the standby.");
-                });
-            } else {
-                runOnUiThread(() -> message.setText(
-                        name + " is not answering, on the PC or on the standby."));
-            }
-        }).start();
-    }
-
-    /**
-     * Whether a web address answers at all. The other apps are not Homesh and
-     * have no /api/health to ask, so any reply short of a server error counts:
-     * a sign-in redirect is still a machine that is up, and a dead one throws
-     * before it replies. Here rather than in Server, which the TV app shares --
-     * its version guard hashes the sources, and a change there would offer
-     * every screen an update to code no screen runs.
-     */
-    private static boolean answers(String url) {
-        HttpURLConnection conn = null;
-        try {
-            conn = (HttpURLConnection) new URL(url).openConnection();
-            conn.setConnectTimeout(4000);
-            conn.setReadTimeout(4000);
-            conn.setInstanceFollowRedirects(false);
-            return conn.getResponseCode() < 500;
-        } catch (Exception e) {
-            return false;
-        } finally {
-            if (conn != null) conn.disconnect();
-        }
+        startActivity(new Intent(this, AppActivity.class)
+                .putExtra(AppActivity.EXTRA_NAME, name)
+                .putExtra(AppActivity.EXTRA_PC, url)
+                .putExtra(AppActivity.EXTRA_STANDBY, standby));
     }
 
     private void launchApp(String name, String url) {
         try {
             startActivity(browserIntent(Uri.parse(url)));
         } catch (Exception e) {
+            inApp = false;
             message.setText("No browser on this phone would open " + name + ".");
         }
     }
@@ -530,8 +541,7 @@ public final class PhoneActivity extends Activity {
         new Thread(() -> {
             String server = reachedAt;
             if (server == null) {
-                SharedPreferences prefs = getSharedPreferences(PREFS, Context.MODE_PRIVATE);
-                server = firstThatAnswers(prefs.getString(KEY_ORIGIN, null), Prefs.server(this));
+                server = firstThatAnswers(Vault.get(this, KEY_ORIGIN), lan());
             }
             final String at = server;
             final String mine = PhoneUpdates.installedName(this);
