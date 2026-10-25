@@ -34,7 +34,7 @@ PUBLISHED_NAME="homesh-$APP.json"
 # bump and every screen in the house was offered an update to code that does not
 # affect it. An app is the files it uses.
 case "$APP" in
-  tv)    SKIP="PhoneActivity.java PhoneUpdates.java" ;;
+  tv)    SKIP="PhoneActivity.java PhoneUpdates.java AppActivity.java Reach.java Vault.java" ;;
   phone) SKIP="MainActivity.java NativeVideo.java Updater.java" ;;
   *)     SKIP="" ;;
 esac
@@ -160,6 +160,9 @@ JAVA_BIN="$(dirname "$JAVAC")/java$EXE"
 mkdir -p "$WORK/testclasses"
 "$JAVAC" -nowarn -encoding UTF-8 --release 17 -d "$WORK/testclasses"   "$(winpath "$SRC/java/com/homesh/tv/ServerAddress.java")"   "$(winpath "$SRC/test/ServerAddressTest.java")"
 "$JAVA_BIN" -cp "$(winpath "$WORK/testclasses")" ServerAddressTest
+# Choosing between the PC and the standby, with fake probes.
+"$JAVAC" -nowarn -encoding UTF-8 --release 17 -d "$WORK/testclasses"   "$(winpath "$SRC/java/com/homesh/tv/Reach.java")"   "$(winpath "$SRC/test/ReachTest.java")"
+"$JAVA_BIN" -cp "$(winpath "$WORK/testclasses")" com.homesh.tv.ReachTest
 
 # ── 1. Resources ─────────────────────────────────────────────────────────────
 "$AAPT2" compile --dir "$SRC/res" -o "$WORK/res.zip"
