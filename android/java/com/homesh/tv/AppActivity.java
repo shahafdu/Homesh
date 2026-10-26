@@ -5,6 +5,7 @@ import android.content.Intent;
 import android.graphics.Bitmap;
 import android.graphics.Color;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -23,6 +24,8 @@ import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.LinearLayout;
 import android.widget.TextView;
+import android.window.OnBackInvokedCallback;
+import android.window.OnBackInvokedDispatcher;
 
 /**
  * Another app beside Homesh, kept on whichever machine is answering.
@@ -115,6 +118,10 @@ public final class AppActivity extends Activity {
     /** A place to put back once the page at that path has loaded. */
     private String restoring;
     private String restoringPath;
+
+    /** Android 13+: back to the previous page, held only while there is one. */
+    private Object backCallback;
+    private boolean backHeld;
 
     /**
      * Every scrolled thing on the page -- the page itself and any pane inside
@@ -216,6 +223,7 @@ public final class AppActivity extends Activity {
             on = web.getUrl().startsWith(standby) ? standby : pc;
             if (standby.equals(on)) sayOnStandby();
             else strip.setVisibility(View.GONE);
+            holdBack();
         } else {
             open();
         }
@@ -263,6 +271,37 @@ public final class AppActivity extends Activity {
     public void onBackPressed() {
         if (web.canGoBack()) web.goBack();
         else super.onBackPressed();
+    }
+
+    /**
+     * Back as the previous page, the way a browser does it.
+     *
+     * <p>onBackPressed above is enough up to Android 15. An app built for
+     * Android 16 is not sent it at all: back goes to whatever has registered
+     * for it, and with nothing registered it closes the screen -- which is how
+     * back came to leave SpaXepedition for the launcher instead of turning the
+     * page back. So a callback is registered, and only while the page has
+     * somewhere to go back to; on the first page back still closes the screen,
+     * with the system's own animation.
+     */
+    private void holdBack() {
+        if (Build.VERSION.SDK_INT < 33 || web == null) return;
+        boolean want = web.canGoBack();
+        if (want == backHeld) return;
+        if (backCallback == null) {
+            backCallback = (OnBackInvokedCallback) () -> {
+                if (web.canGoBack()) web.goBack();
+                holdBack();
+            };
+        }
+        OnBackInvokedDispatcher d = getOnBackInvokedDispatcher();
+        if (want) {
+            d.registerOnBackInvokedCallback(OnBackInvokedDispatcher.PRIORITY_DEFAULT,
+                    (OnBackInvokedCallback) backCallback);
+        } else {
+            d.unregisterOnBackInvokedCallback((OnBackInvokedCallback) backCallback);
+        }
+        backHeld = want;
     }
 
     /** Ask both machines at once and open the app on the one to use. */
@@ -513,12 +552,31 @@ public final class AppActivity extends Activity {
         @Override
         public void onPageStarted(WebView view, String url, Bitmap icon) {
             failed = false;
+            // Back past a move lands on a page from the other machine. Follow
+            // it, so the strip and what a failure does are about the machine
+            // actually showing the page.
+            String there = url == null ? null
+                    : url.startsWith(standby) ? standby : url.startsWith(pc) ? pc : null;
+            if (there != null && !there.equals(on)) {
+                on = there;
+                offered = null;
+                if (standby.equals(on)) sayOnStandby();
+                else strip.setVisibility(View.GONE);
+            }
             ui.removeCallbacks(slowPage);
             if (resumed && pc.equals(on)) ui.postDelayed(slowPage, SLOW_PAGE_MS);
         }
 
         @Override
+        public void doUpdateVisitedHistory(WebView view, String url, boolean reload) {
+            // Every page added, hash links included: SpaXepedition moves
+            // between its pages by #, so most of its history is made here.
+            holdBack();
+        }
+
+        @Override
         public void onPageFinished(WebView view, String url) {
+            holdBack();
             ui.removeCallbacks(slowPage);
             if (!failed && troubled) {
                 troubled = false;
