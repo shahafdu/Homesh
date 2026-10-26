@@ -66,16 +66,27 @@ keeps it on whichever machine is answering:
 - **Opening** asks both machines at once. The PC is used if it answers within
   2.5 seconds, the standby otherwise, so a PC that is off or overloaded costs a
   couple of seconds rather than the sum of two timeouts.
-- **A page on the PC** that fails, returns a server error, or is still loading
-  after 8 seconds moves the app to the standby, if the standby answers.
-- **Once a minute while it is on screen**, a keepalive asks the PC. A PC that
-  does not answer quickly moves the app to the standby, and a PC that answers
-  again moves it back. The move back waits while something is being typed, so
-  a reload never takes half a sentence with it.
+- **A page that fails**, returns a server error, or (on the PC) is still
+  loading after 8 seconds moves the app to the other machine, if it answers.
+  Nothing is on screen to lose then, so it happens by itself, but at most once
+  every 30 seconds: when both machines are struggling it stays on one and says
+  so, with a tap to try again.
+- **Once a minute while it is on screen**, a keepalive asks the PC. When two
+  checks in a row agree that the other machine is the better one, a PC that
+  keeps not answering or one that is back, the strip offers it. Nothing is
+  reloaded: a tap moves, and otherwise the move waits for the next page you
+  open, since the view is changing then anyway.
 
-The page keeps its place, since the same path is opened on the other machine. A
-strip at the top says when the app is on the standby, and tapping it checks the
-PC there and then.
+A page you are reading is never reloaded unasked (from 1.6.1). In 1.6.0 every
+check that disagreed moved the app at once, and on a weak signal, where every
+answer is late, the PC looked down to one check and up to the next. The result
+was a reload every few seconds, each one back at the top of the page.
+
+Wherever a move does happen, the page keeps its place: the same path on the
+other machine, scrolled to where it was, the inner panes too. The phone keeps
+the position itself, since the two machines are different sites to the page
+and share none of its storage. A strip at the top says when the app is on the
+standby, and tapping it checks the PC there and then.
 
 Why not a tab, like Homesh: once a Custom Tab is showing, the phone app is
 behind it, and Android 15 onwards does not let an app behind another one start
