@@ -42,18 +42,29 @@ import android.widget.TextView;
  * with a PIN, once, and the WebView keeps the cookie; an app that one day
  * needs Google's sign-in will need a different answer.
  *
- * <p>Three things move it between machines:
+ * <p>What moves it between machines:
  * <ul>
  * <li>Opening asks both at once and takes the PC if it answers within
  *     {@link #QUICK_MS}, the standby otherwise. A few seconds, never the sum of
  *     two timeouts.
- * <li>A page on the PC that fails to load, returns a server error, or is still
- *     loading after {@link #SLOW_PAGE_MS} moves to the standby, if it answers.
- * <li>Once a minute while it is on screen, a keepalive asks the PC. On the PC,
- *     a PC that does not answer quickly moves it to the standby; on the
- *     standby, a PC that answers moves it back.
+ * <li>A page that fails to load, returns a server error, or (on the PC) is
+ *     still loading after {@link #SLOW_PAGE_MS} moves to the other machine, if
+ *     it answers. Nothing is on screen to lose, so this happens by itself --
+ *     but no more than once per {@link Follow#GAP_MS}.
+ * <li>Once a minute while it is on screen, a keepalive asks the PC. When the
+ *     answer has held for {@link Follow#AGREE} checks, the other machine is
+ *     <em>offered</em>, not loaded: the strip says so and a tap moves, and
+ *     otherwise the move waits for the next page the person opens.
  * </ul>
- * The page keeps its place: the same path is opened on the other machine.
+ *
+ * <p>A page being read is never reloaded unasked. The first version moved on
+ * every keepalive that disagreed, and on a weak signal -- every answer late --
+ * that meant a reload every few seconds, each one back at the top of the page.
+ *
+ * <p>Wherever a move happens, the page keeps its place: the same path on the
+ * other machine, scrolled to where it was, the inner panes too. The position is
+ * kept here rather than left to the page, since the two machines are separate
+ * origins and share none of the page's own storage.
  */
 public final class AppActivity extends Activity {
 
@@ -88,6 +99,60 @@ public final class AppActivity extends Activity {
     private boolean resumed;
     private long lastCheck;
 
+    private final Follow follow = new Follow();
+    /** The machine the keepalive says to be on instead, offered and not yet taken. */
+    private String offered;
+    /** The page showing is the WebView's error page, with no place to keep. */
+    private boolean failed;
+    /** The strip is saying the page would not load, and offering to try again. */
+    private boolean troubled;
+    /**
+     * Where the page was scrolled, and at which path: captured before each move
+     * and at each keepalive, so a page that has since failed still has one.
+     */
+    private String place;
+    private String placePath;
+    /** A place to put back once the page at that path has loaded. */
+    private String restoring;
+    private String restoringPath;
+
+    /**
+     * Every scrolled thing on the page -- the page itself and any pane inside
+     * it -- with a selector to find it again. The id where there is one, its
+     * position under its parents where there is not.
+     */
+    private static final String CAPTURE = "(function(){"
+            + "function p(e){if(e===document.body)return'body';if(e.id)return'#'+CSS.escape(e.id);"
+            + "var q=e.parentElement;if(!q)return null;var s=p(q);if(s===null)return null;"
+            + "return s+'>'+e.tagName.toLowerCase()+':nth-child('+(Array.prototype.indexOf.call(q.children,e)+1)+')';}"
+            + "var top=document.scrollingElement||document.documentElement;"
+            + "var out=[{p:null,x:scrollX,y:scrollY}],all=document.querySelectorAll('body *');"
+            + "for(var i=0;i<all.length;i++){var e=all[i];"
+            + "if(e!==top&&(e.scrollTop>0||e.scrollLeft>0)){var k=p(e);if(k)out.push({p:k,x:e.scrollLeft,y:e.scrollTop});}}"
+            + "return JSON.stringify(out);})()";
+
+    /**
+     * Puts a captured place back. The page builds itself after it loads, so it
+     * keeps trying for a while until each pane is long enough, then once more
+     * in case something above it grew. A touch, a wheel or a key stops it: the
+     * person has started reading and the page is theirs.
+     */
+    private static final String RESTORE = "(function(s){if(typeof s!=='string')return;"
+            + "var a=JSON.parse(s),t=Date.now(),stop=false,again=false;"
+            + "function quit(){stop=true;}"
+            + "['touchstart','wheel','keydown','mousedown'].forEach(function(n){"
+            + "addEventListener(n,quit,{once:true,passive:true,capture:true});});"
+            + "function go(){if(stop)return;var left=0;a.forEach(function(r){if(r.ok)return;"
+            + "if(r.p===null){var m=document.scrollingElement||document.documentElement;"
+            + "if(m.scrollHeight-innerHeight>=r.y-1){scrollTo(r.x,r.y);r.ok=Math.abs(scrollY-r.y)<2;}}"
+            + "else{var e=document.querySelector(r.p);"
+            + "if(e&&e.scrollHeight-e.clientHeight>=r.y-1){e.scrollLeft=r.x;e.scrollTop=r.y;"
+            + "r.ok=Math.abs(e.scrollTop-r.y)<2;}}"
+            + "if(!r.ok)left++;});"
+            + "if(left&&Date.now()-t<10000)setTimeout(go,250);"
+            + "else if(!again){again=true;a.forEach(function(r){r.ok=false;});setTimeout(go,1000);}}"
+            + "go();})(";
+
     private final Runnable keepalive = new Runnable() {
         @Override
         public void run() {
@@ -97,7 +162,7 @@ public final class AppActivity extends Activity {
     };
 
     private final Runnable slowPage = () -> {
-        if (pc.equals(on)) moveToStandby("is slow to load");
+        if (pc.equals(on)) leave("is slow to load");
     };
 
     @Override
@@ -124,7 +189,7 @@ public final class AppActivity extends Activity {
         strip.setTextSize(13);
         strip.setGravity(Gravity.CENTER_VERTICAL);
         strip.setPadding(32, 18, 32, 18);
-        strip.setOnClickListener(v -> keepAlive());
+        strip.setOnClickListener(v -> tapped());
         say("Opening " + name + "…");
 
         web = new WebView(this);
@@ -173,6 +238,7 @@ public final class AppActivity extends Activity {
         // Only while it is on screen. A check every minute for an app nobody
         // is looking at is battery spent on nothing.
         resumed = false;
+        remember();
         ui.removeCallbacks(keepalive);
         ui.removeCallbacks(slowPage);
         web.onPause();
@@ -212,7 +278,7 @@ public final class AppActivity extends Activity {
                     say(name + " is not answering, on the PC or on the standby. "
                             + "Tap to try again.");
                     strip.setOnClickListener(v -> {
-                        strip.setOnClickListener(w -> keepAlive());
+                        strip.setOnClickListener(w -> tapped());
                         say("Opening " + name + "…");
                         open();
                     });
@@ -227,80 +293,161 @@ public final class AppActivity extends Activity {
     private void keepAlive() {
         if (checking || on == null) return;
         checking = true;
+        remember();
         final String was = on;
         new Thread(() -> {
             // The PC is the question either way. On it, a PC that cannot answer
             // quickly is one to leave; on the standby, one that can is one to
-            // go back to.
+            // go back to. Either way only once it has said so more than once.
             boolean pcUp = Reach.answers(pc, QUICK_MS);
             lastCheck = SystemClock.elapsedRealtime();
-            if (pc.equals(was) && !pcUp) {
-                boolean standbyUp = Reach.answers(standby, PATIENT_MS);
-                checking = false;
-                if (standbyUp) ui.post(() -> {
-                    if (pc.equals(on)) move(standby, "Your PC is not answering, so "
-                            + name + " moved to the standby.");
-                });
-                return;
-            }
+            boolean onPc = pc.equals(was);
+            boolean away = follow.heard(onPc, pcUp);
+            boolean otherUp = !away || !onPc || Reach.answers(standby, PATIENT_MS);
             checking = false;
-            if (standby.equals(was) && pcUp) ui.post(this::returnToPc);
-            else if (standby.equals(was)) ui.post(this::sayOnStandby);
-        }).start();
-    }
-
-    /**
-     * Back to the PC, unless somebody is typing.
-     *
-     * <p>Moving reloads the page, and a reload takes whatever was half typed
-     * into a box with it. Waiting a minute costs nothing; losing a paragraph
-     * of a trip plan is the kind of thing that makes an app feel unsafe.
-     */
-    private void returnToPc() {
-        if (!standby.equals(on)) return;
-        web.evaluateJavascript(
-                "(function(){var e=document.activeElement;"
-                        + "return !!e&&(e.isContentEditable||/^(INPUT|TEXTAREA|SELECT)$/.test(e.tagName));})()",
-                typing -> {
-                    if ("true".equals(typing)) {
-                        Log.i(TAG, "PC is back; waiting until nothing is being typed");
-                        return;
-                    }
-                    if (standby.equals(on)) move(pc, "Your PC is back, so " + name + " moved back to it.");
-                });
-    }
-
-    /** The PC failed a page; go to the standby if it answers. */
-    private void moveToStandby(String why) {
-        if (checking || !pc.equals(on)) return;
-        checking = true;
-        new Thread(() -> {
-            boolean up = Reach.answers(standby, PATIENT_MS);
-            checking = false;
-            if (up) ui.post(() -> {
-                if (pc.equals(on)) move(standby, "Your PC " + why + ", so " + name
-                        + " moved to the standby.");
+            ui.post(() -> {
+                if (!was.equals(on)) return;
+                if (away && otherUp) offer(onPc ? standby : pc);
+                else withdraw();
             });
         }).start();
     }
 
-    /** The same page, on the other machine. */
+    /**
+     * The other machine is the better one now. Said, not done: a page being
+     * read stays as it is until the person opens another or taps the strip.
+     * Only a page that is not there -- the error page -- is replaced at once.
+     */
+    private void offer(String to) {
+        offered = to;
+        if (failed) {
+            go(to, null);
+            return;
+        }
+        if (standby.equals(to)) {
+            say("Your PC is not answering. Tap to move " + name + " to the standby, "
+                    + "or it moves when you open another page.");
+        } else {
+            say("Your PC is back. Tap to move " + name + " to it, "
+                    + "or it moves when you open another page.");
+        }
+    }
+
+    /** The offer no longer holds: the machine it is on is the right one again. */
+    private void withdraw() {
+        if (offered == null) return;
+        offered = null;
+        if (standby.equals(on)) sayOnStandby();
+        else strip.setVisibility(View.GONE);
+    }
+
+    /** The strip: take what it offers, or check the PC there and then. */
+    private void tapped() {
+        if (offered != null) move(offered, null);
+        else keepAlive();
+    }
+
+    /**
+     * This page failed on the machine it is on; try the other one, if it
+     * answers and the last move was not a moment ago. Two machines both
+     * failing would otherwise hand the page back and forth for ever.
+     */
+    private void leave(String why) {
+        if (on == null) return;
+        if (checking) {
+            // A keepalive is out; its answer may not cover this. Ask again
+            // once it is back, rather than leave the error page standing.
+            ui.postDelayed(() -> {
+                if (failed) leave(why);
+            }, 1000);
+            return;
+        }
+        final String from = on;
+        final String to = pc.equals(from) ? standby : pc;
+        if (!follow.mayMove(SystemClock.elapsedRealtime())) {
+            offered = null;
+            troubled = true;
+            say(name + " is having trouble loading. Tap to try again.");
+            strip.setOnClickListener(v -> {
+                strip.setOnClickListener(w -> tapped());
+                web.reload();
+            });
+            return;
+        }
+        checking = true;
+        new Thread(() -> {
+            boolean up = Reach.answers(to, PATIENT_MS);
+            checking = false;
+            if (up) ui.post(() -> {
+                if (!from.equals(on)) return;
+                move(to, standby.equals(to)
+                        ? "Your PC " + why + ", so " + name + " moved to the standby."
+                        : "The standby " + why + ", so " + name + " moved back to your PC.");
+            });
+        }).start();
+    }
+
+    /**
+     * Notes where the page is scrolled, while it is a real page. Called before
+     * a move and at each keepalive, so that a page which then fails -- and
+     * shows only the error page -- still has a place to go back to.
+     */
+    private void remember() {
+        if (failed || on == null) return;
+        final String path = pathOf(web.getUrl());
+        if (path == null) return;
+        web.evaluateJavascript(CAPTURE, json -> {
+            if (json == null || "null".equals(json)) return;
+            place = json;
+            placePath = path;
+        });
+    }
+
+    /** The same page, on the other machine, at the same place. */
     private void move(String to, String message) {
-        String from = on;
-        String here = web.getUrl();
-        String path = here != null && from != null && here.startsWith(from)
-                ? here.substring(from.length()) : null;
+        final String path = pathOf(web.getUrl());
+        if (failed || path == null) {
+            go(to, message);
+            return;
+        }
+        // The place first, then the load: the capture has to read the page
+        // that is about to go.
+        web.evaluateJavascript(CAPTURE, json -> {
+            if (json != null && !"null".equals(json)) {
+                place = json;
+                placePath = path;
+            }
+            go(to, message);
+        });
+    }
+
+    private void go(String to, String message) {
+        String path = pathOf(web.getUrl());
+        if (failed && placePath != null) path = placePath;
         Log.i(TAG, "moving " + name + (to.equals(pc) ? " to the PC" : " to the standby"));
+        follow.moved(SystemClock.elapsedRealtime());
+        offered = null;
+        if (place != null && path != null && path.equals(placePath)) {
+            restoring = place;
+            restoringPath = path;
+        }
         show(to, path);
+        if (message == null) return;
         say(message);
         // The message is news for a few seconds; after that the strip says
         // only where the app is, which is what stays true.
         ui.postDelayed(() -> {
-            if (to.equals(on)) {
+            if (to.equals(on) && offered == null) {
                 if (standby.equals(on)) sayOnStandby();
                 else strip.setVisibility(View.GONE);
             }
         }, 6000);
+    }
+
+    /** The part of an address after the machine, or null for another site. */
+    private String pathOf(String url) {
+        if (url == null || on == null || !url.startsWith(on)) return null;
+        return url.substring(on.length());
     }
 
     private void show(String base, String path) {
@@ -346,13 +493,26 @@ public final class AppActivity extends Activity {
         public boolean shouldOverrideUrlLoading(WebView view, String url) {
             // The app's own pages stay here; anything else -- a map, a booking
             // site -- belongs in the browser, signed in as the person is there.
-            if (ours(url)) return false;
-            external(url);
-            return true;
+            if (!ours(url)) {
+                external(url);
+                return true;
+            }
+            // A page the person asked for: the moment to take up an offered
+            // move, since the view is changing anyway.
+            String path = pathOf(url);
+            if (offered != null && path != null) {
+                String to = offered;
+                follow.moved(SystemClock.elapsedRealtime());
+                offered = null;
+                show(to, path);
+                return true;
+            }
+            return false;
         }
 
         @Override
         public void onPageStarted(WebView view, String url, Bitmap icon) {
+            failed = false;
             ui.removeCallbacks(slowPage);
             if (resumed && pc.equals(on)) ui.postDelayed(slowPage, SLOW_PAGE_MS);
         }
@@ -360,6 +520,19 @@ public final class AppActivity extends Activity {
         @Override
         public void onPageFinished(WebView view, String url) {
             ui.removeCallbacks(slowPage);
+            if (!failed && troubled) {
+                troubled = false;
+                strip.setOnClickListener(v -> tapped());
+                if (standby.equals(on)) sayOnStandby();
+                else strip.setVisibility(View.GONE);
+            }
+            if (failed || restoring == null) return;
+            String path = pathOf(url);
+            if (path != null && path.equals(restoringPath)) {
+                web.evaluateJavascript(RESTORE + restoring + ")", null);
+            }
+            restoring = null;
+            restoringPath = null;
         }
 
         @Override
@@ -368,15 +541,17 @@ public final class AppActivity extends Activity {
             // Called for the page itself only; a missing image is not a reason
             // to change machines.
             Log.i(TAG, "page failed: " + description);
-            if (pc.equals(on)) moveToStandby("is not answering");
-            else if (standby.equals(on)) keepAlive();
+            failed = true;
+            ui.removeCallbacks(slowPage);
+            leave("is not answering");
         }
 
         @Override
         public void onReceivedHttpError(WebView view, WebResourceRequest request,
                                         WebResourceResponse response) {
-            if (request.isForMainFrame() && response.getStatusCode() >= 500 && pc.equals(on)) {
-                moveToStandby("returned an error");
+            if (request.isForMainFrame() && response.getStatusCode() >= 500) {
+                failed = true;
+                leave("returned an error");
             }
         }
     }
