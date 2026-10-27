@@ -34,7 +34,7 @@ PUBLISHED_NAME="homesh-$APP.json"
 # bump and every screen in the house was offered an update to code that does not
 # affect it. An app is the files it uses.
 case "$APP" in
-  tv)    SKIP="PhoneActivity.java PhoneUpdates.java AppActivity.java Reach.java Vault.java Follow.java" ;;
+  tv)    SKIP="PhoneActivity.java PhoneUpdates.java AppActivity.java Reach.java Vault.java Follow.java Relay.java" ;;
   phone) SKIP="MainActivity.java NativeVideo.java Updater.java" ;;
   *)     SKIP="" ;;
 esac

@@ -5,16 +5,19 @@ import android.content.Intent;
 import android.graphics.Bitmap;
 import android.graphics.Color;
 import android.net.Uri;
+import android.net.http.HttpResponseCache;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.SystemClock;
 import android.util.Log;
+import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.webkit.CookieManager;
+import android.webkit.JavascriptInterface;
 import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceRequest;
@@ -22,8 +25,13 @@ import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
+import android.widget.ImageButton;
 import android.widget.LinearLayout;
+import android.widget.PopupMenu;
+import android.widget.ProgressBar;
 import android.widget.TextView;
+
+import java.io.File;
 import android.window.OnBackInvokedCallback;
 import android.window.OnBackInvokedDispatcher;
 
@@ -64,6 +72,18 @@ import android.window.OnBackInvokedDispatcher;
  * every keepalive that disagreed, and on a weak signal -- every answer late --
  * that meant a reload every few seconds, each one back at the top of the page.
  *
+ * <p>An app whose two copies are the same (EXTRA_SAME) is not moved at all.
+ * Its page stays at the PC's address and {@link Relay} answers each request
+ * from whichever machine answers, so nothing reloads and nobody is asked: the
+ * strip only says when the answers are coming from the standby. Everything
+ * below about moving and offering is for the other apps, whose standby answers
+ * differently and so must be shown as a different place.
+ *
+ * <p>Above the page is a bar of the kind the Custom Tab had, since these apps
+ * once opened in one and the bar is what people learned: a close button back
+ * to Homesh Connect's screen, the page's title and which machine it is on, and
+ * a menu to reload, go forward, share the page or open it in the browser.
+ *
  * <p>Wherever a move happens, the page keeps its place: the same path on the
  * other machine, scrolled to where it was, the inner panes too. The position is
  * kept here rather than left to the page, since the two machines are separate
@@ -74,6 +94,8 @@ public final class AppActivity extends Activity {
     static final String EXTRA_NAME = "name";
     static final String EXTRA_PC = "pc";
     static final String EXTRA_STANDBY = "standby";
+    /** The two copies are interchangeable: relay each request, never move the page. */
+    static final String EXTRA_SAME = "same";
 
     private static final String TAG = "HomeshApp";
 
@@ -96,6 +118,10 @@ public final class AppActivity extends Activity {
 
     private WebView web;
     private TextView strip;
+    /** The bar's two lines: the page's title, and which machine it is on. */
+    private TextView title;
+    private TextView where;
+    private ProgressBar loading;
     private ValueCallback<Uri[]> picking;
 
     private volatile boolean checking;
@@ -118,6 +144,9 @@ public final class AppActivity extends Activity {
     /** A place to put back once the page at that path has loaded. */
     private String restoring;
     private String restoringPath;
+
+    /** Set for an app whose copies are the same: answers every request, so the page never moves. */
+    private Relay relay;
 
     /** Android 13+: back to the previous page, held only while there is one. */
     private Object backCallback;
@@ -200,17 +229,36 @@ public final class AppActivity extends Activity {
         say("Opening " + name + "…");
 
         web = new WebView(this);
+        View bar = bar();
         web.setBackgroundColor(Color.parseColor("#17130F"));
         WebSettings s = web.getSettings();
         s.setJavaScriptEnabled(true);
         s.setDomStorageEnabled(true);
         s.setMediaPlaybackRequiresUserGesture(true);
         CookieManager.getInstance().setAcceptCookie(true);
+        if (getIntent().getBooleanExtra(EXTRA_SAME, false)) {
+            relay = new Relay(pc, standby, fromStandby -> ui.post(this::sayWhereRelayed));
+            web.addJavascriptInterface(new Bridge(), "HomeshRelay");
+            // The WebView keeps no cache of what it is handed this way, so the
+            // relay's connections keep one: a page's pictures are not fetched
+            // again over a weak signal each time the page is drawn.
+            try {
+                if (HttpResponseCache.getInstalled() == null) {
+                    HttpResponseCache.install(new File(getCacheDir(), "relay"), 64L * 1024 * 1024);
+                }
+            } catch (Exception e) {
+                Log.i(TAG, "no cache for the relay: " + e.getMessage());
+            }
+        }
         web.setWebViewClient(new Client());
         web.setWebChromeClient(new Chrome());
         // A download is the browser's job; it knows where files go.
         web.setDownloadListener((url, agent, disposition, mime, length) -> external(url));
 
+        root.addView(bar, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(56)));
+        root.addView(loading, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(3)));
         root.addView(strip, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         root.addView(web, new LinearLayout.LayoutParams(
@@ -221,12 +269,109 @@ public final class AppActivity extends Activity {
             // Rebuilt by Android, not opened afresh: carry on where it was,
             // and let the keepalive judge whether that is still right.
             on = web.getUrl().startsWith(standby) ? standby : pc;
-            if (standby.equals(on)) sayOnStandby();
+            showWhere();
+            if (relay != null) sayWhereRelayed();
+            else if (standby.equals(on)) sayOnStandby();
             else strip.setVisibility(View.GONE);
             holdBack();
         } else {
             open();
         }
+    }
+
+    /**
+     * The bar over the page: close, title and machine, menu. Built in code,
+     * like the rest of this app, so it needs no layout or library.
+     */
+    private View bar() {
+        LinearLayout bar = new LinearLayout(this);
+        bar.setOrientation(LinearLayout.HORIZONTAL);
+        bar.setGravity(Gravity.CENTER_VERTICAL);
+        bar.setBackgroundColor(Color.parseColor("#17130F"));
+
+        ImageButton close = icon(android.R.drawable.ic_menu_close_clear_cancel, "Close " + name);
+        // Back to Homesh Connect's screen, whatever the page's own history.
+        close.setOnClickListener(v -> finish());
+
+        LinearLayout text = new LinearLayout(this);
+        text.setOrientation(LinearLayout.VERTICAL);
+        title = new TextView(this);
+        title.setText(name);
+        title.setTextColor(Color.parseColor("#F2EBE2"));
+        title.setTextSize(16);
+        title.setSingleLine(true);
+        title.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        where = new TextView(this);
+        where.setTextColor(Color.parseColor("#A79B8D"));
+        where.setTextSize(12);
+        where.setSingleLine(true);
+        text.addView(title);
+        text.addView(where);
+
+        ImageButton more = icon(android.R.drawable.ic_menu_more, "More");
+        more.setOnClickListener(this::menu);
+
+        bar.addView(close, new LinearLayout.LayoutParams(dp(56), dp(56)));
+        bar.addView(text, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        bar.addView(more, new LinearLayout.LayoutParams(dp(56), dp(56)));
+
+        loading = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
+        loading.setMax(100);
+        loading.setVisibility(View.INVISIBLE);
+        showWhere();
+        return bar;
+    }
+
+    private ImageButton icon(int drawable, String label) {
+        ImageButton b = new ImageButton(this);
+        b.setImageResource(drawable);
+        b.setColorFilter(Color.parseColor("#F2EBE2"));
+        b.setBackgroundColor(Color.TRANSPARENT);
+        b.setContentDescription(label);
+        return b;
+    }
+
+    private void menu(View anchor) {
+        PopupMenu m = new PopupMenu(this, anchor);
+        if (web.canGoForward()) m.getMenu().add(0, 1, 0, "Forward");
+        m.getMenu().add(0, 2, 0, "Reload");
+        m.getMenu().add(0, 3, 0, "Share link");
+        m.getMenu().add(0, 4, 0, "Open in browser");
+        m.setOnMenuItemClickListener(item -> {
+            String url = web.getUrl();
+            switch (item.getItemId()) {
+                case 1: web.goForward(); break;
+                case 2: web.reload(); break;
+                case 3:
+                    if (url != null) {
+                        Intent send = new Intent(Intent.ACTION_SEND).setType("text/plain")
+                                .putExtra(Intent.EXTRA_TEXT, url);
+                        try {
+                            startActivity(Intent.createChooser(send, null));
+                        } catch (Exception e) {
+                            Log.i(TAG, "nothing would share " + url);
+                        }
+                    }
+                    break;
+                case 4: if (url != null) external(url); break;
+                default: return false;
+            }
+            return true;
+        });
+        m.show();
+    }
+
+    /** The bar's second line: the machine the answers are coming from. */
+    private void showWhere() {
+        if (where == null) return;
+        boolean fromStandby = relay != null ? relay.away() : standby.equals(on);
+        where.setText(on == null && relay == null ? "Opening…"
+                : fromStandby ? "On the standby" : "On your PC");
+    }
+
+    private int dp(int v) {
+        return (int) TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, v,
+                getResources().getDisplayMetrics());
     }
 
     @Override
@@ -306,6 +451,10 @@ public final class AppActivity extends Activity {
 
     /** Ask both machines at once and open the app on the one to use. */
     private void open() {
+        if (relay != null) {
+            openRelayed();
+            return;
+        }
         checking = true;
         new Thread(() -> {
             String go = Reach.pick(new String[] {pc}, new String[] {standby},
@@ -328,8 +477,79 @@ public final class AppActivity extends Activity {
         }).start();
     }
 
+    /**
+     * Opening an app that is relayed: always at the PC's address. Asking both
+     * first only decides where the first request goes, so a PC that is off or
+     * swamped costs the couple of seconds of asking, not a timeout per request.
+     */
+    private void openRelayed() {
+        checking = true;
+        new Thread(() -> {
+            String first = Reach.pick(new String[] {pc}, new String[] {standby},
+                    url -> Reach.answers(url, PATIENT_MS), QUICK_MS, PATIENT_MS);
+            lastCheck = SystemClock.elapsedRealtime();
+            relay.setAway(standby.equals(first));
+            checking = false;
+            ui.post(() -> {
+                on = pc;
+                web.loadUrl(pc);
+            });
+        }).start();
+    }
+
+    /**
+     * The minute's check for a relayed app. Nothing is reloaded whatever it
+     * finds: it only changes where the next request goes first, and only once
+     * the PC has answered the same way twice running (Follow).
+     */
+    private void keepAliveRelayed() {
+        if (checking) return;
+        checking = true;
+        new Thread(() -> {
+            boolean pcUp = Reach.answers(pc, QUICK_MS);
+            lastCheck = SystemClock.elapsedRealtime();
+            boolean onPc = !relay.away();
+            if (follow.heard(onPc, pcUp)) {
+                if (!onPc) relay.setAway(false);
+                else if (Reach.answers(standby, PATIENT_MS)) relay.setAway(true);
+                follow.moved(SystemClock.elapsedRealtime());
+            }
+            checking = false;
+        }).start();
+    }
+
+    private void sayWhereRelayed() {
+        showWhere();
+        if (troubled) return;
+        if (relay.away()) {
+            say(name + " is answering from the standby while your PC is slow or off. "
+                    + "It goes back by itself; tap to check now.");
+        } else {
+            strip.setVisibility(View.GONE);
+        }
+    }
+
+    /** The page's writes, handed over by Relay.SHIM. */
+    private final class Bridge {
+        @JavascriptInterface
+        public void send(int id, String method, String url, String headers, String body) {
+            new Thread(() -> {
+                String answer = relay.send(method, url, headers, body);
+                ui.post(() -> {
+                    if (web != null) {
+                        web.evaluateJavascript("window.__relayDone&&__relayDone(" + id + "," + answer + ")", null);
+                    }
+                });
+            }).start();
+        }
+    }
+
     /** The minute's check: is the app on the machine it should be on? */
     private void keepAlive() {
+        if (relay != null) {
+            keepAliveRelayed();
+            return;
+        }
         if (checking || on == null) return;
         checking = true;
         remember();
@@ -483,6 +703,18 @@ public final class AppActivity extends Activity {
         }, 6000);
     }
 
+    /** A relayed page neither machine would give: said, with a tap to ask again. */
+    private void notAnswering() {
+        troubled = true;
+        say(name + " is not answering, on the PC or on the standby. Tap to try again.");
+        strip.setOnClickListener(v -> {
+            strip.setOnClickListener(w -> tapped());
+            troubled = false;
+            say("Opening " + name + "…");
+            web.reload();
+        });
+    }
+
     /** The part of an address after the machine, or null for another site. */
     private String pathOf(String url) {
         if (url == null || on == null || !url.startsWith(on)) return null;
@@ -491,6 +723,7 @@ public final class AppActivity extends Activity {
 
     private void show(String base, String path) {
         on = base;
+        showWhere();
         String url = path == null || path.isEmpty() ? base : base + path;
         web.loadUrl(url);
         if (standby.equals(base)) sayOnStandby();
@@ -550,8 +783,14 @@ public final class AppActivity extends Activity {
         }
 
         @Override
+        public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
+            return relay == null ? null : relay.fetch(request, request.isForMainFrame());
+        }
+
+        @Override
         public void onPageStarted(WebView view, String url, Bitmap icon) {
             failed = false;
+            if (relay != null) return;  // (one address, whichever machine answers: nothing to follow)
             // Back past a move lands on a page from the other machine. Follow
             // it, so the strip and what a failure does are about the machine
             // actually showing the page.
@@ -559,6 +798,7 @@ public final class AppActivity extends Activity {
                     : url.startsWith(standby) ? standby : url.startsWith(pc) ? pc : null;
             if (there != null && !there.equals(on)) {
                 on = there;
+                showWhere();
                 offered = null;
                 if (standby.equals(on)) sayOnStandby();
                 else strip.setVisibility(View.GONE);
@@ -581,9 +821,10 @@ public final class AppActivity extends Activity {
             if (!failed && troubled) {
                 troubled = false;
                 strip.setOnClickListener(v -> tapped());
-                if (standby.equals(on)) sayOnStandby();
+                if (relay == null && standby.equals(on)) sayOnStandby();
                 else strip.setVisibility(View.GONE);
             }
+            if (!failed && relay != null) sayWhereRelayed();
             if (failed || restoring == null) return;
             String path = pathOf(url);
             if (path != null && path.equals(restoringPath)) {
@@ -601,6 +842,11 @@ public final class AppActivity extends Activity {
             Log.i(TAG, "page failed: " + description);
             failed = true;
             ui.removeCallbacks(slowPage);
+            if (relay != null) {
+                // The relay already asked both: neither answered.
+                notAnswering();
+                return;
+            }
             leave("is not answering");
         }
 
@@ -609,12 +855,24 @@ public final class AppActivity extends Activity {
                                         WebResourceResponse response) {
             if (request.isForMainFrame() && response.getStatusCode() >= 500) {
                 failed = true;
-                leave("returned an error");
+                if (relay != null) notAnswering();
+                else leave("returned an error");
             }
         }
     }
 
     private final class Chrome extends WebChromeClient {
+        @Override
+        public void onReceivedTitle(WebView view, String t) {
+            title.setText(t == null || t.isEmpty() || t.startsWith("http") ? name : t);
+        }
+
+        @Override
+        public void onProgressChanged(WebView view, int progress) {
+            loading.setProgress(progress);
+            loading.setVisibility(progress < 100 ? View.VISIBLE : View.INVISIBLE);
+        }
+
         @Override
         public boolean onShowFileChooser(WebView view, ValueCallback<Uri[]> callback,
                                          FileChooserParams params) {

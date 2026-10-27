@@ -319,12 +319,18 @@ def tv_address() -> Response:
     )
 
 
-def phone_apps(configured: str) -> list[dict[str, str | None]]:
+def phone_apps(configured: str) -> list[dict[str, str | bool | None]]:
     """Parse PHONE_APPS into buttons, dropping what is not a web address.
 
-    Each entry is `Name|address on the PC|address on the standby`, the last
-    optional: the phone opens the PC's copy when it answers and the standby's
-    when it does not, the same order it follows for Homesh itself.
+    Each entry is `Name|address on the PC|address on the standby|same`, the
+    last two optional: the phone opens the PC's copy when it answers and the
+    standby's when it does not, the same order it follows for Homesh itself.
+
+    `same` says the two copies are interchangeable -- the same data, no
+    sign-in of their own, nothing that answers differently on the standby --
+    so the phone may send each request to whichever answers, under one
+    address, and never reload the page to change machines. Only the app's
+    owner knows that, so it is declared here rather than guessed.
 
     A malformed entry is skipped rather than refused: it is a line somebody
     typed into .env by hand, and one typo should not take the others, or the
@@ -332,12 +338,15 @@ def phone_apps(configured: str) -> list[dict[str, str | None]]:
     address costs only the fallback, not the button.
     """
     web = ("https://", "http://")
-    apps: list[dict[str, str | None]] = []
+    apps: list[dict[str, str | bool | None]] = []
     for entry in configured.split(";"):
-        name, url, standby, *_ = [*(part.strip() for part in entry.split("|")), "", ""]
+        name, url, standby, same, *_ = [*(part.strip() for part in entry.split("|")), "", "", ""]
         if name and url.startswith(web):
             fallback = standby if standby.startswith(web) else None
-            apps.append({"name": name, "url": url, "standby": fallback})
+            app: dict[str, str | bool | None] = {"name": name, "url": url, "standby": fallback}
+            if fallback and same.lower() == "same":
+                app["same"] = True
+            apps.append(app)
     return apps
 
 

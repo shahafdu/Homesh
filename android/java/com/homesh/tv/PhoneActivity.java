@@ -118,9 +118,31 @@ public final class PhoneActivity extends Activity {
      */
     private boolean inApp;
 
+    /**
+     * Whether finding the server should open Homesh by itself. Only on a fresh
+     * start, and only when Homesh is the one thing here: with other apps beside
+     * it, this screen is the menu, and opening one of them is a choice to make
+     * on it rather than one made for the person.
+     *
+     * <p>Never on the way back. Both flags above live in this object, and
+     * Android drops the object while another app is in front whenever the
+     * phone is short of memory -- a WebView is a lot of it. Rebuilt with the
+     * flags forgotten, returning looked like starting, and closing SpaXepedition
+     * opened Homesh. So they are kept in the saved state as well, and a screen
+     * that is rebuilt rather than started never opens anything unasked.
+     */
+    private boolean autoOpen;
+    private static final String SAVED_IN_APP = "inApp";
+    private static final String SAVED_HANDED_OFF = "handedOff";
+
     @Override
     protected void onCreate(Bundle state) {
         super.onCreate(state);
+        if (state != null) {
+            inApp = state.getBoolean(SAVED_IN_APP, false);
+            handedOff = state.getBoolean(SAVED_HANDED_OFF, false);
+        }
+        autoOpen = state == null;
 
         root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
@@ -142,13 +164,13 @@ public final class PhoneActivity extends Activity {
 
         openHomesh = button("Open Homesh", v -> {
             if (reachedAt != null) open(reachedAt);
-            else check(false);
+            else check(false, true);
         });
         openTailscale = button("Open Tailscale", v -> launchTailscale());
         apps = new LinearLayout(this);
         apps.setOrientation(LinearLayout.VERTICAL);
         showApps();
-        searchAgain = button("Search on this network", v -> check(true));
+        searchAgain = button("Search on this network", v -> check(true, true));
         changeAddress = button("Change the address", v -> {
             // The setup screen is the television's too, and reads the address
             // from the plain store. Put there for as long as that screen is
@@ -207,7 +229,21 @@ public final class PhoneActivity extends Activity {
 
         // The whole point of the Tailscale button: coming back from it should
         // simply continue, not ask to be told again that it worked.
-        check(false);
+        boolean go = autoOpen && !hasApps();
+        autoOpen = false;
+        check(false, go);
+    }
+
+    @Override
+    protected void onSaveInstanceState(Bundle out) {
+        super.onSaveInstanceState(out);
+        out.putBoolean(SAVED_IN_APP, inApp);
+        out.putBoolean(SAVED_HANDED_OFF, handedOff);
+    }
+
+    /** Whether the PC has listed apps beside Homesh, so this screen is a menu. */
+    private boolean hasApps() {
+        return apps.getChildCount() > 0;
     }
 
     private Button button(String label, View.OnClickListener onClick) {
@@ -237,7 +273,7 @@ public final class PhoneActivity extends Activity {
      * address is the reverse. Which one applies is a property of where the phone
      * is standing, which the phone can simply find out rather than ask about.
      */
-    private void check(boolean sweep) {
+    private void check(boolean sweep, boolean go) {
         if (checking) return;
         checking = true;
 
@@ -277,10 +313,20 @@ public final class PhoneActivity extends Activity {
                 // Learned while it is possible to learn it, so the next time the
                 // phone is away from home it already knows where to look.
                 rememberOrigin(reachable);
-                String go = reachable;
+                String at = reachable;
                 boolean onStandby = reachable.equals(standby);
                 runOnUiThread(() -> {
-                    open(go);
+                    if (!go) {
+                        // Found, and left on the screen to open: the menu.
+                        reachedAt = at;
+                        message.setText(onStandby
+                                ? "Your PC is not answering, so Homesh will open on the standby."
+                                : "");
+                        showActions(true);
+                        openHomesh.setVisibility(View.VISIBLE);
+                        return;
+                    }
+                    open(at);
                     // Said on this screen as well as in the app's own status
                     // bar: it is the moment somebody decides whether to wait
                     // for the PC or carry on.
@@ -386,7 +432,8 @@ public final class PhoneActivity extends Activity {
                 if (name.isEmpty() || !isWeb(url)) continue;
                 String standby = app.isNull("standby") ? null : app.optString("standby", null);
                 String fallback = isWeb(standby) ? standby : null;
-                apps.addView(button("Open " + name, v -> openApp(name, url, fallback)));
+                boolean same = fallback != null && app.optBoolean("same", false);
+                apps.addView(button("Open " + name, v -> openApp(name, url, fallback, same)));
             }
         } catch (Exception e) {
             Log.i(TAG, "could not read the app list: " + e.getMessage());
@@ -405,8 +452,12 @@ public final class PhoneActivity extends Activity {
      * Tab cannot be moved once it is showing (AppActivity says why). One with
      * no copy has nowhere else to go, so it opens straight away in the same
      * kind of tab as Homesh, signed in as the browser is.
+     *
+     * <p>{@code same}: the PC declared the two copies interchangeable, so each
+     * request may go to either (AppActivity's relay) instead of the page being
+     * moved between them.
      */
-    private void openApp(String name, String url, String standby) {
+    private void openApp(String name, String url, String standby, boolean same) {
         inApp = true;
         if (standby == null) {
             launchApp(name, url);
@@ -415,7 +466,8 @@ public final class PhoneActivity extends Activity {
         startActivity(new Intent(this, AppActivity.class)
                 .putExtra(AppActivity.EXTRA_NAME, name)
                 .putExtra(AppActivity.EXTRA_PC, url)
-                .putExtra(AppActivity.EXTRA_STANDBY, standby));
+                .putExtra(AppActivity.EXTRA_STANDBY, standby)
+                .putExtra(AppActivity.EXTRA_SAME, same));
     }
 
     private void launchApp(String name, String url) {

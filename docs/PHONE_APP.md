@@ -56,9 +56,51 @@ offers the same build at `/phone`.
 learns the list from the PC, never from the standby, and replaces it whole each
 time, so an app removed on the PC disappears from the phone too.
 
+With apps listed, the first screen is a menu: it finds the server and offers
+**Open Homesh** beside them rather than opening Homesh by itself, and closing
+any of them comes back to it (from 1.7.1). Homesh still opens by itself when it
+is the only thing there.
+
+An app with a standby copy opens in the phone app's own page view, under a bar
+like the Custom Tab's: close, the page's title and which machine it is on, and
+a menu to go forward, reload, share the link or open it in the browser.
+
 An optional third field is the same app's address on the standby:
 `Name|address on the PC|address on the standby`. Without it, the button opens
 the PC's address straight away in a tab, the way Homesh opens.
+
+#### Apps whose two copies are the same
+
+A fourth field, `same`, says the two copies are interchangeable: the same data,
+no sign-in of their own, nothing that answers differently on the standby.
+SpaXepedition is one, since both copies keep the same book in step through
+GitHub. Only the app's owner can know that, so it is declared rather than
+guessed.
+
+Such an app is never moved between machines, so nothing reloads and nothing
+asks (from 1.7.0). The page stays at the PC's address and the phone answers
+each of its requests itself:
+
+- **A request goes to the PC** and, if the PC cannot connect within 3 seconds
+  or start answering within 5, or says it is unavailable, to the standby. The
+  page sees an answer either way.
+- **After a failure the standby goes first**, at no cost per request, until the
+  minute's keepalive has heard the PC answer twice running. A failure is
+  believed at once because somebody is waiting; a recovery waits to be sure.
+- **A write** (a save, a comment) is sent to the standby only when it cannot
+  have reached the PC: no connection, or the PC said it is unavailable. One the
+  PC may have taken without answering is reported to the page as failed, not
+  sent twice.
+- **The strip** says only that answers are coming from the standby.
+
+A web page cannot do this for itself, because it asks only the address it came
+from. The phone app can, because the WebView hands it every request first.
+Reads arrive with no body to worry about; writes do not reach that callback
+with their body, so a few lines put into the page pass them across instead.
+
+Apps without `same` (Travorg, whose standby has its own sign-in and keeps its
+files sealed) are moved between machines as below, since their page has to
+know which one it is talking to.
 
 With it, the app opens in a screen of the phone app's own (from 1.6.0), which
 keeps it on whichever machine is answering:
