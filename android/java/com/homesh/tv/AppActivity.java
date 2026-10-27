@@ -16,6 +16,7 @@ import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.WindowInsets;
 import android.webkit.CookieManager;
 import android.webkit.JavascriptInterface;
 import android.webkit.ValueCallback;
@@ -264,6 +265,7 @@ public final class AppActivity extends Activity {
         root.addView(web, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
         setContentView(root);
+        keepClearOfSystemBars(root);
 
         if (state != null && web.restoreState(state) != null && web.getUrl() != null) {
             // Rebuilt by Android, not opened afresh: carry on where it was,
@@ -277,6 +279,30 @@ public final class AppActivity extends Activity {
         } else {
             open();
         }
+    }
+
+    /**
+     * The status bar, the navigation bar and the keyboard are kept off the
+     * page here, as padding, and not passed on to it.
+     *
+     * <p>From Android 15 an app is drawn edge to edge, under the system bars,
+     * and the WebView was told so: a page that pads its header by
+     * env(safe-area-inset-top), as SpaXepedition's and Travorg's do for when
+     * they are added to a home screen, padded it by the status bar's height
+     * although the page sits under this activity's bar, well clear of it --
+     * a header twice the height it needs. Consumed here, the page sees no
+     * inset and lays out as it would in a browser tab. The keyboard is part of
+     * it because edge to edge also ends the window resizing for it.
+     */
+    private void keepClearOfSystemBars(View root) {
+        if (Build.VERSION.SDK_INT < 30) return;
+        root.setOnApplyWindowInsetsListener((v, insets) -> {
+            android.graphics.Insets bars = insets.getInsets(WindowInsets.Type.systemBars()
+                    | WindowInsets.Type.displayCutout());
+            android.graphics.Insets ime = insets.getInsets(WindowInsets.Type.ime());
+            v.setPadding(bars.left, bars.top, bars.right, Math.max(bars.bottom, ime.bottom));
+            return WindowInsets.CONSUMED;
+        });
     }
 
     /**
