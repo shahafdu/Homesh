@@ -174,7 +174,8 @@ class TestWhereThePhoneFallsBack:
         """Then the phone sends each request to whichever answers, never reloading."""
         body = self._address(
             anon_client, monkeypatch,
-            PHONE_APPS="Notes|https://example.ts.net:9101|https://standby.example.ts.net:9101| Same ;"
+            PHONE_APPS="Notes|https://example.ts.net:9101|https://standby.example.ts.net:9101"
+                       "| Same ;"
                        "Trips|https://example.ts.net:9102|https://standby.example.ts.net:9102|maybe;"
                        "Solo|https://example.ts.net:8445||same",
         )
