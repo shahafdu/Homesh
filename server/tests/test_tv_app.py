@@ -170,6 +170,23 @@ class TestWhereThePhoneFallsBack:
             "standby": "https://standby.example.ts.net:9102",
         }]
 
+    def test_an_app_can_say_its_copies_are_the_same(self, anon_client, monkeypatch):
+        """Then the phone sends each request to whichever answers, never reloading."""
+        body = self._address(
+            anon_client, monkeypatch,
+            PHONE_APPS="Notes|https://example.ts.net:9101|https://standby.example.ts.net:9101| Same ;"
+                       "Trips|https://example.ts.net:9102|https://standby.example.ts.net:9102|maybe;"
+                       "Solo|https://example.ts.net:8445||same",
+        )
+        assert body["apps"] == [
+            {"name": "Notes", "url": "https://example.ts.net:9101",
+             "standby": "https://standby.example.ts.net:9101", "same": True},
+            {"name": "Trips", "url": "https://example.ts.net:9102",
+             "standby": "https://standby.example.ts.net:9102"},
+            # (the same as nothing: with no standby there is nothing to be the same as)
+            {"name": "Solo", "url": "https://example.ts.net:8445", "standby": None},
+        ]
+
     def test_a_mistyped_standby_address_keeps_the_button(self, anon_client, monkeypatch):
         body = self._address(
             anon_client, monkeypatch,
