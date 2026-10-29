@@ -34,6 +34,12 @@ public class ReachTest {
                 "origin", 400, false, "lan", 50, true, "standby", 10, true), "lan",
                 "either of the PC's addresses will do");
         eq(pick(new String[] {"origin", "lan"}, standby, 2000, 2000,
+                "origin", 300, true, "lan", 10, true, "standby", 10, true), "origin",
+                "the secure address, though the house address answers first");
+        eq(pick(new String[] {"origin", "lan"}, standby, 300, 800,
+                "origin", 5000, true, "lan", 10, true, "standby", 10, true), "lan",
+                "the house address, once the secure one has had its time");
+        eq(pick(new String[] {"origin", "lan"}, standby, 2000, 2000,
                 "origin", 100, false, "lan", 300, false, "standby", 1000, true), "standby",
                 "with no quick limit, the standby only once the PC has failed");
         eq(pick(new String[] {null, ""}, standby, 2000, 2000, "standby", 10, true), "standby",
