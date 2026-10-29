@@ -236,6 +236,14 @@ public final class AppActivity extends Activity {
         s.setJavaScriptEnabled(true);
         s.setDomStorageEnabled(true);
         s.setMediaPlaybackRequiresUserGesture(true);
+        // Pinch to zoom, as in the browser. A WebView has it off until it is
+        // asked for, and asking is "built-in zoom controls": the gesture, with
+        // the old on-screen +/- buttons hidden. Without it the page itself
+        // would not zoom, while SpaXepedition's picture viewer, which zooms on
+        // its own, still did -- zoom that seemed to work only sometimes.
+        s.setSupportZoom(true);
+        s.setBuiltInZoomControls(true);
+        s.setDisplayZoomControls(false);
         CookieManager.getInstance().setAcceptCookie(true);
         if (getIntent().getBooleanExtra(EXTRA_SAME, false)) {
             relay = new Relay(pc, standby, fromStandby -> ui.post(this::sayWhereRelayed));

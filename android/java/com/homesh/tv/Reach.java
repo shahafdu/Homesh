@@ -27,8 +27,13 @@ final class Reach {
      * The address to use, or null when nothing answered.
      *
      * <p>{@code first} is preferred -- the PC -- and {@code second} is where to
-     * go instead -- the standby. Every address is asked at once. Any of
-     * {@code first} that answers is taken the moment it does. One of
+     * go instead -- the standby. Every address is asked at once.
+     * {@code first} is in order of preference: one of them is taken the moment
+     * it answers if every one before it has failed, and otherwise once those
+     * have answered or the time is up. The PC's secure address comes before
+     * its house address, and must: at home the house address always answers
+     * first, and a passkey works only on the secure one -- taking the quicker
+     * of the two (1.6.0 to 1.7.2) opened Homesh where nobody could sign in. One of
      * {@code second} is taken once every {@code first} has failed, or once
      * {@code quickMs} have passed with none of them answering: a PC that takes
      * longer than that is too busy to be worth waiting for while the standby
@@ -75,9 +80,24 @@ final class Reach {
                 long waited = (System.nanoTime() - start) / 1_000_000;
 
                 boolean firstPending = false;
+                String best = null;
                 for (int i = 0; i < first.length; i++) {
-                    if (Boolean.TRUE.equals(answered[i])) return all[i];
+                    if (Boolean.TRUE.equals(answered[i])) {
+                        if (!firstPending) return all[i];
+                        if (best == null) best = all[i];
+                    }
                     if (answered[i] == null) firstPending = true;
+                }
+                if (best != null) {
+                    // A later address of the PC answered; an earlier one may yet.
+                    if (waited >= giveUpMs) return best;
+                    try {
+                        lock.wait(Math.max(1, giveUpMs - waited));
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        return best;
+                    }
+                    continue;
                 }
 
                 boolean secondPending = false;
