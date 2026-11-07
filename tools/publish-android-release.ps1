@@ -102,7 +102,19 @@ $release = Invoke-RestMethod -Method Post -Headers $headers "https://api.github.
     -ContentType 'application/json' -Body (@{ tag_name = $tag; target_commitish = $head; name = $name; body = $body } | ConvertTo-Json)
 
 $uploads = @(@{ Path = $phone.Apk; Name = "homesh-phone-$($phone.Version).apk" })
-if ($withTv) { $uploads += @{ Path = $tv.Apk; Name = "homesh-tv-$($tv.Version).apk" } }
+if ($withTv) {
+    $uploads += @{ Path = $tv.Apk; Name = "homesh-tv-$($tv.Version).apk" }
+} else {
+    # Every release carries both apps, so the latest one is all anybody needs.
+    # A TV app that did not change is the file already released, copied across
+    # as it is -- the same bytes, the same signature -- rather than rebuilt.
+    $carried = $releases | ForEach-Object { $_.assets } | Where-Object { $_.name -like 'homesh-tv-*.apk' } | Select-Object -First 1
+    if ($carried) {
+        $copy = Join-Path ([IO.Path]::GetTempPath()) $carried.name
+        Invoke-WebRequest -UseBasicParsing -Uri $carried.browser_download_url -OutFile $copy
+        $uploads += @{ Path = $copy; Name = $carried.name }
+    }
+}
 foreach ($u in $uploads) {
     $asset = Invoke-RestMethod -Method Post -Headers $headers -ContentType 'application/vnd.android.package-archive' `
         -InFile $u.Path "https://uploads.github.com/repos/$slug/releases/$($release.id)/assets?name=$($u.Name)"
