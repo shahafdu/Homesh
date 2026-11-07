@@ -51,7 +51,12 @@ if (-not $phone -or -not $phone.Current) {
 }
 $tv = Built 'tv'
 
-$token = (("protocol=https`nhost=github.com`n`n" | git credential fill) | Where-Object { $_ -like 'password=*' }) -replace '^password=', ''
+# Piped from PowerShell 5.1, the request arrives with a byte-order mark that git
+# reads as part of "protocol" and rejects; a file in plain ASCII does not.
+$ask = [IO.Path]::GetTempFileName()
+[IO.File]::WriteAllText($ask, "protocol=https`nhost=github.com`n`n", [Text.Encoding]::ASCII)
+$token = ((cmd /c "git credential fill < `"$ask`"") | Where-Object { $_ -like 'password=*' }) -replace '^password=', ''
+Remove-Item $ask
 if (-not $token) { Write-Host "No GitHub token in the credential manager." -ForegroundColor Red; exit 1 }
 $headers = @{ Authorization = "Bearer $token"; Accept = 'application/vnd.github+json' }
 
