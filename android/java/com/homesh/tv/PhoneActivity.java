@@ -127,7 +127,7 @@ public final class PhoneActivity extends Activity {
      * <p>Never on the way back. Both flags above live in this object, and
      * Android drops the object while another app is in front whenever the
      * phone is short of memory -- a WebView is a lot of it. Rebuilt with the
-     * flags forgotten, returning looked like starting, and closing the app
+     * flags forgotten, returning looked like starting, and closing an app
      * opened Homesh. So they are kept in the saved state as well, and a screen
      * that is rebuilt rather than started never opens anything unasked.
      */

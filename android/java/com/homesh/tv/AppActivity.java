@@ -239,8 +239,8 @@ public final class AppActivity extends Activity {
         // Pinch to zoom, as in the browser. A WebView has it off until it is
         // asked for, and asking is "built-in zoom controls": the gesture, with
         // the old on-screen +/- buttons hidden. Without it the page itself
-        // would not zoom, while the app's picture viewer, which zooms on
-        // its own, still did -- zoom that seemed to work only sometimes.
+        // would not zoom, while a picture viewer in the page that zooms on its
+        // own still did -- zoom that seemed to work only sometimes.
         s.setSupportZoom(true);
         s.setBuiltInZoomControls(true);
         s.setDisplayZoomControls(false);
@@ -295,8 +295,8 @@ public final class AppActivity extends Activity {
      *
      * <p>From Android 15 an app is drawn edge to edge, under the system bars,
      * and the WebView was told so: a page that pads its header by
-     * env(safe-area-inset-top), as such pages do for when
-     * they are added to a home screen, padded it by the status bar's height
+     * env(safe-area-inset-top), as a page made to be added to a home screen
+     * does, padded it by the status bar's height
      * although the page sits under this activity's bar, well clear of it --
      * a header twice the height it needs. Consumed here, the page sees no
      * inset and lays out as it would in a browser tab. The keyboard is part of
@@ -843,8 +843,8 @@ public final class AppActivity extends Activity {
 
         @Override
         public void doUpdateVisitedHistory(WebView view, String url, boolean reload) {
-            // Every page added, hash links included: the app moves
-            // between its pages by #, so most of its history is made here.
+            // Every page added, hash links included: an app that moves
+            // between its pages by # makes most of its history here.
             holdBack();
         }
 
