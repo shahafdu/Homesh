@@ -73,8 +73,7 @@ the PC's address straight away in a tab, the way Homesh opens.
 
 A fourth field, `same`, says the two copies are interchangeable: the same data,
 no sign-in of their own, nothing that answers differently on the standby.
-Only the app's owner can know that, so it is declared rather than
-guessed.
+Only the app's owner can know that, so it is declared rather than guessed.
 
 Such an app is never moved between machines, so nothing reloads and nothing
 asks (from 1.7.0). The page stays at the PC's address and the phone answers
@@ -97,7 +96,8 @@ from. The phone app can, because the WebView hands it every request first.
 Reads arrive with no body to worry about; writes do not reach that callback
 with their body, so a few lines put into the page pass them across instead.
 
-Apps without `same` (one whose standby has its own sign-in, say) are moved between machines as below, since their page has to
+Apps without `same` (one whose standby has its own sign-in, say) are moved
+between machines as below, since their page has to
 know which one it is talking to.
 
 With it, the app opens in a screen of the phone app's own (from 1.6.0), which
@@ -161,6 +161,11 @@ the tailnet one away — what build the server offers at `/phone.json`, and if i
 is newer the button becomes **Install**, which downloads it and hands it to
 Android's own installer prompt. That prompt cannot be skipped by an ordinary app,
 and should not be.
+
+Each new version is also published on the
+[releases page](https://github.com/shahafdu/Homesh/releases/latest), from the PC
+that signs it (`tools/publish-android-release.ps1`), since that is where a phone
+goes when the server cannot be reached.
 
 From 1.2.0. Earlier builds cannot check, so the move to 1.2.0 is one install by
 hand; after that the app keeps itself current.

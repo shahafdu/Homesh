@@ -1,0 +1,20 @@
+#!/bin/sh
+#
+# Refuse a commit message that names something in .local/private-words.txt.
+#
+# A message is published with the commit, and unlike a file it cannot be fixed
+# by a later commit: only by rewriting history, which on a public repository
+# is too late. The list itself is untracked, for the reason pre-commit gives.
+
+words=.local/private-words.txt
+[ -s "$words" ] || exit 0
+
+named=$(grep -v '^#' "$1" | grep -niF -f "$words" | cut -c1-80)
+if [ -n "$named" ]; then
+  echo
+  echo "REFUSING: the commit message names something listed in $words."
+  echo "$named"
+  echo
+  echo "Describe it generically; the message is kept in the public history."
+  exit 1
+fi

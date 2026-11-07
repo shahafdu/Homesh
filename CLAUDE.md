@@ -78,7 +78,26 @@ never leave this repository.
 .\tools\run-tests.ps1        # suite, and the private-data scan first
 git push origin main
 .\tools\verify-ci.ps1        # blocks until CI completes; non-zero if red
+.\tools\publish-android-release.ps1   # whenever an Android app's version went up
 ```
+
+**Every new Android build goes to the GitHub release page**, the phone app's
+above all: it is how a phone gets the app when the server cannot be reached.
+It has to be this PC that publishes, since the APKs are signed with its key and
+a phone refuses an update signed by any other. Publishing once sat seven weeks
+behind because it was a step done by hand; `run-tests.ps1` now warns when the
+built phone app is not released, and the script does nothing for a version
+already there.
+
+### The household's other apps are named nowhere here
+
+Homesh Connect offers other web apps beside Homesh (`PHONE_APPS`). Which apps,
+their names, addresses and ports are this household's own and live only in
+`.env` on the PC and in the apps' own setup on the standby -- never in code,
+docs, tests, examples or commit messages. Describe one as "an app beside
+Homesh". Their names are listed in `.local/private-words.txt` (untracked), and
+the `commit-msg`, `pre-commit` and `pre-push` hooks and `run-tests.ps1` refuse
+any tracked line or commit message that uses one.
 
 `verify-ci.ps1` names every job and exits non-zero when any failed, so it can be
 trusted rather than read hopefully. **Do not report work as done before it has

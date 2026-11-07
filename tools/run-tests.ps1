@@ -87,7 +87,37 @@ if ($leaks.Count -gt 0 -or $ids.Count -gt 0 -or $keys.Count -gt 0) {
     Write-Host "  Use an RFC 5737 documentation address (192.0.2.x, 198.51.100.x)." -ForegroundColor Red
     exit 1
 }
+# Names that are this household's own business -- the other apps it runs, say --
+# listed one per line in .local/private-words.txt, which is not tracked: a list
+# committed here would publish what it guards. Checked in every tracked file and
+# in every commit message not yet pushed, since a message is published too.
+$wordsFile = Join-Path $PSScriptRoot '..\.local\private-words.txt'
+if ((Test-Path $wordsFile) -and (Get-Item $wordsFile).Length -gt 0) {
+    $named = @(git grep -nIiF -f $wordsFile -- . 2>$null)
+    $upstream = git rev-parse --verify --quiet origin/main 2>$null
+    if ($upstream) {
+        $named += @(git log --format='%h %B' "$upstream..HEAD" 2>$null | Select-String -SimpleMatch -Pattern (Get-Content $wordsFile | Where-Object { $_ -and $_ -notmatch '^#' }) | ForEach-Object { "message: $_" })
+    }
+    if ($named.Count -gt 0) {
+        Write-Host "  A tracked file or an unpushed commit message names something in .local\private-words.txt:" -ForegroundColor Red
+        $named | ForEach-Object { Write-Host "    $($_.ToString().Substring(0, [Math]::Min(100, $_.ToString().Length)))" -ForegroundColor Red }
+        exit 1
+    }
+}
 Write-Host "  clean" -ForegroundColor DarkGray
+
+# The phone app on the release page, which is how a phone gets it when the
+# server cannot be reached. It sat seven weeks behind once, because publishing
+# was a step done by hand that nothing reported as skipped. A warning, not a
+# failure: the build is published after the push, never before it.
+$phoneJson = Join-Path $PSScriptRoot '..\build\homesh-phone.json'
+if (Test-Path $phoneJson) {
+    $built = (Get-Content $phoneJson -Raw | ConvertFrom-Json).versionName
+    $released = git ls-remote --tags origin "refs/tags/android-$built" 2>$null
+    if (-not $released) {
+        Write-Host "  Homesh Connect $built is not on the release page yet: after pushing, run .\tools\publish-android-release.ps1" -ForegroundColor Yellow
+    }
+}
 
 Write-Host "Running tests against $testDb..." -ForegroundColor Cyan
 
