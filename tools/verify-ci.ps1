@@ -49,7 +49,8 @@ $deadline = (Get-Date).AddMinutes($TimeoutMinutes)
 $run = $null
 
 while ((Get-Date) -lt $deadline) {
-    $runs = (Invoke-RestMethod -Uri "$api`?per_page=15" -Headers $headers).workflow_runs
+    # Asked by commit: Dependabot's runs alone can fill a page of recent ones.
+    $runs = (Invoke-RestMethod -Uri "$api`?head_sha=$sha&event=push&per_page=30" -Headers $headers).workflow_runs
     # The CI workflow, pushed. Dependabot runs its own workflows against the
     # same commit -- a dependency graph update finishes in seconds -- and the
     # first of those once passed for the build while the tests were running.
