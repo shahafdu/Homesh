@@ -148,7 +148,7 @@ class TestWhereThePhoneFallsBack:
         body = self._address(
             anon_client, monkeypatch,
             STANDBY_ORIGIN="https://standby.example.ts.net",
-            PHONE_APPS="Notes|https://example.ts.net:9101",
+            PHONE_APPS="AppOne|https://example.ts.net:9101",
             PUBLIC_ORIGIN="https://example.ts.net",
         )
         assert "apps" not in body
@@ -169,7 +169,7 @@ class TestWhereThePhoneFallsBack:
     def test_the_standby_says_what_it_is_and_names_nothing(self, anon_client, monkeypatch):
         body = self._address(anon_client, monkeypatch, HOMESH_ROLE="standby",
                              STANDBY_ORIGIN="https://standby.example.ts.net",
-                             PHONE_APPS="Notes|https://example.ts.net:9101")
+                             PHONE_APPS="AppOne|https://example.ts.net:9101")
         assert body["role"] == "standby"
         assert body["standby"] is None
         assert body["apps"] == []
@@ -177,21 +177,21 @@ class TestWhereThePhoneFallsBack:
     def test_the_pc_offers_other_apps_in_order(self, anon_client, monkeypatch):
         body = self._address(
             anon_client, monkeypatch,
-            PHONE_APPS="Notes|https://example.ts.net:9101; Trips | https://example.ts.net:9102",
+            PHONE_APPS="AppOne|https://example.ts.net:9101; AppTwo | https://example.ts.net:9102",
         )
         assert body["apps"] == [
-            {"name": "Notes", "url": "https://example.ts.net:9101", "standby": None},
-            {"name": "Trips", "url": "https://example.ts.net:9102", "standby": None},
+            {"name": "AppOne", "url": "https://example.ts.net:9101", "standby": None},
+            {"name": "AppTwo", "url": "https://example.ts.net:9102", "standby": None},
         ]
 
     def test_an_app_can_name_its_copy_on_the_standby(self, anon_client, monkeypatch):
         """The phone falls back to it when the PC's copy does not answer."""
         body = self._address(
             anon_client, monkeypatch,
-            PHONE_APPS="Trips|https://example.ts.net:9102|https://standby.example.ts.net:9102 ",
+            PHONE_APPS="AppTwo|https://example.ts.net:9102|https://standby.example.ts.net:9102 ",
         )
         assert body["apps"] == [{
-            "name": "Trips",
+            "name": "AppTwo",
             "url": "https://example.ts.net:9102",
             "standby": "https://standby.example.ts.net:9102",
         }]
@@ -200,15 +200,15 @@ class TestWhereThePhoneFallsBack:
         """Then the phone sends each request to whichever answers, never reloading."""
         body = self._address(
             anon_client, monkeypatch,
-            PHONE_APPS="Notes|https://example.ts.net:9101|https://standby.example.ts.net:9101"
+            PHONE_APPS="AppOne|https://example.ts.net:9101|https://standby.example.ts.net:9101"
                        "| Same ;"
-                       "Trips|https://example.ts.net:9102|https://standby.example.ts.net:9102|maybe;"
+                       "AppTwo|https://example.ts.net:9102|https://standby.example.ts.net:9102|maybe;"
                        "Solo|https://example.ts.net:8445||same",
         )
         assert body["apps"] == [
-            {"name": "Notes", "url": "https://example.ts.net:9101",
+            {"name": "AppOne", "url": "https://example.ts.net:9101",
              "standby": "https://standby.example.ts.net:9101", "same": True},
-            {"name": "Trips", "url": "https://example.ts.net:9102",
+            {"name": "AppTwo", "url": "https://example.ts.net:9102",
              "standby": "https://standby.example.ts.net:9102"},
             # (the same as nothing: with no standby there is nothing to be the same as)
             {"name": "Solo", "url": "https://example.ts.net:8445", "standby": None},
@@ -217,10 +217,10 @@ class TestWhereThePhoneFallsBack:
     def test_a_mistyped_standby_address_keeps_the_button(self, anon_client, monkeypatch):
         body = self._address(
             anon_client, monkeypatch,
-            PHONE_APPS="Trips|https://example.ts.net:9102|standby.example.ts.net:9102",
+            PHONE_APPS="AppTwo|https://example.ts.net:9102|standby.example.ts.net:9102",
         )
         assert body["apps"] == [
-            {"name": "Trips", "url": "https://example.ts.net:9102", "standby": None},
+            {"name": "AppTwo", "url": "https://example.ts.net:9102", "standby": None},
         ]
 
     def test_a_mistyped_app_is_skipped_not_fatal(self, anon_client, monkeypatch):

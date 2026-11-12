@@ -925,8 +925,8 @@ async def seek(
     """Move to a point in what is playing in another room.
 
     The one control the tower was missing, and the one an hour-long video most
-    needs: without it the only way past a slow passage in the bedroom was to
-    walk to the bedroom.
+    needs: without it the only way past a slow passage in another room was to
+    walk to that room.
     """
     zone = _load_zone(zone_id)
     _require_zone_access(zone_id, user)
