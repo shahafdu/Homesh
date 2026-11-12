@@ -1,0 +1,17 @@
+# Weekly pull requests when a pinned dependency has a newer release, and at
+# once when one has a security advisory. Pins without this go stale; updates
+# without pins arrive unannounced. Both together is the point.
+version: 2
+updates:
+  - package-ecosystem: pip
+    directory: /server
+    schedule:
+      interval: weekly
+  - package-ecosystem: npm
+    directory: /web
+    schedule:
+      interval: weekly
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly

@@ -70,7 +70,16 @@ jobs:
 
       - name: Install
         working-directory: server
-        run: pip install -e ".[dev]"
+        # The pinned, hashed set the image installs, so CI tests what ships.
+        run: |
+          pip install --require-hashes -r requirements-dev.txt
+          pip install --no-deps -e .
+
+      - name: Known vulnerabilities in the server's dependencies
+        working-directory: server
+        run: |
+          pip install pip-audit
+          pip-audit --strict -r requirements.txt
 
       - name: Lint
         working-directory: server
@@ -115,6 +124,10 @@ jobs:
       - name: Install
         working-directory: web
         run: npm install
+      - name: Known vulnerabilities in what ships
+        working-directory: web
+        # Production dependencies only: the dev server never runs in a deployment.
+        run: npm audit --omit=dev --audit-level=high
       - name: Build (runs tsc)
         working-directory: web
         run: npm run build

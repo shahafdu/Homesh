@@ -42,11 +42,18 @@ RUN apt-get update \
 WORKDIR /app
 
 # Dependency layer first so code edits don't reinstall the world.
-COPY server/pyproject.toml ./
-RUN pip install --upgrade pip && pip install .
+#
+# Exact versions with their hashes, from requirements.txt, so a build takes the
+# packages that were tested rather than whatever is newest that day -- a
+# hijacked release included. The project itself is then installed without
+# resolving anything. Regenerate the file with:
+#   uv pip compile pyproject.toml --python-version 3.12 --generate-hashes --universal -o requirements.txt
+COPY server/pyproject.toml server/requirements.txt ./
+RUN pip install --upgrade pip && pip install --require-hashes -r requirements.txt
 
 COPY server/app ./app
 COPY server/migrations ./migrations
+RUN pip install --no-deps .
 
 # Serving the client from the API keeps everything same-origin, which is what
 # makes session cookies and the WebAuthn RP ID straightforward.
