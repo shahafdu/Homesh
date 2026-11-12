@@ -7,12 +7,14 @@ these are about what that caller cannot do.
 from __future__ import annotations
 
 import json
+import time
 import uuid
 
 import pytest
 from sqlalchemy import text
 
 from app.renderers import CODE_ALPHABET, CODE_LENGTH, _hash
+from app.security import CurrentUser, optional_user, require_user
 
 
 def _begin(client, key="device-abc", name="Bedroom TV"):
@@ -58,6 +60,42 @@ class TestClaiming:
             "/api/renderers/pair/claim", json={"code": body["code"], "name": "Bedroom"}
         )
         assert r.status_code == 401
+
+    def test_only_an_administrator_can_claim(self, client, anon_client, db):
+        """Pairing creates and rebinds rooms and sets who they are for."""
+        first = _begin(anon_client, key="k1")
+        assert (
+            client.post(
+                "/api/renderers/pair/claim", json={"code": first["code"], "name": "Den"}
+            ).status_code
+            == 200
+        )
+        with db.begin() as conn:
+            uid = conn.execute(
+                text(
+                    "INSERT INTO users (handle, display_name, is_admin) "
+                    "VALUES ('guest', 'Guest', FALSE) RETURNING id"
+                )
+            ).scalar_one()
+        guest = CurrentUser(id=uid, handle="guest", display_name="Guest", is_admin=False)
+        client.app.dependency_overrides[require_user] = lambda: guest
+        client.app.dependency_overrides[optional_user] = lambda: guest
+
+        takeover = _begin(anon_client, key="k2")
+        r = client.post(
+            "/api/renderers/pair/claim",
+            json={"code": takeover["code"], "name": "Den", "audience": "everyone"},
+        )
+        assert r.status_code == 403
+        with db.connect() as conn:
+            bound = conn.execute(
+                text(
+                    "SELECT r.device_key, z.audience::text FROM zones z "
+                    "JOIN renderers r ON r.id = z.renderer_id WHERE z.name = 'Den'"
+                )
+            ).one()
+        assert bound[0] == "k1"
+        assert bound[1] != "everyone"
 
     def test_claim_then_collect(self, client, anon_client, db):
         body = _begin(anon_client)
@@ -179,6 +217,32 @@ class TestCommandChannel:
         with pytest.raises(WebSocketDisconnect) as caught:
             with client.websocket_connect("/api/renderers/ws?token=not-a-real-token"):
                 pass
+        assert caught.value.code == 1008
+
+    def test_the_token_can_come_in_the_first_message(self, client, anon_client, db):
+        """So that it is never in an address, which the access log records."""
+        body = _begin(anon_client)
+        client.post("/api/renderers/pair/claim", json={"code": body["code"], "name": "Bedroom"})
+        token = anon_client.get(
+            f"/api/renderers/pair/status?poll_token={body['poll_token']}"
+        ).json()["device_token"]
+
+        with client.websocket_connect("/api/renderers/ws") as ws:
+            ws.send_text(json.dumps({"type": "auth", "token": token}))
+            # Accepted, then checked: give the server its turn before asking.
+            for _ in range(50):
+                if client.get("/api/renderers").json()[0]["connected"]:
+                    break
+                time.sleep(0.05)
+            assert client.get("/api/renderers").json()[0]["connected"] is True
+
+    def test_a_wrong_first_message_is_refused(self, client):
+        from starlette.websockets import WebSocketDisconnect
+
+        with pytest.raises(WebSocketDisconnect) as caught:
+            with client.websocket_connect("/api/renderers/ws") as ws:
+                ws.send_text(json.dumps({"type": "auth", "token": "not-a-real-token"}))
+                ws.receive_text()
         assert caught.value.code == 1008
 
     def test_paired_screen_can_connect_and_is_seen_as_ready(self, client, anon_client, db):

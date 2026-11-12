@@ -166,6 +166,9 @@ mkdir -p "$WORK/testclasses"
 # When an app beside Homesh changes machines: not on every flicker of a weak signal.
 "$JAVAC" -nowarn -encoding UTF-8 --release 17 -d "$WORK/testclasses"   "$(winpath "$SRC/java/com/homesh/tv/Follow.java")"   "$(winpath "$SRC/test/FollowTest.java")"
 "$JAVA_BIN" -cp "$(winpath "$WORK/testclasses")" com.homesh.tv.FollowTest
+# Whether a page belongs to the server: parsed, never a prefix of the address.
+"$JAVAC" -nowarn -encoding UTF-8 --release 17 -d "$WORK/testclasses"   "$(winpath "$SRC/java/com/homesh/tv/Origins.java")"   "$(winpath "$SRC/test/OriginsTest.java")"
+"$JAVA_BIN" -cp "$(winpath "$WORK/testclasses")" com.homesh.tv.OriginsTest
 
 # ── 1. Resources ─────────────────────────────────────────────────────────────
 "$AAPT2" compile --dir "$SRC/res" -o "$WORK/res.zip"

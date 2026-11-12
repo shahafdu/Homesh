@@ -130,6 +130,14 @@ class TestStreamEndpoint:
         assert r.status_code == 416
         assert r.headers["content-range"] == "bytes */16"
 
+    def test_backwards_range_returns_416(self, client, db, scanned):
+        item = _item(db, "beach.mkv")
+        url = client.get(f"/api/items/{item}/url").json()["url"]
+
+        r = client.get(url, headers={"Range": "bytes=10-4"})
+        assert r.status_code == 416
+        assert r.headers["content-range"] == "bytes */16"
+
     def test_malformed_range_rejected(self, client, db, scanned):
         item = _item(db, "beach.mkv")
         url = client.get(f"/api/items/{item}/url").json()["url"]
@@ -152,6 +160,15 @@ class TestStreamAuthorisation:
         token = mint(other, user.id, "stream")
 
         r = anon_client.get(f"/api/stream/{wanted}?t={token}")
+        assert r.status_code == 403
+
+    def test_live_conversion_link_is_bound_to_its_file(self, anon_client, db, scanned, user):
+        """A link for one video must not convert another the account can reach."""
+        wanted = _item(db, "beach.mkv")
+        other = _item(db, "DSC_0042.MOV")
+        token = mint(other, user.id, "stream")
+
+        r = anon_client.get(f"/api/videos/{wanted}/live.mp4?t={token}")
         assert r.status_code == 403
 
     def test_expired_token_rejected(self, anon_client, db, scanned, user):
@@ -369,3 +386,21 @@ class TestReaderIsClosed:
         url = client.get(f"/api/items/{item}/url").json()["url"]
         assert client.get(url).status_code == 200
         assert seen, "the stream endpoint no longer closes its reader"
+
+
+class TestLiveConversionLimits:
+    def test_a_third_live_conversion_is_refused_rather_than_queued(
+        self, client, db, scanned, monkeypatch
+    ):
+        """Each one is an encoder; a third makes all of them stutter."""
+        from app import transcode
+
+        class Busy:
+            returncode = None
+
+        busy = {(uuid.uuid4(), uuid.uuid4()): Busy() for _ in range(transcode.LIVE_MAX)}
+        monkeypatch.setattr(transcode, "_live", busy)
+        item = _item(db, "beach.mkv")
+        r = client.get(f"/api/videos/{item}/live.mp4")
+        assert r.status_code == 503
+        assert r.headers["retry-after"]

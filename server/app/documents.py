@@ -28,6 +28,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import FileResponse
 
 from .access import may_access_item
+from .childenv import child_env
 from .config import get_settings
 from .security import CurrentUser, optional_user
 from .signing import TokenError, verify
@@ -100,6 +101,7 @@ async def _run_soffice(source: Path, out_dir: Path) -> Path:
             str(source),
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
+            env=child_env(HOME=profile),
         )
         try:
             _out, err = await asyncio.wait_for(proc.communicate(), timeout=CONVERT_TIMEOUT)

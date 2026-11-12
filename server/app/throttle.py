@@ -63,6 +63,12 @@ CODES = Limit(10, timedelta(minutes=5))
 # of the lookup rather than the odds of a hit.
 INVITES = Limit(30, timedelta(minutes=5))
 
+# Doors that write something for whoever knocks: a pairing code is a database
+# row, a crash report is a log entry. Generous for a screen restarting in a
+# loop, tight enough that nobody fills the disk or the table from a phone.
+PAIRING = Limit(30, timedelta(minutes=5))
+CRASHES = Limit(30, timedelta(minutes=5))
+
 # How many distinct keys are remembered at once. Nothing but a flood from many
 # addresses reaches it, and then the oldest are forgotten -- which loosens the
 # limit for whoever has been quiet longest, never for whoever is flooding.

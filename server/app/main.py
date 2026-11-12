@@ -10,16 +10,16 @@ import asyncio
 import json
 import logging
 import os
+import time
 from contextlib import asynccontextmanager, suppress
-from functools import lru_cache
 from pathlib import Path
 
 import httpx
-from fastapi import FastAPI, Response
+from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 
-from . import lanaddr
+from . import lanaddr, webguard
 from .ai_api import router as ai_router
 from .auth import ensure_bootstrap_code
 from .auth import router as auth_router
@@ -35,6 +35,8 @@ from .people import router as people_router
 from .playlists import router as playlists_router
 from .prefs import router as prefs_router
 from .renderers import router as renderers_router
+from .security import SESSION_COOKIE
+from .security import _lookup as _lookup_session
 from .sharing import router as sharing_router
 from .stream import router as stream_router
 from .transcode import router as transcode_router
@@ -66,6 +68,7 @@ class _SuppressHealthProbes(logging.Filter):
 
 
 logging.getLogger("uvicorn.access").addFilter(_SuppressHealthProbes())
+logging.getLogger("uvicorn.access").addFilter(webguard.RedactQueries())
 
 
 @asynccontextmanager
@@ -160,8 +163,12 @@ app = FastAPI(
     title="Homesh",
     version=build_stamp(),
     lifespan=lifespan,
-    docs_url="/api/docs",
-    openapi_url="/api/openapi.json",
+    # Off wherever Homesh is really deployed. A list of every endpoint and its
+    # parameters is a map for whoever can reach the server, and the household
+    # has no use for it; a developer on localhost still gets it.
+    docs_url=None if settings.secure_cookies else "/api/docs",
+    openapi_url=None if settings.secure_cookies else "/api/openapi.json",
+    redoc_url=None,
 )
 
 # The web client is same-origin in production; this only opens the dev server.
@@ -194,6 +201,20 @@ app.include_router(renderers_router)
 app.include_router(stream_router)
 app.include_router(transcode_router)
 app.include_router(zones_router)
+
+
+# The development server is another origin by design; nothing else is.
+_DEV_ORIGINS = () if settings.secure_cookies else ("http://localhost:5173",)
+
+
+@app.middleware("http")
+async def browser_guards(request, call_next):
+    """Refuse writes from other pages; tell the browser how to treat ours."""
+    if webguard.write_is_from_elsewhere(request, _DEV_ORIGINS):
+        log.warning("refused a %s to %s from %s", request.method, request.url.path,
+                    request.headers.get("origin"))
+        return webguard.add_security_headers(webguard.refuse_cross_origin())
+    return webguard.add_security_headers(await call_next(request))
 
 
 @app.middleware("http")
@@ -271,7 +292,7 @@ async def tv_version() -> Response:
 
 
 @app.get("/tv.address", include_in_schema=False)
-def tv_address() -> Response:
+def tv_address(request: Request) -> Response:
     """Where a television can reach this server.
 
     Not `window.location.origin`, which is whatever the phone in your hand is
@@ -281,29 +302,43 @@ def tv_address() -> Response:
 
     A television is on the house network, so it needs the house address. That is
     configuration, never written down here.
+
+    The house address is all an unknown caller gets: a television needs it
+    before it is paired, and anything that can ask already reached the PC by
+    it. The rest -- the outside address, the standby, and the apps beside
+    Homesh -- is the household's own configuration, so it goes only to someone
+    signed in. The phone app sends the session its own web view holds.
     """
     lan = lanaddr.lan_base() or ""
     configured = (get_settings().lan_base_url or "").strip().rstrip("/")
     from .standby import role
 
     standby_at = (get_settings().standby_origin or "").strip().rstrip("/")
+    token = request.cookies.get(SESSION_COOKIE)
+    known = bool(token) and _lookup_session(token) is not None
+    private = {
+        # Where to go when the PC does not answer. Only the primary says.
+        "standby": (standby_at or None) if role() == "primary" else None,
+        # Other apps to offer beside Homesh. Only the primary says, for the
+        # same reason: the phone learns its configuration from the PC.
+        "apps": phone_apps(get_settings().phone_apps) if role() == "primary" else [],
+        # The address that works from outside the house, which is a
+        # different question from the house address and the one a phone away
+        # from home needs answered.
+        "origin": get_settings().public_origin.rstrip("/") or None,
+    }
+    # Left out, not emptied, for a caller nobody knows: a phone app that
+    # replaces its list with whatever arrives would otherwise lose the apps it
+    # learned while signed in.
     return JSONResponse(
         {
+            **(private if known else {}),
             # Which machine answered. The phone app learns addresses only from
             # the primary: taken from the standby, "origin" would be the
             # standby's own, and the phone would go on opening Oracle long after
             # the PC was back.
             "role": role(),
-            # Where to go when the PC does not answer. Only the primary says.
-            "standby": (standby_at or None) if role() == "primary" else None,
-            # Other apps to offer beside Homesh. Only the primary says, for the
-            # same reason: the phone learns its configuration from the PC.
-            "apps": phone_apps(get_settings().phone_apps) if role() == "primary" else [],
             "lan": lan or None,
-            # The address that works from outside the house, which is a
-            # different question from the one above and the one a phone away
-            # from home needs answered.
-            "origin": get_settings().public_origin.rstrip("/") or None,
             # Said out loud when the two differ, because the difference is the
             # bug being reported: an address that was right when it was written
             # down and is not any more.
@@ -350,8 +385,23 @@ def phone_apps(configured: str) -> list[dict[str, str | bool | None]]:
     return apps
 
 
-@lru_cache(maxsize=4)
+# Successes are kept; a failure is retried after a few minutes. Kept for good,
+# a failure meant that a port 80 which was not answering the first time anyone
+# opened the pairing panel was never offered again until a restart.
+_SHORT_RETRY = 300.0
+_short_cache: dict[str, tuple[str | None, float]] = {}
+
+
 def _short_address(lan: str) -> str | None:
+    hit = _short_cache.get(lan)
+    if hit is not None and (hit[0] is not None or time.monotonic() - hit[1] < _SHORT_RETRY):
+        return hit[0]
+    found = _probe_short_address(lan)
+    _short_cache[lan] = (found, time.monotonic())
+    return found
+
+
+def _probe_short_address(lan: str) -> str | None:
     """The same server without the port, when port 80 really does answer.
 
     Deliberately a plain `def`, called from a plain `def` endpoint so FastAPI
@@ -361,8 +411,8 @@ def _short_address(lan: str) -> str | None:
     itself. That is not hypothetical: written as `async def` this returned null
     every time, while the identical probe from a shell returned 200 in 0.18s.
 
-    Cached, because the answer is a property of the deployment and this is asked
-    every time somebody opens the pairing panel.
+    Cached by the caller, because the answer is a property of the deployment
+    and this is asked every time somebody opens the pairing panel.
     """
     if not lan.endswith(":8080"):
         return None

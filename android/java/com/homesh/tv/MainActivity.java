@@ -45,6 +45,8 @@ public class MainActivity extends Activity {
     private Button changeAddress;
     private Button searchAgain;
     private String server;
+    // The page showing now, as the view last said. Read from the bridge's thread.
+    private volatile String page;
 
     @SuppressLint("SetJavaScriptEnabled")
     /** Layout parameters that fill the frame, which is what every layer here wants. */
@@ -98,14 +100,23 @@ public class MainActivity extends Activity {
         // video crashed the television, and so did pressing stop. A supplier
         // reads the field when it is used rather than when it is written, which
         // is the only ordering that cannot be got wrong by moving code around.
-        web.addJavascriptInterface(new NativeVideo(this, () -> video), "HomeshVideo");
+        //
+        // And only for a page of the server's own: the bridge is attached to the
+        // view, not to a page, so it is asked each time whose page is showing.
+        web.addJavascriptInterface(
+                new NativeVideo(this, () -> video, () -> Origins.same(page, server)), "HomeshVideo");
         web.setWebViewClient(new WebViewClient() {
             @Override
             public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
                 // Everything this app shows is served by the house server. A link
                 // anywhere else is not something a TV should be following.
                 String url = request.getUrl().toString();
-                return !url.startsWith(server);
+                return !Origins.same(url, server);
+            }
+
+            @Override
+            public void onPageStarted(WebView view, String url, android.graphics.Bitmap icon) {
+                page = url;
             }
 
             @Override

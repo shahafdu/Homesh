@@ -28,6 +28,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy import text
 
 from .access import may_access_item
+from .childenv import child_env
 from .config import get_settings
 from .db import get_engine
 from .security import CurrentUser, optional_user, require_user
@@ -137,7 +138,7 @@ async def _run(item_id: UUID, user_id: UUID, ext: str) -> None:
         ]
 
         proc = await asyncio.create_subprocess_exec(
-            *args, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+            *args, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE, env=child_env()
         )
 
         total_ms: float | None = None
@@ -276,18 +277,32 @@ async def converted_video(item_id: UUID, user: CurrentUser = Depends(require_use
 LIVE_PRESET = "ultrafast"
 
 
-async def _viewer_id(request: Request, token: str | None) -> UUID:
+# Each live conversion is its own x264 encoder, and on a low-power CPU with no
+# GPU one already takes most of the machine at 720p. Two at once is the most
+# that keeps both near real time; a third would make all three stutter and slow
+# the rest of the server with them, so it is refused instead of queued.
+LIVE_MAX = 2
+_live: dict[tuple[UUID, UUID], asyncio.subprocess.Process] = {}
+
+
+async def _viewer_id(request: Request, token: str | None, item_id: UUID) -> UUID:
     """Who is watching, by session or by signed URL.
 
     A television has no session — it authenticates with the signed URL it was
     handed — while a browser has a cookie and no token. Both have to work, and
     both have to be checked: this endpoint reads media.
+
+    A link names one file. Taking only its user would let a five-minute link
+    for one video convert any video that account can reach, so the file is
+    checked too, exactly as the plain stream endpoint checks it.
     """
     if token:
         try:
             claim = verify(token, "stream")
         except TokenError as exc:
             raise HTTPException(status.HTTP_403_FORBIDDEN, "bad or expired link") from exc
+        if claim.item_id != item_id:
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "that link is for another file")
         return claim.user_id
 
     user = await optional_user(request)
@@ -311,7 +326,7 @@ async def live_stream(
     has finished, which is the whole point, and no file is written on either the
     server or the device watching.
     """
-    viewer = await _viewer_id(request, t)
+    viewer = await _viewer_id(request, t, item_id)
     if not may_access_item(item_id, viewer):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "no such item")
 
@@ -351,9 +366,25 @@ async def live_stream(
         "-f", "mp4", "pipe:1",
     ]
 
+    # A seek on a television is a new request for the same file. The encoder
+    # it replaces is otherwise only reaped when its listener notices, which can
+    # be long after the new one has started, so end it now.
+    key = (viewer, item_id)
+    previous = _live.pop(key, None)
+    if previous is not None and previous.returncode is None:
+        previous.kill()
+        await previous.wait()
+    if sum(1 for p in _live.values() if p.returncode is None) >= LIVE_MAX:
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            "too many videos are being converted right now; try again shortly",
+            headers={"Retry-After": "10"},
+        )
+
     proc = await asyncio.create_subprocess_exec(
-        *args, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL
+        *args, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL, env=child_env()
     )
+    _live[key] = proc
 
     async def pump():
         try:
@@ -370,6 +401,8 @@ async def live_stream(
             if proc.returncode is None:
                 proc.kill()
                 await proc.wait()
+            if _live.get(key) is proc:
+                del _live[key]
 
     return StreamingResponse(
         pump(),

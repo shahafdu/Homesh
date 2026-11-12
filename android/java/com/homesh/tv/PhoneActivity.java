@@ -359,6 +359,12 @@ public final class PhoneActivity extends Activity {
             conn = (HttpURLConnection) new URL(base + "/tv.address").openConnection();
             conn.setConnectTimeout(4000);
             conn.setReadTimeout(4000);
+            // The apps beside Homesh, the standby and the outside address are
+            // told only to someone signed in, so this sends the session the
+            // app's own web view holds for that address. Before the first
+            // sign-in there is none, and the PC says only its house address.
+            String cookie = android.webkit.CookieManager.getInstance().getCookie(base);
+            if (cookie != null && !cookie.isEmpty()) conn.setRequestProperty("Cookie", cookie);
 
             StringBuilder body = new StringBuilder();
             try (InputStream in = conn.getInputStream()) {

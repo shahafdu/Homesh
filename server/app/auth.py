@@ -640,11 +640,16 @@ async def claim_device_link(
     code = body.code.strip().upper().replace(" ", "")
 
     with get_engine().begin() as conn:
+        # Found and marked used in one statement. Read and then written, two
+        # devices racing on one code could both read it unused under READ
+        # COMMITTED, and both be signed in; one UPDATE takes the row's lock,
+        # and the second finds used_at already set.
         row = conn.execute(
             text(
                 """
-                SELECT user_id FROM device_links
+                UPDATE device_links SET used_at = now()
                 WHERE code_hash = :h AND used_at IS NULL AND expires_at > now()
+                RETURNING user_id
                 """
             ),
             {"h": _hash_code(code)},
@@ -653,12 +658,6 @@ async def claim_device_link(
             raise HTTPException(status.HTTP_403_FORBIDDEN, "that code is not valid")
 
         user_id = row[0]
-        # Marked used inside the same transaction as the session it creates, so
-        # two devices racing on one code cannot both end up signed in.
-        conn.execute(
-            text("UPDATE device_links SET used_at = now() WHERE code_hash = :h"),
-            {"h": _hash_code(code)},
-        )
         token = create_session(conn, user_id, body.device_label)
         audit(conn, "auth.device_link.claimed", user_id, {"label": body.device_label}, ip)
 

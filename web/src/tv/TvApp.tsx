@@ -482,10 +482,13 @@ export default function TvApp() {
     if (!token) return;
 
     const scheme = location.protocol === "https:" ? "wss" : "ws";
-    const socket = new WebSocket(`${scheme}://${location.host}/api/renderers/ws?token=${token}`);
+    // The credential goes in the first message, not the address: an address
+    // is written to the server's access log, and this one never expires.
+    const socket = new WebSocket(`${scheme}://${location.host}/api/renderers/ws`);
     socketRef.current = socket;
 
     socket.onopen = () => {
+      socket.send(JSON.stringify({ type: "auth", token }));
       setConnected(true);
       setPhase((p) => (p === "playing" ? p : "idle"));
 

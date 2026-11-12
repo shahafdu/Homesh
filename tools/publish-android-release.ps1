@@ -85,22 +85,6 @@ $changes = @(git log --format='%s' $range -- android | Where-Object {
     $line = $_; -not ($words | Where-Object { $line -match [regex]::Escape($_) })
 } | ForEach-Object { "- $_" })
 
-$name = "Homesh Connect $($phone.Version)" + $(if ($withTv) { " and TV app $($tv.Version)" } else { '' })
-$body = (@(
-    $name + '.'
-    ''
-    'Install over any earlier version: every build is signed with the same key. Once installed, Check for updates on the app''s own screen keeps it current from your server.'
-    ''
-    'Changes to the apps since the last release:'
-    ''
-) + $changes) -join "`n"
-
-Write-Host "Publishing $name as $tag at $($head.Substring(0, 7))" -ForegroundColor Cyan
-if ($DryRun) { Write-Host $body; exit 0 }
-
-$release = Invoke-RestMethod -Method Post -Headers $headers "https://api.github.com/repos/$slug/releases" `
-    -ContentType 'application/json' -Body (@{ tag_name = $tag; target_commitish = $head; name = $name; body = $body } | ConvertTo-Json)
-
 $uploads = @(@{ Path = $phone.Apk; Name = "homesh-phone-$($phone.Version).apk" })
 if ($withTv) {
     $uploads += @{ Path = $tv.Apk; Name = "homesh-tv-$($tv.Version).apk" }
@@ -115,6 +99,33 @@ if ($withTv) {
         $uploads += @{ Path = $copy; Name = $carried.name }
     }
 }
+# A first install has nothing to check itself against: Android compares the
+# signature of an update with the app already there, and on a new phone there
+# is no app there. The checksum gives that first install something to compare.
+$sums = @($uploads | ForEach-Object {
+    "- ``$($_.Name)``  SHA-256 ``$((Get-FileHash -Algorithm SHA256 $_.Path).Hash.ToLower())``"
+})
+
+$name = "Homesh Connect $($phone.Version)" + $(if ($withTv) { " and TV app $($tv.Version)" } else { '' })
+$body = (@(
+    $name + '.'
+    ''
+    'Install over any earlier version: every build is signed with the same key. Once installed, Check for updates on the app''s own screen keeps it current from your server.'
+    ''
+    'Checksums, to compare with what you downloaded before a first install:'
+    ''
+) + $sums + @(
+    ''
+    'Changes to the apps since the last release:'
+    ''
+) + $changes) -join "`n"
+
+Write-Host "Publishing $name as $tag at $($head.Substring(0, 7))" -ForegroundColor Cyan
+if ($DryRun) { Write-Host $body; exit 0 }
+
+$release = Invoke-RestMethod -Method Post -Headers $headers "https://api.github.com/repos/$slug/releases" `
+    -ContentType 'application/json' -Body (@{ tag_name = $tag; target_commitish = $head; name = $name; body = $body } | ConvertTo-Json)
+
 foreach ($u in $uploads) {
     $asset = Invoke-RestMethod -Method Post -Headers $headers -ContentType 'application/vnd.android.package-archive' `
         -InFile $u.Path "https://uploads.github.com/repos/$slug/releases/$($release.id)/assets?name=$($u.Name)"
