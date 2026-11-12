@@ -26,6 +26,7 @@ from fastapi import (
     Depends,
     HTTPException,
     Query,
+    Request,
     Response,
     WebSocket,
     WebSocketDisconnect,
@@ -34,6 +35,7 @@ from fastapi import (
 from pydantic import BaseModel, Field
 from sqlalchemy import text
 
+from . import throttle
 from .db import get_engine
 from .people import ROOM, AudienceUpdate, apply_audience
 from .security import CurrentUser, require_user
@@ -69,7 +71,12 @@ class Connection:
 
 
 class Hub:
-    """Every connected renderer, and the controllers watching them.
+    """Every connected renderer.
+
+    There used to be a live feed of every room for controllers to watch. No
+    client ever used it, it needed no sign-in, and it told anyone on the house
+    network what every room was playing whatever their access, so it is gone.
+    The tower polls /api/zones, which applies each account's rooms.
 
     In-memory on purpose: a connection cannot outlive the process holding it, so
     persisting it would only ever be a lie about what is reachable. Durable state
@@ -78,7 +85,6 @@ class Hub:
 
     def __init__(self) -> None:
         self._renderers: dict[UUID, Connection] = {}
-        self._watchers: set[WebSocket] = set()
         self._lock = asyncio.Lock()
 
     async def add_renderer(self, conn: Connection) -> None:
@@ -94,14 +100,12 @@ class Hub:
                 # Already gone is the normal case here, not a problem.
                 log.debug("closing a superseded socket for %s: %s", conn.renderer_id, exc)
         await self._set_state(conn.renderer_id, "ready")
-        await self.broadcast_presence()
 
     async def remove_renderer(self, renderer_id: UUID) -> None:
         async with self._lock:
             self._renderers.pop(renderer_id, None)
         await self._set_state(renderer_id, "unavailable")
         _end_session(renderer_id)
-        await self.broadcast_presence()
 
     def is_connected(self, renderer_id: UUID) -> bool:
         return renderer_id in self._renderers
@@ -121,7 +125,6 @@ class Hub:
                 await conn.socket.close()
             except Exception as exc:  # noqa: BLE001
                 log.debug("closing a removed renderer's socket: %s", exc)
-        await self.broadcast_presence()
 
     async def send(self, renderer_id: UUID, message: dict) -> bool:
         conn = self._renderers.get(renderer_id)
@@ -135,40 +138,10 @@ class Hub:
             await self.remove_renderer(renderer_id)
             return False
 
-    async def add_watcher(self, socket: WebSocket) -> None:
-        async with self._lock:
-            self._watchers.add(socket)
-
-    async def remove_watcher(self, socket: WebSocket) -> None:
-        async with self._lock:
-            self._watchers.discard(socket)
-
-    async def broadcast_presence(self) -> None:
-        payload = {
-            "type": "presence",
-            "renderers": [
-                {"id": str(rid), "name": c.name, "state": c.last_state}
-                for rid, c in self._renderers.items()
-            ],
-        }
-        await self._fan_out(payload)
-
-    async def broadcast_state(self, renderer_id: UUID, state: dict) -> None:
+    def record_state(self, renderer_id: UUID, state: dict) -> None:
         conn = self._renderers.get(renderer_id)
         if conn:
             conn.last_state = state
-        await self._fan_out({"type": "state", "renderer": str(renderer_id), "state": state})
-
-    async def _fan_out(self, payload: dict) -> None:
-        message = json.dumps(payload)
-        dead = []
-        for socket in list(self._watchers):
-            try:
-                await socket.send_text(message)
-            except Exception:  # noqa: BLE001
-                dead.append(socket)
-        for socket in dead:
-            await self.remove_watcher(socket)
 
     @staticmethod
     async def _set_state(renderer_id: UUID, state: str) -> None:
@@ -207,12 +180,13 @@ class PairClaim(BaseModel):
 
 
 @router.post("/pair/begin")
-async def pair_begin(body: PairBegin) -> dict:
+async def pair_begin(body: PairBegin, request: Request) -> dict:
     """Called by the screen. Deliberately unauthenticated — it has no credential yet.
 
     All this yields is a code that must be typed by someone already signed in, so
     an unauthenticated caller gains nothing but a string that expires.
     """
+    throttle.hit("pairing", throttle.caller(request), throttle.PAIRING)
     code = _make_code()
     poll_token = secrets.token_urlsafe(24)
 
@@ -291,7 +265,18 @@ async def pair_status(poll_token: str = Query(...)) -> dict:
 
 @router.post("/pair/claim")
 async def pair_claim(body: PairClaim, user: CurrentUser = Depends(require_user)) -> dict:
-    """Called from the phone by someone already signed in."""
+    """Called from the phone by an administrator.
+
+    Claiming a code creates a room, can rebind an existing room of the same
+    name to the new screen, and decides who the room is for. Each of those is
+    an administrator's act everywhere else in the app, so it is here too:
+    otherwise any signed-in account could take over a room, or open one to
+    the whole household, by pairing a screen with its name.
+    """
+    if not user.is_admin:
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN, "only an administrator can add a screen"
+        )
     code = body.code.strip().upper().replace(" ", "")
 
     with get_engine().begin() as conn:
@@ -393,17 +378,37 @@ def _renderer_for_token(token: str) -> tuple[UUID, str] | None:
 
 
 @router.websocket("/ws")
-async def renderer_socket(websocket: WebSocket, token: str = Query(...)) -> None:
-    """Held open by a screen. The server pushes commands; the screen reports state."""
-    found = _renderer_for_token(token)
-    if found is None:
-        # 1008 policy violation: the socket is refused before it is accepted, so an
-        # invalid device credential never reaches application code.
-        await websocket.close(code=1008)
-        return
+async def renderer_socket(websocket: WebSocket, token: str | None = Query(None)) -> None:
+    """Held open by a screen. The server pushes commands; the screen reports state.
+
+    The screen's credential never expires, so it is sent as the first message
+    rather than in the address: an address is written to the access log, and
+    a log is the thing most likely to be copied somewhere. A token in the
+    query string is still accepted, for a page that was open before this
+    changed.
+    """
+    if token is not None:
+        found = _renderer_for_token(token)
+        if found is None:
+            # 1008 policy violation: the socket is refused before it is accepted,
+            # so an invalid device credential never reaches application code.
+            await websocket.close(code=1008)
+            return
+        await websocket.accept()
+    else:
+        await websocket.accept()
+        found = None
+        try:
+            first = json.loads(await asyncio.wait_for(websocket.receive_text(), timeout=10))
+            if isinstance(first, dict) and first.get("type") == "auth":
+                found = _renderer_for_token(str(first.get("token") or ""))
+        except (TimeoutError, json.JSONDecodeError, WebSocketDisconnect):
+            found = None
+        if found is None:
+            await websocket.close(code=1008)
+            return
 
     renderer_id, name = found
-    await websocket.accept()
     conn = Connection(renderer_id=renderer_id, socket=websocket, name=name)
     await hub.add_renderer(conn)
     log.info("renderer connected: %s (%s)", name, renderer_id)
@@ -459,7 +464,7 @@ async def _handle_message(
             "duration_ms": message.get("duration_ms"),
             "item_id": message.get("item_id"),
         }
-        await hub.broadcast_state(renderer_id, state)
+        hub.record_state(renderer_id, state)
         _persist_position(renderer_id, state)
         await _reconcile(renderer_id, state)
 
@@ -645,6 +650,11 @@ def _end_session(renderer_id: UUID) -> None:
         )
 
 
+def _printable(value: str, keep_newlines: bool = False) -> str:
+    keep = "\n" if keep_newlines else ""
+    return "".join(c for c in value if c.isprintable() or c in keep).strip()
+
+
 class CrashReport(BaseModel):
     device: str = Field(default="", max_length=120)
     thread: str = Field(default="", max_length=120)
@@ -653,7 +663,7 @@ class CrashReport(BaseModel):
 
 
 @router.post("/crash", status_code=status.HTTP_204_NO_CONTENT)
-async def report_crash(body: CrashReport) -> Response:
+async def report_crash(body: CrashReport, request: Request) -> Response:
     """A screen, or the web app, saying why it died.
 
     Unauthenticated on purpose: a process that is already crashing may have no
@@ -667,29 +677,19 @@ async def report_crash(body: CrashReport) -> Response:
     """
     # The web app reports here too, so the line no longer says "television".
     # A log that names the wrong device sends somebody to the wrong room.
+    throttle.hit("crashes", throttle.caller(request), throttle.CRASHES)
+    # Nothing in it is trusted, so nothing in it may pass for a line of ours:
+    # control characters go, and every line of the trace is indented under
+    # the heading, so a forged "ERROR ..." line reads as part of a report.
+    trace = _printable(body.trace, keep_newlines=True) or "(no stack trace)"
     log.error(
         "%s crashed — %s, version %s\n%s",
-        body.thread or "something",
-        body.device or "unknown device",
-        body.version or "unknown",
-        body.trace or "(no stack trace)",
+        _printable(body.thread) or "something",
+        _printable(body.device) or "unknown device",
+        _printable(body.version) or "unknown",
+        "\n".join("    | " + line for line in trace.splitlines()),
     )
     return Response(status_code=status.HTTP_204_NO_CONTENT)
-
-
-@router.websocket("/watch")
-async def watch_socket(websocket: WebSocket) -> None:
-    """Held open by a controller (the phone) to see every renderer live."""
-    await websocket.accept()
-    await hub.add_watcher(websocket)
-    await hub.broadcast_presence()
-    try:
-        while True:
-            await websocket.receive_text()
-    except WebSocketDisconnect:
-        pass
-    finally:
-        await hub.remove_watcher(websocket)
 
 
 @router.get("")

@@ -40,9 +40,23 @@ public final class NativeVideo {
      */
     private final Supplier<VideoView> player;
 
-    NativeVideo(Activity activity, Supplier<VideoView> player) {
+    /** Whether the page showing is the server's own; nothing else may drive the player. */
+    private final Supplier<Boolean> trusted;
+
+    NativeVideo(Activity activity, Supplier<VideoView> player, Supplier<Boolean> trusted) {
         this.activity = activity;
         this.player = player;
+        this.trusted = trusted;
+    }
+
+    private boolean refused() {
+        try {
+            if (Boolean.TRUE.equals(trusted.get())) return false;
+        } catch (RuntimeException ignored) {
+            // treated as untrusted
+        }
+        Log.w(TAG, "ignored a call from a page that is not the server's");
+        return true;
     }
 
     /** The player, or null before the activity has built one. */
@@ -80,6 +94,7 @@ public final class NativeVideo {
 
     @JavascriptInterface
     public void play(String url, int positionMs) {
+        if (refused()) return;
         activity.runOnUiThread(() -> {
             final VideoView view = view();
             if (view == null) {
@@ -139,6 +154,7 @@ public final class NativeVideo {
 
     @JavascriptInterface
     public void pause() {
+        if (refused()) return;
         // The call is wrapped rather than the method reference: a bound
         // reference on a null receiver throws as it is created, which is
         // outside quietly() and so outside anything that would catch it.
@@ -150,6 +166,7 @@ public final class NativeVideo {
 
     @JavascriptInterface
     public void resume() {
+        if (refused()) return;
         // The call is wrapped rather than the method reference: a bound
         // reference on a null receiver throws as it is created, which is
         // outside quietly() and so outside anything that would catch it.
@@ -161,6 +178,7 @@ public final class NativeVideo {
 
     @JavascriptInterface
     public void stop() {
+        if (refused()) return;
         activity.runOnUiThread(() -> quietly(() -> {
             VideoView v = view();
             if (v == null) return;

@@ -295,7 +295,9 @@ async def stream(
             start = int(raw_start)
             end = int(raw_end) if raw_end else size - 1
 
-        if start >= size:
+        # A range that ends before it starts is as unsatisfiable as one past the
+        # end; served, it gave a negative Content-Length and a broken response.
+        if start >= size or end < start:
             # Literal 416: the Starlette constant was renamed between versions.
             return Response(
                 status_code=416,

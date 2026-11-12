@@ -128,6 +128,24 @@ class TestBrowsing:
         r = client.get(f"/api/browse?path={prefix}/Photos/2019/Greece")
         assert r.status_code == 404, "403 would confirm the folder exists"
 
+    def test_a_folder_out_of_reach_is_not_named_in_the_folder_list(
+        self, client, db, scanned, child
+    ):
+        sid, prefix, _root = scanned
+        with db.begin() as conn:
+            conn.execute(
+                text(
+                    "INSERT INTO sources (kind, name, mount_prefix, audience) "
+                    "VALUES ('local', 'Kept back', '/local/kept', 'admins')"
+                )
+            )
+        _restrict_library(db, child, [f"{prefix}/Music"])
+        _become(child)
+
+        listed = client.get("/api/sources").json()
+        assert [s["mount_prefix"] for s in listed] == [prefix]
+        assert listed[0]["scan"]["error"] is None
+
     def test_unrestricted_account_is_unaffected(self, client, db, scanned, user):
         _sid, prefix, _root = scanned
         _become(user)

@@ -114,6 +114,8 @@ public final class AppActivity extends Activity {
     private String name;
     private String pc;
     private String standby;
+    // The page showing now, as the view last said. Read from the bridge's thread.
+    private volatile String page;
     /** The machine showing the app now: pc, standby, or null before the first. */
     private String on;
 
@@ -278,7 +280,7 @@ public final class AppActivity extends Activity {
         if (state != null && web.restoreState(state) != null && web.getUrl() != null) {
             // Rebuilt by Android, not opened afresh: carry on where it was,
             // and let the keepalive judge whether that is still right.
-            on = web.getUrl().startsWith(standby) ? standby : pc;
+            on = Origins.same(web.getUrl(), standby) ? standby : pc;
             showWhere();
             if (relay != null) sayWhereRelayed();
             else if (standby.equals(on)) sayOnStandby();
@@ -567,6 +569,12 @@ public final class AppActivity extends Activity {
     private final class Bridge {
         @JavascriptInterface
         public void send(int id, String method, String url, String headers, String body) {
+            // Only the app's own page may send through the relay.
+            String showing = page;
+            if (showing == null || !ours(showing)) {
+                Log.w(TAG, "ignored a relayed request from a page that is not the app's");
+                return;
+            }
             new Thread(() -> {
                 String answer = relay.send(method, url, headers, body);
                 ui.post(() -> {
@@ -751,7 +759,7 @@ public final class AppActivity extends Activity {
 
     /** The part of an address after the machine, or null for another site. */
     private String pathOf(String url) {
-        if (url == null || on == null || !url.startsWith(on)) return null;
+        if (url == null || on == null || !Origins.under(url, on)) return null;
         return url.substring(on.length());
     }
 
@@ -783,8 +791,9 @@ public final class AppActivity extends Activity {
         }
     }
 
+    /** Parsed, not a prefix: {@code https://pc@another.site} begins with the PC's address. */
     private boolean ours(String url) {
-        return url.startsWith(pc) || url.startsWith(standby);
+        return Origins.same(url, pc) || Origins.same(url, standby);
     }
 
     private static String trim(String url) {
@@ -823,13 +832,14 @@ public final class AppActivity extends Activity {
 
         @Override
         public void onPageStarted(WebView view, String url, Bitmap icon) {
+            page = url;
             failed = false;
             if (relay != null) return;  // (one address, whichever machine answers: nothing to follow)
             // Back past a move lands on a page from the other machine. Follow
             // it, so the strip and what a failure does are about the machine
             // actually showing the page.
             String there = url == null ? null
-                    : url.startsWith(standby) ? standby : url.startsWith(pc) ? pc : null;
+                    : Origins.same(url, standby) ? standby : Origins.same(url, pc) ? pc : null;
             if (there != null && !there.equals(on)) {
                 on = there;
                 showWhere();

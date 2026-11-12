@@ -23,6 +23,7 @@ from uuid import UUID
 
 from sqlalchemy import text
 
+from .childenv import child_env
 from .db import get_engine
 from .sources.local import LocalConnector
 
@@ -151,7 +152,9 @@ def read_video(path: Path) -> tuple[dict[str, str], int | None]:
         "-of", "json", str(path),
     ]
     try:
-        proc = subprocess.run(cmd, capture_output=True, timeout=20, check=False)  # noqa: S603
+        proc = subprocess.run(  # noqa: S603
+            cmd, capture_output=True, timeout=20, check=False, env=child_env()
+        )
         if proc.returncode != 0:
             return {}, None
         data = json.loads(proc.stdout or b"{}")

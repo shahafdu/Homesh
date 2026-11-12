@@ -11,6 +11,8 @@ from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
 
+import pytest
+
 
 class TestApkDownload:
     def test_served_with_the_type_android_needs(self, anon_client, tmp_path, monkeypatch):
@@ -119,6 +121,16 @@ class TestWhereThePhoneFallsBack:
     one to use from outside", and the phone would keep opening Oracle long
     after the PC was back."""
 
+    @pytest.fixture(autouse=True)
+    def _signed_in(self, db, user, anon_client):
+        """What follows is said only to someone signed in, as the phone app is."""
+        from app.security import SESSION_COOKIE, create_session
+
+        with db.begin() as conn:
+            anon_client.cookies.set(SESSION_COOKIE, create_session(conn, user.id, "test"))
+        yield
+        anon_client.cookies.clear()
+
     def _address(self, anon_client, monkeypatch, **env) -> dict:
         from app.config import get_settings
 
@@ -129,6 +141,20 @@ class TestWhereThePhoneFallsBack:
             return anon_client.get("/tv.address").json()
         finally:
             get_settings.cache_clear()
+
+    def test_a_stranger_is_told_only_the_house_address(self, anon_client, monkeypatch):
+        """The apps, the standby and the outside address are the household's own."""
+        anon_client.cookies.clear()
+        body = self._address(
+            anon_client, monkeypatch,
+            STANDBY_ORIGIN="https://standby.example.ts.net",
+            PHONE_APPS="Notes|https://example.ts.net:9101",
+            PUBLIC_ORIGIN="https://example.ts.net",
+        )
+        assert "apps" not in body
+        assert "standby" not in body
+        assert "origin" not in body
+        assert "lan" in body
 
     def test_the_pc_names_the_standby(self, anon_client, monkeypatch):
         body = self._address(anon_client, monkeypatch,
@@ -245,9 +271,9 @@ class TestTheAddressForATelevision:
 
     def test_no_short_address_when_port_80_does_not_answer(self, anon_client, monkeypatch):
         """Easy to type and wrong is worse than long and correct."""
-        from app.main import _short_address
+        from app.main import _short_cache
 
-        _short_address.cache_clear()
+        _short_cache.clear()
         monkeypatch.setenv("LAN_BASE_URL", "http://192.0.2.1:8080")  # TEST-NET-1, unroutable
         from app.config import get_settings
 
@@ -256,7 +282,7 @@ class TestTheAddressForATelevision:
             assert anon_client.get("/tv.address").json()["short"] is None
         finally:
             get_settings.cache_clear()
-            _short_address.cache_clear()
+            _short_cache.clear()
 
     def test_the_probe_does_not_block_the_server(self, anon_client, monkeypatch):
         """The probe leaves this server and comes back into it.
@@ -267,9 +293,9 @@ class TestTheAddressForATelevision:
         200. The endpoint is a plain `def` so FastAPI runs it in a thread; this
         asks the server for something else while a probe is in flight.
         """
-        from app.main import _short_address
+        from app.main import _short_cache
 
-        _short_address.cache_clear()
+        _short_cache.clear()
         monkeypatch.setenv("LAN_BASE_URL", "http://192.0.2.1:8080")
         from app.config import get_settings
 
@@ -282,7 +308,7 @@ class TestTheAddressForATelevision:
                 assert probing.result().status_code == 200
         finally:
             get_settings.cache_clear()
-            _short_address.cache_clear()
+            _short_cache.clear()
 
     def test_the_short_path_serves_the_same_app(self, anon_client, tmp_path, monkeypatch):
         """Every character counts when it is typed on a d-pad keyboard."""
@@ -478,3 +504,23 @@ class TestLearningItsOwnAddress:
             assert lanaddr.lan_base() == "http://198.51.100.9:8080"
         finally:
             get_settings.cache_clear()
+
+
+class TestTheShortAddressIsRetried:
+    def test_a_failure_is_asked_again_after_a_while(self, monkeypatch):
+        """Kept for good, one bad moment hid the short address until a restart."""
+        from app import main
+
+        asked = []
+        monkeypatch.setattr(main, "_probe_short_address", lambda lan: asked.append(lan))
+        main._short_cache.clear()
+        try:
+            main._short_address("http://192.0.2.1:8080")
+            main._short_address("http://192.0.2.1:8080")
+            assert len(asked) == 1
+            found, _at = main._short_cache["http://192.0.2.1:8080"]
+            main._short_cache["http://192.0.2.1:8080"] = (found, _at - main._SHORT_RETRY - 1)
+            main._short_address("http://192.0.2.1:8080")
+            assert len(asked) == 2
+        finally:
+            main._short_cache.clear()

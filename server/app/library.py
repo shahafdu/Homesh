@@ -358,7 +358,14 @@ def playable_now(conn, item_ids) -> set:
 
 
 @router.get("/sources")
-async def list_sources(_: CurrentUser = Depends(require_user)) -> list[dict]:
+async def list_sources(user: CurrentUser = Depends(require_user)) -> list[dict]:
+    """The folders this account can reach, and how their scans went.
+
+    Filtered like every other listing: a folder kept back from an account is
+    not named to it here either. Scan errors are for administrators, who are
+    the ones who can do something about them, and they can name paths.
+    """
+    scope = None if user.is_admin else library_scope(user.id)
     with get_engine().connect() as conn:
         rows = conn.execute(
             text(
@@ -375,7 +382,7 @@ async def list_sources(_: CurrentUser = Depends(require_user)) -> list[dict]:
             )
         ).all()
 
-    return [
+    listed = [
         {
             "id": str(r[0]),
             "kind": r[1],
@@ -403,7 +410,12 @@ async def list_sources(_: CurrentUser = Depends(require_user)) -> list[dict]:
             },
         }
         for r in rows
+        if scope is None or visible(r[3], scope)
     ]
+    if scope is not None:
+        for source in listed:
+            source["scan"] = {**source["scan"], "error": None, "seen": None, "added": None}
+    return listed
 
 
 @router.get("/browse")
