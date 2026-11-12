@@ -15,7 +15,7 @@ jobs:
     name: No private data in tracked files
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Scan for LAN addresses, serials and device UUIDs
         run: |
           # This repository is public and describes a real house. Addresses,
@@ -62,7 +62,7 @@ jobs:
           --health-cmd "pg_isready -U homesh -d homesh_test"
           --health-interval 5s --health-timeout 5s --health-retries 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -117,7 +117,7 @@ jobs:
     name: Web — typecheck & build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
@@ -136,7 +136,7 @@ jobs:
     name: Android — build both APKs
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -197,7 +197,7 @@ jobs:
     name: Image — multi-arch build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: docker/setup-qemu-action@v3
       - uses: docker/setup-buildx-action@v3
       - name: Build for amd64 and arm64
@@ -221,7 +221,7 @@ jobs:
       matrix:
         language: [python, javascript-typescript, java-kotlin]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-java@v4
         if: matrix.language == 'java-kotlin'
         with:
