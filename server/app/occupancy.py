@@ -3,7 +3,7 @@
 A receiver plays Spotify Connect, AirPlay and its own internet radio without this
 application being involved at all. If the control tower only reported playback it
 had started, it would show "ready" for a room that is audibly in use — and worse,
-sending a track there would cut somebody off, because the AVR-X1600H has exactly
+sending a track there would cut somebody off, because the receiver has exactly
 one network player (ARCHITECTURE.md §5.6).
 
 So the tower asks the hardware rather than trusting its own records.
@@ -111,7 +111,7 @@ def _avr_note(state: denon.AvrState, zone2: bool) -> str | None:
     """What the amplifier is switched to, when it is not us.
 
     The case that prompted this: a child watching television through the
-    receiver. HEOS is idle, so asking only HEOS reported the living room as free
+    receiver. HEOS is idle, so asking only HEOS reported the main room as free
     while it was plainly in use.
 
     It is deliberately a note rather than a verdict. The receiver cannot say
@@ -224,7 +224,7 @@ async def receiver_occupancy(
                 # playing" is a fact about the box, not about a room. Asking the
                 # amplifier which zone is actually switched to the network input
                 # is what tells the two apart — without it, Spotify in the living
-                # room marked the balcony busy as well, and the balcony was
+                # room marked the second zone busy as well, and the second zone was
                 # silent.
                 try:
                     avr = await denon.query_state(host)

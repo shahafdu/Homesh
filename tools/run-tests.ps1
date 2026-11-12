@@ -104,6 +104,40 @@ if ((Test-Path $wordsFile) -and (Get-Item $wordsFile).Length -gt 0) {
         exit 1
     }
 }
+
+# The whole history, not only what is tracked today. A value removed from a
+# file is still in every commit that had it, and a public repository serves
+# all of them: the standby's region and an old house address sat in history
+# for two months after the files were fixed, because nothing looked there.
+# Commit ids only are printed -- the matching line is the thing being hidden.
+$words = @()
+if (Test-Path $wordsFile) { $words = @(Get-Content $wordsFile | Where-Object { $_ -and $_ -notmatch '^#' }) }
+# git's -G is case-sensitive, so each letter becomes a bracket of both cases.
+$alts = @($words | ForEach-Object {
+    -join ($_.ToCharArray() | ForEach-Object {
+        $c = [string]$_
+        if ($c -match '[A-Za-z]') { "[$($c.ToLower())$($c.ToUpper())]" }
+        elseif ($c -match '[0-9 ]') { $c }
+        else { "\$c" }
+    })
+})
+$alts += $pattern
+$historic = @()
+foreach ($alt in $alts) {
+    $historic += @(git log --all --format=%h -G $alt 2>$null)
+}
+if ($words.Count -gt 0) {
+    foreach ($h in @(git log --all --format=%h 2>$null)) {
+        if (git log -1 --format=%B $h 2>$null | Select-String -SimpleMatch -Pattern $words -Quiet) { $historic += $h }
+    }
+}
+$historic = @($historic | Sort-Object -Unique)
+if ($historic.Count -gt 0) {
+    Write-Host "  History still holds something private, in these commits:" -ForegroundColor Red
+    Write-Host "    $($historic -join ' ')" -ForegroundColor Red
+    Write-Host "  It is published with the repository. Rewrite those commits; see .local\scrub_rules.py." -ForegroundColor Red
+    exit 1
+}
 Write-Host "  clean" -ForegroundColor DarkGray
 
 # The phone app on the release page, which is how a phone gets it when the

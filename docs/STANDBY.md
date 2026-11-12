@@ -396,7 +396,7 @@ folder is never committed.
   repository onto it, writes the configuration it needs and builds the stack.
   Running it again fetches `main` and rebuilds, which is how the standby is
   upgraded. Verified on the real machine: it came up as a standby, pulled the
-  newest backup out of the bucket and restored 131,302 items from it, reads all
+  newest backup out of the bucket and restored every items from it, reads all
   five Drive folders, shows the two folders that live on the PC as offline, and
   refuses a write that is not replayable with 409.
 - ✅ On the tailnet with HTTPS, as a dead end. Verified from both sides: this

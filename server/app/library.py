@@ -125,7 +125,7 @@ def _register_local() -> None:
 def _slug(name: str) -> str:
     """A stable, URL-safe mount name.
 
-    Folder names here are frequently not Latin — Hebrew, in this house — so a
+    Folder names here are frequently not Latin — Hebrew or Arabic, say — so a
     naive ASCII slug would collapse several folders to the same empty string.
     Non-ASCII names keep their characters; only path separators are replaced.
     """
@@ -651,7 +651,7 @@ def gather_photos(
     Ordered by folder and then filename so that a run through a year arrives in
     the order it happened.
 
-    Bounded, because this house has 105,000 photographs and the whole list is
+    Bounded, because this house has 100,000 photographs and the whole list is
     four megabytes of identifiers to send to a phone. At five seconds each,
     the cap is still fourteen hours of slideshow.
 
@@ -704,7 +704,7 @@ def gather_photos(
 
     with get_engine().connect() as conn:
         # Skipped for an endless slideshow, which never reaches the end and so
-        # learns nothing from being told how far away it is. Counting 105,000
+        # learns nothing from being told how far away it is. Counting 100,000
         # rows to answer a question nobody asked is the sort of thing that makes
         # a photo frame feel slow to start.
         total = None
@@ -747,7 +747,7 @@ def gather_photos(
         "under": path,
         "item_ids": items,
         "count": len(items),
-        # What is actually there, so the interface can say "10,000 of 105,162"
+        # What is actually there, so the interface can say "10,000 of 100,000"
         # rather than quietly presenting a slice as the whole thing. Absent when
         # counting was skipped, which an endless slideshow does — it is never
         # going to reach the end, so the size of the folder tells it nothing.

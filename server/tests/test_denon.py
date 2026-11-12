@@ -1,6 +1,6 @@
 """Denon control, exercised against a mock receiver.
 
-The real AVR-X1600H is not available to CI, so these speak to a socket server that
+The real receiver is not available to CI, so these speak to a socket server that
 replays the exact frames the real one produced during discovery (see
 ARCHITECTURE.md §5.6). That keeps the protocol handling honest without hardware.
 """
@@ -23,9 +23,9 @@ class FakeHeos:
     def __init__(self, players: list[dict] | None = None, fail: str | None = None):
         self.players = players if players is not None else [
             {
-                "name": "Denon AVR-X1600H",
+                "name": "Denon AVR",
                 "pid": -1765854565,
-                "model": "Denon AVR-X1600H",
+                "model": "Denon AVR",
                 "version": "3.139.173",
                 "ip": "192.0.2.42",
                 "network": "wired",
@@ -166,7 +166,7 @@ class TestHeos:
         players = await denon.get_players("127.0.0.1")
         assert len(players) == 1
         assert players[0].pid == -1765854565
-        assert players[0].model == "Denon AVR-X1600H"
+        assert players[0].model == "Denon AVR"
 
     async def test_single_player_is_the_documented_constraint(self, heos):
         """One player means one network stream; the zone design depends on this."""

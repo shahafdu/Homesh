@@ -1,6 +1,6 @@
 # The AI features — the plan
 
-Agreed with Shahaf in October 2026, **not started.** This is the plan to pick up
+Agreed in October 2026, **not started.** This is the plan to pick up
 when the work begins; `AI.md` describes what is already built and the rules it
 follows. Where the two disagree, this file is the newer decision and `AI.md` is
 updated when the work lands.
@@ -19,7 +19,7 @@ Three kinds of model, each doing only what it is good at:
 |---|---|---|
 | **Embeddings** — EmbeddingGemma 2: photos, video frames, sound, documents, and the question, all in one vector space | **Here**, on the PC | Everything, and nothing leaves |
 | **Faces** — a dedicated face model (below) | **Here**, on the PC | Faces only, and nothing leaves |
-| **Speech to text** — Whisper, a Hebrew-tuned build | **Here**, on the PC | The spoken command; the audio is discarded |
+| **Speech to text** — Whisper, a build tuned for the household's language | **Here**, on the PC | The spoken command; the audio is discarded |
 | **Chat and actions** — Gemini Flash, OpenRouter free models | A provider | The question as text, and the *rows* that matched: filenames, dates, tags. Never a photo, a face or a voice |
 
 **The chat model never reads embeddings.** A vector means something only to the
@@ -40,37 +40,32 @@ the whole library is roughly 150 MB in Postgres.
 
 **Stored in the catalog, computed once.** Vectors live beside the item, so search
 works with the RAID off and on the Oracle standby. The standby needs only the
-text encoder (about 200 MB) to embed a question — within its 6 GB.
+text encoder (about 200 MB) to embed a question — well within a small free-tier instance.
 
 **Order of work:** photos, then video (below), then documents, then music audio.
 Music audio last because the earlier decision stands: a language model given
 `Artist — Title` already knows the song. Audio vectors earn their keep for
 "sounds like this" and for recordings no model has heard of.
 
-**Unknowns, settled by the first spike (section 9):** whether Hebrew questions
-retrieve well (Google's announcement does not name Hebrew — the fallback is to
-translate the question to English first, one cheap call); throughput on four
-efficiency cores, which Google has not published; and how it runs from a Python
+**Unknowns, settled by the first spike (section 9):** whether questions in a
+language the announcement does not name retrieve well (the fallback is to
+translate the question to English first, one cheap call); throughput on a
+low-power CPU with no GPU, which Google has not published; and how it runs from a Python
 server, since the announced runtimes are LiteRT and MediaPipe.
 
 ## 2. Video — the clips scattered among the photos
 
-Measured on the library in October 2026:
-
-| Where | Clips | Total | Median clip | Size |
-|---|---|---|---|---|
-| In folders that also hold photos | 6,313 | 90 hours | 28 s | 686 GB |
-| Elsewhere | 874 | 68 hours | 13 s | 111 GB |
-
-Short phone clips, uncategorised. Each is treated as **a handful of photos plus a
+A family library holds thousands of short phone clips, mostly in folders that
+also hold photos, uncategorised, and typically under a minute each. Each is treated as **a handful of photos plus a
 sound track**:
 
 - **Frames** — one about every five seconds plus one at each scene change, at
-  most about 60 per clip: roughly 65,000 frames, two-thirds of the photo job.
+  most about 60 per clip — for a typical library, a job of the same order as the
+  photos themselves.
   Each frame's vector keeps its timestamp, so a result opens the clip *at that
   moment*.
 - **Sound** — EmbeddingGemma 2 embeds audio too, in roughly 10-second chunks
-  (about 32,000). Singing, the sea, a dog: findable without transcription.
+  Singing, the sea, a dog: findable without transcription.
 - **Reading** — ffmpeg seeks to the frames it needs and reads only those bytes,
   which matters for files on Drive.
 - **Sorting** — with frames and sound embedded, the AI can *suggest* an event and
@@ -108,7 +103,7 @@ The model is never trusted with that alone. Three things together:
 2. **The date helps.** A face is compared first with that person's examples from
    around the same years, from the photo's capture date.
 3. **Uncertain matches are suggestions, never facts.** Below a threshold the
-   app says *"might be Shahaf"* and waits for a yes or no.
+   app says *"might be Alex"* and waits for a yes or no.
 
 ### You correct it, and corrections are permanent
 
@@ -147,9 +142,9 @@ the next takes over.
 
 | Job | First | Fallback |
 |---|---|---|
-| Chat and commands — calls the API | **Gemini Flash** — the strongest at tool calls, good Hebrew | OpenRouter free models with tool support |
+| Chat and commands — calls the API | **Gemini Flash** — the strongest at tool calls, and multilingual | OpenRouter free models with tool support |
 | Bulk background — music mood and genre, event suggestions, document summaries | **OpenRouter free models**, so they never spend Gemini's daily quota | Another OpenRouter model; Gemini at night |
-| Translating a Hebrew search into English (only if the spike says it is needed) | Whichever is fastest | — |
+| Translating a non-English search into English (only if the spike says it is needed) | Whichever is fastest | — |
 | Embeddings, faces, speech | **Local only** | — |
 
 So a 95k-token tagging run never makes the chat wait, and running out of one
@@ -185,7 +180,7 @@ Stored in the database, so the choices travel with the backups.
 
 ## 5. Background work — weeks, at night, without taking the PC
 
-Embedding, faces and tagging together are weeks of work on this machine. They
+Embedding, faces and tagging together are weeks of work on a low-power PC. They
 run so that the PC stays usable for everything else on it:
 
 - **Its own container**, a worker separate from the server, with hard Docker
@@ -205,12 +200,10 @@ run so that the PC stays usable for everything else on it:
 The worker takes jobs from the queue, so it can run anywhere that reaches the
 server — a machine with a usable GPU, if one ever arrives.
 
-**The old laptop is not that machine** (checked October 2026). It is a Dell
-Inspiron N5110: Intel HD 3000, and on some builds a GeForce GT 525M or 540M —
-Fermi, which CUDA dropped around 2016 and which has no Vulkan driver, so no
-current runtime can use it. Its 2011 Core i3/i5/i7 is no faster than this PC's
-Intel N95 across four cores, at best, and lacks the AVX2 and VNNI instructions
-that current inference code is built around. The N95 does the work.
+**An old laptop is rarely that machine.** A GPU from before about 2016 (Fermi and
+earlier) has no CUDA or Vulkan support in any current runtime, and a CPU of that
+age lacks the AVX2 and VNNI instructions current inference code is built around —
+so a modern low-power CPU usually does the work better.
 
 ---
 
@@ -231,7 +224,7 @@ what was done.
 - Every action: which tool, with which arguments, as whom, what it changed —
   "created playlist *Mellow evening*, 23 tracks" with a link to it — and what was
   refused and why.
-- **Searchable**, in Hebrew and English (Postgres has no Hebrew stemmer, so
+- **Searchable** in any language (Postgres has no stemmer for many languages, so
   trigram matching rather than language-aware search).
 - **Kept when history is cleared.** Clearing what you asked does not erase the
   record of what changed in the house.
@@ -242,17 +235,15 @@ what was done.
 log for everyone — what changed — but not the wording of someone else's
 questions.
 
-## 7. Voice — Whisper, for mixed Hebrew and English
+## 7. Voice — Whisper, for speech that mixes languages
 
 Push-to-talk in the web app and the phone app; the recording goes to the PC,
-becomes text, and is discarded. Stock Whisper handles Hebrew but stumbles when a
-sentence switches language, so two Hebrew-tuned builds are compared on real
-recordings:
+becomes text, and is discarded. Stock Whisper handles most languages but
+stumbles when a sentence switches between them, so builds fine-tuned for the
+household's languages are compared on real recordings, with stock Whisper as
+the baseline.
 
-- **ivrit.ai's Whisper large-v3-turbo** (faster-whisper) — the strongest Hebrew.
-- **Whisper-Hebrish** — tuned for English speech with Hebrew words in it.
-
-A five-second command on four efficiency cores should take a few seconds — fine
+A five-second command on a low-power CPU should take a few seconds — fine
 for push-to-talk. No wake word.
 
 ## 8. Tagging
@@ -266,11 +257,11 @@ All of it `origin='ai'`, beside the file's own tags, never instead of them.
 ## 9. Order of work
 
 1. **Spike, about a day — decides everything after it.**
-   - EmbeddingGemma 2: Hebrew and English questions against 500 photos and 50
+   - EmbeddingGemma 2: questions in each household language against 500 photos and 50
      clips; throughput per photo and per clip here; how it runs from Python.
    - Faces: YuNet + SFace against InsightFace on a few hundred family photos,
      including the same people as children.
-   - Whisper: ivrit.ai against Whisper-Hebrish on a few recordings of yours.
+   - Whisper: the tuned builds against stock Whisper on a few real recordings.
 2. **Settings → AI**, the model catalogue, per-job lists, Gemini beside
    OpenRouter.
 3. **The background worker** — queue, night window, limits, pause, progress.

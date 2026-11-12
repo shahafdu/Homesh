@@ -238,8 +238,8 @@ class TestZoneAccess:
 
     def test_rooms_outside_the_scope_are_not_listed(self, client, db, scanned, user, child):
         _become(user)
-        kids = self._zone(client, "Kids Room", "uuid:kids")
-        self._zone(client, "Living Room", "uuid:living")
+        kids = self._zone(client, "Study", "uuid:study")
+        self._zone(client, "Main Room", "uuid:main")
 
         with db.begin() as conn:
             conn.execute(
@@ -248,12 +248,12 @@ class TestZoneAccess:
             )
 
         _become(child)
-        assert [z["name"] for z in client.get("/api/zones").json()] == ["Kids Room"]
+        assert [z["name"] for z in client.get("/api/zones").json()] == ["Study"]
 
     def test_playing_in_a_forbidden_room_is_refused(self, client, db, scanned, user, child):
         _become(user)
-        kids = self._zone(client, "Kids Room", "uuid:kids")
-        living = self._zone(client, "Living Room", "uuid:living")
+        kids = self._zone(client, "Study", "uuid:study")
+        living = self._zone(client, "Main Room", "uuid:main")
 
         with db.begin() as conn:
             conn.execute(
@@ -273,7 +273,7 @@ class TestZoneAccess:
     def test_content_is_checked_as_well_as_the_room(self, client, db, scanned, user, child):
         """Otherwise a permitted room would be a way around the library scope."""
         _become(user)
-        kids = self._zone(client, "Kids Room", "uuid:kids")
+        kids = self._zone(client, "Study", "uuid:study")
         _sid, prefix, _root = scanned
 
         with db.begin() as conn:

@@ -1,9 +1,9 @@
 -- One song, two places — rather than two songs.
 --
 -- `items.content_hash` has been in the schema since 001 and has never been
--- filled, for any of the 141,818 files here. Nothing has ever noticed that a
--- file scanned from two sources is the same file, so `E:\music` and the Drive
--- copy of the same folder produced two complete catalogues side by side: 9,189
+-- filled, for any of the files here. Nothing has ever noticed that a
+-- file scanned from two sources is the same file, so `a music folder` and the Drive
+-- copy of the same folder produced two complete catalogues side by side: thousands of
 -- songs each, 130 videos each, and not one item in common.
 --
 -- The visible cost is a library listing everything twice. The invisible one is

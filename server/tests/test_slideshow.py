@@ -299,7 +299,7 @@ class TestASlideshowWithNoEnd:
     """Forever, with repeats, rather than forever over the same seven hours.
 
     Five thousand photographs at five seconds each is seven hours before a queue
-    wraps. In a house with 105,000 that is not "forever" in any sense worth
+    wraps. In a house with 100,000 that is not "forever" in any sense worth
     having, so an endless slideshow goes back to the folder for more.
     """
 

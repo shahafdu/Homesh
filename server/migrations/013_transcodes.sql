@@ -2,7 +2,7 @@
 --
 -- MPEG-2 — .m2t from an HDV camcorder, .vob from a DVD — is not playable in any
 -- current browser. There is no codec to enable and no container trick: the
--- decoder was never shipped. Five wedding tapes in this library are exactly that,
+-- decoder was never shipped. Five camcorder tapes in this library are exactly that,
 -- and until now they sat in a folder as files that could be downloaded and
 -- nothing else.
 --

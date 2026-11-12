@@ -372,7 +372,7 @@ export function SlideshowSetup(props: {
   const [error, setError] = useState<string | null>(null);
 
   // Re-gathered when shuffle changes, because shuffling is the server's job on
-  // a folder this size: it samples all 105,000 rather than reordering the ten
+  // a folder this size: it samples all 100,000 rather than reordering the ten
   // thousand that happened to be sent.
   useEffect(() => {
     let cancelled = false;

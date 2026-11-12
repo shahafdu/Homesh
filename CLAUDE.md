@@ -8,7 +8,7 @@ status table and the task list whenever a phase moves.
 ## What this is
 
 A self-hosted media server for **video, music, photos and documents**, built because
-Plex failed on eight specific counts. Owner: Shahaf (`shahafdu@gmail.com`). Licence
+Plex failed on eight specific counts. Owner: Shahaf. Licence
 AGPL-3.0. Repo: `github.com/shahafdu/Homesh` (public).
 
 Named **Homesh** (home + mesh), ratified 10 August 2026. The rename touched the
@@ -34,8 +34,9 @@ changing it would invalidate every registered passkey.
 ## Where the real setup lives
 
 `.local/SETUP.md` (untracked) holds the actual deployment: device inventory by
-room, receiver configuration, and zone wiring. `.env` holds addresses and
-secrets. Read both when resuming; never copy their contents into a tracked file.
+room, receiver configuration, and zone wiring. `.local/STATUS.md` (untracked)
+is the living task list. `.env` holds addresses and secrets. Read all three
+when resuming; never copy their contents into a tracked file.
 
 ### Nothing that identifies this setup goes in the repository
 
@@ -128,10 +129,14 @@ public repository.
 
 ## Current status
 
-**[`STATUS.md`](STATUS.md) is the living task list** — what works, what is waiting
+**`.local/STATUS.md` is the living task list** — what works, what is waiting
 on Shahaf, what is known broken, and what comes next. Read it first when resuming,
 and keep it current: this project is large enough that a change in one place
-routinely breaks another, and the tracker is what makes that visible.
+routinely breaks another, and the tracker is what makes that visible. It is
+untracked because it is about this household -- which box is in which room,
+what the library holds, which recordings were tested -- and the repository is
+public. Shahaf reads the Homesh Worklist page rather than the file, so a change
+to one goes to the other.
 
 | Phase | State | Notes |
 |---|---|---|
@@ -140,13 +145,13 @@ routinely breaks another, and the tracker is what makes that visible.
 | 2 · Playback | ✅ done | Signed URLs, range streaming, thumbnails, audio with folder queue, video direct-play **and live transcode**, photo and document viewer, slideshows |
 | 3 · Control tower & zones | ✅ done | Denon verified against the real receiver; rooms, sessions, transport, seek, volume, occupancy, the tower UI |
 | 4 · TV apps | ✅ done | Android TV app in daily use, **with its own video player** for what a WebView cannot decode. No Gradle: aapt2/javac/d8/apksigner, 33 KB, built by CI every commit. A phone launcher app too (`docs/PHONE_APP.md`). webOS dropped; Tizen only if a screen turns out to have no box |
-| 5 · Playlists & music intelligence | 🔨 | Winamp import done — 41 lists, 98.6% matched, sharing and reordering work. AcoustID tag repair not started |
+| 5 · Playlists & music intelligence | 🔨 | Winamp import done, nearly every track matched; sharing and reordering work. AcoustID tag repair not started |
 | 6 · AI | ⬜ | See **AI design decisions** below, and the full plan in `docs/AI_PLAN.md` (October 2026: embeddings, video, faces, model catalogue, night worker, history). Not yet built. Backups landed first, deliberately |
 | 7 · Photo availability | ⬜ | RAID→Drive sync, Wake-on-LAN, Takeout gap-fill |
 | 8 · Optional transcode | ❌ overtaken | It was never optional for this library — see §3.2.1 of ARCHITECTURE for what actually happened |
 | 9 · Public release | 🔨 | Public since August. Docs current as of 14 September 2026; screenshots outstanding |
 
-**Tests: 701 passing. Migrations: 026. Lint: clean. CI green.**
+**Tests: 719 passing. Migrations: 026. Lint: clean. CI green.**
 
 ### AI design decisions — agreed, not yet built
 
@@ -235,8 +240,7 @@ do not stop.
    enabled.
 2. ~~Google Cloud OAuth client~~ — **not needed.** Solved with a service account
    and ordinary Drive sharing; see §1.2 of ARCHITECTURE.
-3. ~~A real media folder~~ — done. Two local grants (`E:/music`, `E:/Photos`) and
-   five Drive folders, about 140,000 files.
+3. ~~A real media folder~~ — done, local grants and Drive folders both.
 4. ~~Repo visibility~~ — public.
 
 ---
@@ -250,17 +254,17 @@ rooms, when storage is unpowered, or which control interfaces are left open.
 
 | Role | Profile |
 |---|---|
-| Server / agent host | A low-power mini PC — 4 efficiency cores, **no discrete GPU**. Sizing assumptions follow from this |
+| Server / agent host | A low-power mini PC, **no discrete GPU**. Sizing assumptions follow from this |
 | Storage | Directly attached, **intermittently powered by design**. The availability model exists because of it |
 | Always-on core | Free-tier arm64 cloud instance, or a Pi (§3.4 of ARCHITECTURE) |
-| Displays | Several screens, mixed platforms. Many are fed by **Android TV set-top boxes** — the easy target, since a box takes Cast with no install and side-loads routinely. Target the box where one exists; a TV's own platform only where there is none |
-| Audio | **Denon AVR-X1600H**. Address is DHCP and lives in `.env` as `DENON_HOST` |
+| Displays | Screens on mixed platforms. An **Android TV set-top box** is the easy target, since a box takes Cast with no install and side-loads routinely. Target the box where one exists; a TV's own platform only where there is none |
+| Audio | **A Denon receiver with HEOS**. Address is DHCP and lives in `.env` as `DENON_HOST` |
 | Network | DHCP throughout. **No real addresses in tracked files** — CI enforces this |
 
 ### Denon protocol facts, measured not assumed
 
-These are properties of the model, documented by Denon and useful to anyone with
-the same receiver — not facts about one household.
+These are properties of Denon's HEOS receivers of this generation, documented
+by Denon and useful to anyone with one — not facts about one household.
 
 - AirPlay 2 ✅, HEOS ✅, **Chromecast ❌**
 - **Exactly one HEOS player** → cannot run two network streams at once
@@ -310,11 +314,12 @@ server/app/       config, db, main, auth, security, people, access, prefs, libra
                   thumbs, sharing, playlists, zones, denon, renderers, discovery,
                   occupancy, lanaddr, upkeep, backups, crypt, offsite, standby,
                   thumbsync, signin_code, throttle, audiocache, ai, ai_api,
+                  webguard (headers, cross-origin writes, log redaction),
+                  childenv (the environment child programs get),
                   sources/{base,local,gdrive}
-server/migrations 023 of them, plain SQL, tracked in `schema_migrations` and applied at
-                  startup. `ls server/migrations` is the list; the recent ones are
-                  021 (video lengths), 022 (shuffle history), 023 (replica fingerprints)
-server/tests/     one module per surface, 477 tests
+server/migrations 026 of them, plain SQL, tracked in `schema_migrations` and applied at
+                  startup. `ls server/migrations` is the list
+server/tests/     one module per surface
 web/src/          App, Browser, Viewer, Player, Slideshow, Zones, Playlists, People,
                   Sources, Settings, PdfView, RawView, FileActions, PlayTo, Audience,
                   LinkDevice, + api/auth/library/prefs/zones/playlists/backups helpers

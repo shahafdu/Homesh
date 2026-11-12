@@ -93,7 +93,7 @@ thing in the whole feature, and the model that acts on it only ever needs the
 text.
 
 It is also the one speech job this machine can do. Transcribing a video library
-on four efficiency cores is far too slow to be worth starting; a five-second
+on a low-power CPU is far too slow to be worth starting; a five-second
 "play something mellow in the kitchen" is a fraction of a second. So speech is
 on demand, never bulk.
 

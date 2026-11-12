@@ -202,10 +202,10 @@ class TestRoomAudience:
     def test_a_room_can_be_created_for_chosen_people(self, client, db, user, household):
         wife, kid = household
         _become(user)
-        self._zone(client, "Kids Room", "uuid:kids", audience="selected", grant_to=[kid.id])
+        self._zone(client, "Study", "uuid:study", audience="selected", grant_to=[kid.id])
 
         _become(kid)
-        assert self._rooms(client) == ["Kids Room"]
+        assert self._rooms(client) == ["Study"]
 
         _become(wife)
         assert self._rooms(client) == []
@@ -214,7 +214,7 @@ class TestRoomAudience:
         """Pairing a screen must not publish it to the household by default."""
         wife, _kid = household
         _become(user)
-        self._zone(client, "Balcony", "uuid:balcony")
+        self._zone(client, "Zone Two", "uuid:zone2")
 
         _become(wife)
         assert self._rooms(client) == []

@@ -1,6 +1,6 @@
 """Playlists: the ones you make, and the ones already in the library.
 
-Forty-one .m3u files sit in this library, written years ago by Winamp against
+Dozens of .m3u files sit in this library, written years ago by Winamp against
 paths that stopped being true when the music moved. Their contents are the one
 thing a scanner cannot recreate — somebody chose that order — so importing them
 is worth the trouble of matching lines to files that have since been moved,

@@ -5,7 +5,7 @@
 -- important decision — an entry that cannot be resolved keeps its original line
 -- rather than vanishing.
 --
--- Forty-one .m3u files sit in this library, written years ago by Winamp against
+-- Dozens of .m3u files sit in this library, written years ago by Winamp against
 -- paths that stopped being true when the music moved. The ordering in them is
 -- somebody's work, and it is the one thing a scanner cannot recreate.
 

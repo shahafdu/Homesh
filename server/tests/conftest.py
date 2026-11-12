@@ -176,7 +176,7 @@ def library(tmp_path: Path) -> Path:
         "Music/Unsorted/oldies.m3u",
         "Videos/Holidays 2019/DSC_0042.MOV",
         "Videos/Holidays 2019/beach.mkv",
-        "Docs/Manuals/Denon AVR-X1600H manual.pdf",
+        "Docs/Manuals/Denon AVR manual.pdf",
         "Docs/notes.md",
         "Photos/2019/Greece/IMG_1234.jpg",
         "Photos/2019/Greece/IMG_1235.heic",

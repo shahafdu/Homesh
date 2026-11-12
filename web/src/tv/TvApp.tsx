@@ -34,7 +34,7 @@ interface Command {
    *
    * Needed because a player does not always know. A stream still being encoded
    * has no end yet, so the element reports a length that is short and growing,
-   * and the bar drawn from it had a conga lesson twenty-one seconds into a
+   * and the bar drawn from it had a lesson video twenty-one seconds into a
    * ten-second film. The catalog knows the real answer before the first frame
    * arrives. */
   duration_ms?: number | null;
@@ -193,7 +193,7 @@ const SEEK_STEP = 10;
  *
  * A WebView carries roughly H.264 and VP8/9; the box underneath it decodes
  * MPEG-2, MKV and AVI in hardware. Handing video over is the difference between
- * a wedding tape playing and a player sitting at 0:00.
+ * a camcorder tape playing and a player sitting at 0:00.
  */
 interface NativeVideo {
   available(): boolean;
@@ -373,7 +373,7 @@ export default function TvApp() {
    * Believed, except for a stream still being encoded. That one has no end yet:
    * the element reports how much has arrived, which starts near zero and grows,
    * and it is always shorter than the film. Taking it gave a bar the playhead
-   * ran off the end of in the first few seconds -- 0:21 of 0:10 on a conga
+   * ran off the end of in the first few seconds -- 0:21 of 0:10 on a music
    * lesson, with the bar full. The catalog already knows how long the file is,
    * so for those the number sent with the command is the better one and this
    * leaves it alone.

@@ -172,10 +172,10 @@ CREATE TABLE renderers (
 
 CREATE TABLE zones (
     id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    name         TEXT NOT NULL UNIQUE,       -- 'Living Room', 'Balcony', 'Bedroom'
+    name         TEXT NOT NULL UNIQUE,       -- 'Main Room', 'Zone Two', 'Bedroom'
     renderer_id  UUID REFERENCES renderers(id) ON DELETE SET NULL,
     -- Ordered hardware commands to make sound actually come out, e.g. for the
-    -- balcony: AVR power on -> Z2ON -> Z2NET -> set volume (§5.8).
+    -- second zone: AVR power on -> Z2ON -> Z2NET -> set volume (§5.8).
     preroll      JSONB NOT NULL DEFAULT '[]'::jsonb,
     postroll     JSONB NOT NULL DEFAULT '[]'::jsonb,
     idle_timeout_s INT

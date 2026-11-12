@@ -22,10 +22,10 @@ from app.sources.local import LocalConnector
 from tests.test_denon import FakeAvr, FakeHeos
 
 # ZONE2 only. PWON was here once, and it is exactly the bug that made starting
-# the balcony interrupt the television: PWON powers the *main* zone. A room that
+# the second zone interrupt the television: PWON powers the *main* zone. A room that
 # touches the main zone is judged by the main zone, so leaving it in would also
-# make the balcony look busy whenever anybody was watching something.
-BALCONY_PREROLL = [{"avr": "Z2ON"}, {"avr": "Z2NET"}]
+# make the second zone look busy whenever anybody was watching something.
+ZONE2_PREROLL = [{"avr": "Z2ON"}, {"avr": "Z2NET"}]
 
 
 @pytest.fixture
@@ -106,14 +106,14 @@ def orphan_zone(db):
         conn.execute(text("DELETE FROM zones WHERE id = :z"), {"z": str(zone_id)})
 
 
-def _make_zone(client, name="Balcony", preroll=None):
+def _make_zone(client, name="Zone Two", preroll=None):
     r = client.post(
         "/api/zones",
         json={
             "name": name,
             "renderer_kind": "heos",
             "device_key": f"uuid:test::{name}",
-            "preroll": BALCONY_PREROLL if preroll is None else preroll,
+            "preroll": ZONE2_PREROLL if preroll is None else preroll,
         },
     )
     assert r.status_code == 201, r.text
@@ -140,7 +140,7 @@ class TestZoneManagement:
     def test_create_and_list(self, client, db, scanned):
         _make_zone(client)
         zones = client.get("/api/zones").json()
-        assert [z["name"] for z in zones] == ["Balcony"]
+        assert [z["name"] for z in zones] == ["Zone Two"]
         assert zones[0]["renderer"]["kind"] == "heos"
         assert zones[0]["session"] is None
 
@@ -148,7 +148,7 @@ class TestZoneManagement:
         _make_zone(client)
         r = client.post(
             "/api/zones",
-            json={"name": "Balcony", "renderer_kind": "heos", "device_key": "uuid:other"},
+            json={"name": "Zone Two", "renderer_kind": "heos", "device_key": "uuid:other"},
         )
         assert r.status_code == 409
 
@@ -452,7 +452,7 @@ class TestTelevisionOccupancy:
     """A room in use by something that is not the network player.
 
     The case this was blind to: a child watching television through the receiver.
-    HEOS is idle, so asking only HEOS reported the living room as ready — while
+    HEOS is idle, so asking only HEOS reported the main room as ready — while
     it was audibly and visibly in use. The fake receiver reports PWON / ZMON /
     SITV, which is exactly that situation.
     """
@@ -482,10 +482,10 @@ class TestTelevisionOccupancy:
         standing in the room.
         """
         # No Z2 commands: this room is the main zone.
-        _make_zone(client, name="Living Room", preroll=[{"avr": "PWON"}, {"avr": "SINET"}])
+        _make_zone(client, name="Main Room", preroll=[{"avr": "PWON"}, {"avr": "SINET"}])
         self._prime(zone2=False)
 
-        room = next(z for z in client.get("/api/zones").json() if z["name"] == "Living Room")
+        room = next(z for z in client.get("/api/zones").json() if z["name"] == "Main Room")
         assert room["external"], "the receiver being on a television input went unmentioned"
         assert room["external"]["busy"] is False, "nothing is playing; this is not occupancy"
         assert "TV" in (room["external"]["detail"] or "")
@@ -493,11 +493,11 @@ class TestTelevisionOccupancy:
     def test_zone_two_is_judged_on_its_own_power_not_the_main_zone(
         self, client, db, scanned, receiver
     ):
-        """Otherwise the television downstairs would make the balcony unusable."""
-        _make_zone(client, name="Balcony")  # the default preroll is a ZONE2 one
+        """Otherwise the television in the main zone would make the second zone unusable."""
+        _make_zone(client, name="Zone Two")  # the default preroll is a ZONE2 one
         self._prime(zone2=True)
 
-        room = next(z for z in client.get("/api/zones").json() if z["name"] == "Balcony")
+        room = next(z for z in client.get("/api/zones").json() if z["name"] == "Zone Two")
         assert room["external"] is None
 
     def test_a_selected_input_does_not_block_playing_there(
@@ -510,11 +510,11 @@ class TestTelevisionOccupancy:
         without an override — for a television that may well be off.
 
         The protection that matters is elsewhere: a room that is genuinely
-        playing something still refuses, and the balcony no longer touches the
+        playing something still refuses, and the second zone no longer touches the
         main zone at all.
         """
         zone_id = _make_zone(
-            client, name="Living Room", preroll=[{"avr": "PWON"}, {"avr": "SINET"}]
+            client, name="Main Room", preroll=[{"avr": "PWON"}, {"avr": "SINET"}]
         )
 
         r = client.post(f"/api/zones/{zone_id}/play", json={"item_ids": _items(db)})

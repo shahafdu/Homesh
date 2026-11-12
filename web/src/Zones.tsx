@@ -245,7 +245,7 @@ export default function Zones(props: { onClose: () => void }) {
 /** Where a room is in what it is playing, and a way to move it.
  *
  * The control the tower was missing. Without it the only way past a slow
- * passage on the bedroom screen was to walk to the bedroom — and an hour-long
+ * passage on another room's screen was to walk there — and an hour-long
  * video is exactly the case where somebody is not in that room.
  */
 function ZoneSeek(props: { zone: Zone; onSeek: (positionMs: number) => void }) {

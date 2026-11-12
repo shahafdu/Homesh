@@ -52,7 +52,7 @@ CONVERTIBLE = {
     "abw", "sxw", "fodt", "fods",
 }
 
-# A conversion is one process; several at once on four efficiency cores would
+# A conversion is one process; several at once on a low-power CPU would
 # make the whole server unresponsive for whoever is watching something.
 _slot = asyncio.Semaphore(2)
 

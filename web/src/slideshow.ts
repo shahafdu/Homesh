@@ -21,7 +21,7 @@ export interface PhotoSet {
 /** Gather a folder's photographs.
  *
  * Shuffling is asked of the server rather than done here, and that is not an
- * optimisation. This house has 105,000 photographs and only ten thousand are
+ * optimisation. This house has 100,000 photographs and only ten thousand are
  * sent; shuffling the ones that arrived would be a random ordering of one
  * corner of the library while claiming to be a random ordering of all of it.
  * Only the database can take a sample of everything.
@@ -33,7 +33,7 @@ export const gatherPhotos = (
   const q = new URLSearchParams({ under });
   if (opts.shuffle) q.set("shuffle", "1");
   if (opts.offset) q.set("offset", String(opts.offset));
-  // Counting 105,000 rows to answer a question an endless slideshow never asks.
+  // Counting 100,000 rows to answer a question an endless slideshow never asks.
   if (opts.count === false) q.set("count", "0");
   return api.get<PhotoSet>(`/api/slideshow?${q}`);
 };

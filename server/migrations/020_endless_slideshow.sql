@@ -2,7 +2,7 @@
 --
 -- The queue holds up to five thousand photographs, which at five seconds each is
 -- seven hours before it wraps and starts them again. That is already "forever"
--- in one sense, but with 105,000 photographs in this house it is forever over
+-- in one sense, but with 100,000 photographs in this house it is forever over
 -- the same seven hours of them — and the point of shuffle on a library that
 -- size is that you do not know what is coming.
 --

@@ -5,10 +5,10 @@ what `replicas` is, and `resolve_playable` picks whichever copy answers, which
 is how the library is meant to keep playing with the PC switched off
 (ARCHITECTURE §4). Nothing ever put two copies under one item, though, because
 nothing ever compared file contents. `items.content_hash` sat empty for all
-141,818 files.
+files.
 
 So `E:\\music` and the Drive copy of the same folder produced two complete
-catalogues side by side: 9,189 songs on each side and not one item in common.
+catalogues side by side: thousands of songs on each side and not one item in common.
 Visibly, everything appears twice. Invisibly, the availability model has never
 worked at all.
 
@@ -44,7 +44,7 @@ from .db import get_engine
 log = logging.getLogger("homesh.dedup")
 
 # Read size when fingerprinting. Large enough that the syscalls disappear,
-# small enough that a 13 GB tape is not held in memory.
+# small enough that a long tape is not held in memory.
 CHUNK = 1024 * 1024
 
 
@@ -99,7 +99,7 @@ def fingerprint_local(limit: int = 2000, connectors=None) -> DedupResult:
 
     Smallest first, deliberately. A run that is cut short should have got
     through as many files as possible rather than as many bytes, and the long
-    tail here is a handful of wedding tapes.
+    tail here is a handful of camcorder tapes.
 
     `connectors` is how a source is turned into something that can be read, and
     is a parameter only so a test can hand over a library that is not mounted

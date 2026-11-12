@@ -1,6 +1,6 @@
 """Denon / Marantz receiver control.
 
-The AVR-X1600H answers on two entirely separate protocols, and conflating them is
+The receiver answers on two entirely separate protocols, and conflating them is
 the usual mistake:
 
   * **HEOS CLI, TCP 1255** — ASCII commands, JSON responses. Streams media.
@@ -410,7 +410,7 @@ async def wake(host: str) -> None:
 
 
 async def prepare_zone2(host: str, volume: int | None = None) -> list[str]:
-    """Make the balcony ready to receive audio.
+    """Make the second zone ready to receive audio.
 
     Power on, enable ZONE2, select the network source and optionally set volume.
     ZONE2's source is already NET on this receiver, but selecting it explicitly

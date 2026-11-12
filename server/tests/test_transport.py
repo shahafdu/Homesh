@@ -210,8 +210,8 @@ class TestSeekingInARoom:
     """Moving through what another room is playing.
 
     The control tower could start and stop a room but never move through it, so
-    getting past a slow passage on the bedroom screen meant walking to the
-    bedroom — on an hour-long video, which is exactly when nobody is in that
+    getting past a slow passage on another room's screen meant walking to
+    it — on an hour-long video, which is exactly when nobody is in that
     room.
     """
 

@@ -202,7 +202,7 @@ class TestALengthMustAccountForTheFile:
     The check exists because the wrong numbers were not absurd-looking. A Drive
     video is read as a prefix, and ffprobe handed a quarter-megabyte of a film
     reports how long that quarter-megabyte lasts: 0.64 seconds for a 1.6 GB
-    conga lesson. That is a number, so it was stored as the length, and the
+    lesson video. That is a number, so it was stored as the length, and the
     control tower drew it -- a bar the film ran off the end of in the first
     second.
     """

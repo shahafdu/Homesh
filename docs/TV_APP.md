@@ -17,8 +17,8 @@ What the shell adds is the handful of things a browser tab cannot do:
 
 A WebView on one of these boxes decodes roughly H.264 and VP8/9. The box
 underneath it decodes MPEG-2, MKV and AVI in hardware, and does not expose any of
-that to the page. Since this library is largely camcorder video, a shell without
-its own player would have meant a black screen for most of what anybody wanted to
+that to the page. For a library with much camcorder video, a shell without its
+own player would have meant a black screen for most of what anybody wanted to
 watch.
 
 So the app puts a `VideoView` behind the web page and hands it files by a small
@@ -38,7 +38,7 @@ Two things about the layering are worth knowing, because both were bugs:
   controls are drawn over the film rather than behind it.
 - A `VideoView` measures itself *smaller* than its frame to keep the film's shape,
   and a `FrameLayout` puts the remainder against the start edge — which under a
-  Hebrew locale is the right-hand edge. The film ended up in a strip down one side
+  right-to-left locale is the right-hand edge. The film ended up in a strip down one side
   of the screen. It is centred explicitly now.
 
 ## Installing it on a box

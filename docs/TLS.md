@@ -7,7 +7,7 @@ Three things are waiting on this, and none of them are cosmetic:
   answer, and no amount of interface work changes that.
 - **Sharing a file from your phone.** `navigator.share` is secure-context-only
   too, which is why the Share button explains itself and points at Download.
-- **Reaching the house from outside it.** The wedding video from the office.
+- **Reaching the house from outside it.** A family video, from anywhere.
 
 Tailscale is the shortest route to all three: a stable hostname, a real
 certificate, and **no inbound ports opened at home** — which keeps the

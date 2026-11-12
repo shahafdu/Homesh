@@ -12,7 +12,7 @@ import android.widget.VideoView;
  *
  * <p>A WebView carries a narrow set of codecs — roughly H.264 and VP8/9 in MP4
  * and WebM. The box it runs on carries far more: MPEG-2 from a DVD or an HDV
- * camcorder, MKV, AVI, all decoded in hardware. That gap is why a wedding tape
+ * camcorder, MKV, AVI, all decoded in hardware. That gap is why a camcorder tape
  * sent to a television opened a player and sat at 0:00.
  *
  * <p>So video goes to the platform's own player and everything else — pairing,

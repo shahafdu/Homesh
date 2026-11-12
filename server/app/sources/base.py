@@ -23,7 +23,7 @@ _KINDS: dict[str, str] = {
     **dict.fromkeys(
         ["mp4", "mkv", "avi", "mov", "wmv", "m4v", "mpg", "mpeg", "webm", "flv", "ts", "m2ts",
          # Camcorder and DVD containers. These are video and were being catalogued
-         # as "other", which left five wedding tapes sitting in the library as
+         # as "other", which left five camcorder tapes sitting in the library as
          # unopenable files of unknown type.
          "m2t", "mts", "vob", "mod", "tod", "dv", "mxf", "ogv", "3gp", "rm", "rmvb",
          "divx", "asf", "m1v", "m2v"],

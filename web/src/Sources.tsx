@@ -147,7 +147,7 @@ export default function Sources(props: { onClose: () => void }) {
  *
  * A web page cannot open a folder dialog on the machine — no browser will tell
  * a page a path, and a file input returns names and bytes and never
- * "E:\music". But it can ask Windows to open something that can, which is what
+ * "a music folder". But it can ask Windows to open something that can, which is what
  * a protocol handler is for and how a Zoom or Spotify link works.
  *
  * So the button is real. Pressing it hands "homesh://add-folder" to Windows,

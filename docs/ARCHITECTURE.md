@@ -254,24 +254,23 @@ show where.** Transcoding did not drop out of the critical path. It is on it, da
 reason is the library rather than the hardware.
 
 The argument assumed the awkward files would be rare — old Xvid, 10-bit HEVC, the odd VC-1. In
-this house the awkward files are *the home videos*: MPEG-2 from camcorders, WMV, AVI, VOB from
-DVDs a wedding was delivered on. A browser will not decode any of them, and neither will the
-web view on a set-top box. "Direct play covers nearly everything" is true of a library of
-downloaded films and false of a library that includes twenty years of family recordings, which
-is the library this was built for.
+a family library the awkward files are *the home videos*: MPEG-2 from camcorders, WMV, AVI, VOB
+from DVDs. A browser will not decode any of them, and neither will the web view on a set-top
+box. "Direct play covers nearly everything" is true of a library of downloaded films and false
+of a library that includes years of family recordings, which is the kind this was built for.
 
-So the server encodes, and three things make that affordable on four efficiency cores:
+So the server encodes, and three things make that affordable on a low-power CPU:
 
 - **Only when asked, and never stored.** It is a live stream down a pipe — fragmented MP4,
   `ultrafast`, `zerolatency`, capped at 720p. Nothing is written to disk, so there is no second
-  copy of a 13 GB tape and no cache to manage.
+  copy of a long tape and no cache to manage.
 - **Only where the endpoint cannot decode.** Direct play is still the default and still covers
   everything modern. The decision is by container and codec, per file.
 - **The box decodes what it can.** An Android TV box has hardware decoders the browser inside it
   does not expose, so the app hands those files to the box's own player and the server does
   nothing. Only what neither can read gets encoded.
 
-Measured on the real machine: a 13.6 GB HDV wedding tape plays at 720p, deinterlaced, keeping
+Measured on a low-power mini PC: a long HDV camcorder tape plays at 720p, deinterlaced, keeping
 ahead of real time; a converted film from Drive starts in about six seconds, most of which is
 reaching into the file over the network rather than encoding.
 
@@ -418,7 +417,7 @@ obliged to be the thing producing sound or picture.
 
 #### The device profile
 
-Nearly every screen is fed by an Android TV set-top box rather than relying on the TV's own
+Most screens can be fed by an Android TV set-top box rather than relying on the TV's own
 platform, and that collapses this section's complexity. A box is the easy target — Cast works
 with no install at all, side-loading is routine, and nothing expires. Both TV platforms, by
 contrast, expire their developer certificates and need periodic reinstalling.
@@ -429,13 +428,13 @@ maintain forever. In practice this reduces three planned TV apps to one.
 
 | Device | Platform | Cast? | AirPlay 2? | Our app? |
 |---|---|---|---|---|
-| LG | webOS | ❌ | ✅ (2019+; 2018 via update) | ✅ webOS app (HTML5) |
-| Samsung | Tizen | ❌ | ✅ (2018+) | ✅ Tizen app (HTML5) |
+| webOS TVs | webOS | ❌ | ✅ (recent models) | ✅ webOS app (HTML5) |
+| Tizen TVs | Tizen | ❌ | ✅ (recent models) | ✅ Tizen app (HTML5) |
 | Non-smart TVs | via an Android TV box | ✅ | ❌ | ✅ Android TV app |
-| Denon AVR-X1600H | HEOS | ❌ **no Chromecast** | ✅ | ❌ — network protocols only |
+| Denon AVR with HEOS | HEOS | ❌ **no Chromecast** | ✅ | ❌ — network protocols only |
 
-There is no single casting standard that covers this fleet. Cast reaches only the Android box;
-AirPlay 2 reaches the TVs and the Denon but is painful to implement as a *sender* from a server.
+There is no single casting standard that covers a mixed fleet like this. Cast reaches only the Android box;
+AirPlay 2 reaches the TVs and the receiver but is painful to implement as a *sender* from a server.
 
 #### The unlock: our own renderer protocol
 
@@ -452,7 +451,7 @@ cannot install software on.
 
 #### The Denon, which we cannot install onto
 
-Confirmed capabilities of the X1600H: **AirPlay 2 ✅, HEOS Built-in ✅, Bluetooth ✅,
+Confirmed capabilities of the receiver model this was built against: **AirPlay 2 ✅, HEOS Built-in ✅, Bluetooth ✅,
 Chromecast ❌**. Two documented control surfaces, and they are separate protocols:
 
 - **HEOS CLI — telnet port 1255**, ASCII commands, JSON responses. Denon publishes the spec.
@@ -462,93 +461,91 @@ Chromecast ❌**. Two documented control surfaces, and they are separate protoco
   HEOS-capable models. Controls power, input select, volume, and ZONE2. This is our
   orchestration path.
 
-Together these make "play this album on the balcony" a single button: power on the AVR, enable
+Together these make "play this album in the second zone" a single button: power on the AVR, enable
 ZONE2, select the network source, set volume, push the stream URL.
 
 #### Zone routing — two independent audio paths
 
 The wiring this assumes:
 
-- **Zone 1 (living room)** — TV connected over HDMI. The TV is *not* wired to ZONE2.
-- **Zone 2 (balcony)** — fed by streaming from a phone to the AVR over the network, then
-  selecting the zone in the HEOS app.
+- **Zone 1 (main zone)** — a TV connected over HDMI. The TV is *not* wired to ZONE2.
+- **Zone 2 (second zone)** — fed by streaming to the AVR over the network.
 - These run **simultaneously with different content** — TV audio in the main zone while a
   network stream feeds ZONE2. Verified in practice.
 
 This matches the manual's restriction: *"It is not possible to play the digital audio signals
 input from the HDMI, COAXIAL or OPTICAL connectors in ZONE2. Use analog connections for ZONE2
 playback."* HDMI cannot reach ZONE2 — so ZONE2 audio must arrive over the network or analog,
-and network is what's already in use.
+and network is the practical choice.
 
 **The design follows the hardware.** The AVR has two independent audio paths, so we drive one
 from each side:
 
 ```
-Zone 1 (living room)   TV app (webOS/Tizen)  ──HDMI──►  AVR main zone
-Zone 2 (balcony)       core node  ──HEOS CLI play_stream (signed URL)──►  AVR ZONE2
+Zone 1 (main zone)     TV app  ──HDMI──►  AVR main zone
+Zone 2 (second zone)   core node  ──HEOS CLI play_stream (signed URL)──►  AVR ZONE2
 ```
 
 Different content in both zones, orchestrated from one app — and it works **without requiring
-the AVR to handle two simultaneous network streams.** It is the automation of what the owner
-already does by hand.
+the AVR to handle two simultaneous network streams.**
 
 #### Measured, not assumed
 
-`tools/probe-denon.ps1` was run against the live receiver. Results:
+`tools/probe-denon.ps1` was run against a real receiver. Results:
 
 **HEOS CLI (`heos://player/get_players`) returns exactly one player.** The AVR presents itself as
-a single HEOS device — `Denon AVR-X1600H`, firmware 3.139.173, wired. There is **no separate
+a single HEOS device. There is **no separate
 player for ZONE2**, and `group/get_groups` is empty.
 
 So the AVR **cannot run two different network streams at once.** That settles the open question:
-the bonus case (network audio in the living room while the balcony plays something else) is not
+the bonus case (network audio in the main zone while the second zone plays something else) is not
 available, and the HDMI/network split above is not merely convenient — it is the *only* way to
 get different content into the two zones.
 
-**The AVR control protocol (port 23) does expose ZONE2 fully.** Live state read back:
+**The AVR control protocol (port 23) does expose ZONE2 fully.** The state it reports, in the
+form it reports it:
 
 ```
 PWON      power on              SITV      main zone source = TV
-ZMON      main zone on          MV43      master volume 43 (max 94)
-Z2OFF     ZONE2 currently off   MUOFF     not muted
+ZMON      main zone on          MVnn      master volume
+Z2OFF     ZONE2 off             MUOFF     not muted
 Z2NET     ZONE2 source = NET    SLPOFF    sleep timer off
-Z259      ZONE2 volume 59
+Z2nn      ZONE2 volume
 ```
 
-Two useful facts fall out. ZONE2's input is **already set to `NET`**, so we never have to switch
-it. And ZONE2 power and volume are independently controllable over port 23 — so even though we
+ZONE2 power, source and volume are independently controllable over port 23 — so even though we
 can't give ZONE2 its *own* stream, we have full command of the zone itself.
 
 #### The resulting zone matrix
 
 | Scenario | Works? | How |
 |---|---|---|
-| TV audio in living room + different music on balcony | ✅ | HDMI → zone 1, HEOS → ZONE2. What you do today |
+| TV audio in the main zone + different music in the second | ✅ | HDMI → zone 1, HEOS → ZONE2 |
 | Same music in both zones | ✅ | One HEOS stream, both zones enabled |
-| Music in living room (TV off) + *different* music on balcony | ❌ | One network player. Workaround: run the TV app for zone 1 |
-| Music on balcony only, TV off | ✅ | HEOS → ZONE2, `Z2ON` |
+| Music in the main zone (TV off) + *different* music in the second | ❌ | One network player. Workaround: run the TV app for zone 1 |
+| Music in the second zone only, TV off | ✅ | HEOS → ZONE2, `Z2ON` |
 
 The UI must model this honestly: if you ask for different network audio in both zones, we either
-route living-room audio through the TV app over HDMI, or say plainly that the receiver can't and
+route main-zone audio through the TV app over HDMI, or say plainly that the receiver can't and
 offer to play the same thing in both. No silent surprises.
 
-⚠️ **One small setting to check:** the receiver was powered on during the probe, so port 23
-responding doesn't prove it responds from standby. **Setup → Network → Network Control → "Always
-On"** is what lets us wake the receiver remotely. Without it, the app can control the AVR only
-once it's already on.
+⚠️ **One setting to check:** port 23 answering while the receiver is on doesn't prove it answers
+from standby. **Setup → Network → Network Control → "Always On"** is what lets the app wake the
+receiver. Without it, the app can control the AVR only once it's already on. The trade-off is
+real: with it on, the receiver accepts unauthenticated control from anything on the network.
 
 #### Zones
 
-"Living Room", "Balcony", "Bedroom" are named zones, each bound to a renderer (an app instance,
-a Cast device, or the Denon + a zone id). You pick a zone, then pick media. Your Denon's two
-speaker sets become two zones.
+Zones are named by whoever sets them up, each bound to a renderer (an app instance, a Cast
+device, or the Denon + a zone id). You pick a zone, then pick media. A receiver's two speaker
+sets become two zones.
 
-**Snapcast** for synchronized whole-house audio later, if you add cheap endpoints (Pi Zero + DAC,
-~$25/room) for rooms the Denon doesn't reach — which dovetails with the smart-home work.
+**Snapcast** for synchronized whole-house audio later, with cheap endpoints (Pi Zero + DAC,
+~$25/room) for rooms the receiver doesn't reach — which dovetails with the smart-home work.
 
 ### 5.7 Device identity and dynamic IPs
 
-Nearly every device on this network gets its address from DHCP, so **no IP address is ever
+On a typical home network nearly every device gets its address from DHCP, so **no IP address is ever
 treated as configuration.** Devices are keyed by stable identity; the IP is a cache entry that
 rediscovery refreshes.
 
@@ -563,7 +560,7 @@ connected to. That was chosen for security (§6, no inbound ports) and it pays a
 here: the core never needs to know where anything is.
 
 Only LAN devices we can't install software on — the Denon — need discovery, and SSDP handles it.
-Verified working from the host: `tools/probe-denon.ps1` found the receiver and read back a
+Verified working from the host: `tools/probe-denon.ps1` finds the receiver and reads back a
 stable `uuid:…::urn:schemas-denon-com:device:ACT-Denon:1`.
 
 ⚠️ **Discovery cannot run from inside a bridged container.** Docker's bridge network does not
@@ -582,7 +579,7 @@ confusing — but the design does not require one, and nothing breaks without it
 ### 5.8 The control tower
 
 One screen on your phone that shows **everything playing everywhere**, and lets you change any of
-it without first "connecting" to a device. Living room, balcony, bedroom TV, all at once.
+it without first "connecting" to a device. Every room, all at once.
 
 #### The design decision that makes it work
 
@@ -597,17 +594,18 @@ it buys several things at once:
 - **Your phone can die and the music keeps playing.** It was never in the path.
 - A TV that reboots reconnects and resumes from server state, mid-track.
 - Two people's phones both control the house without fighting over ownership.
-- "Move this to the bedroom" is a session rebinding, not a re-cast.
+- "Move this to another room" is a session rebinding, not a re-cast.
 
 ```
    Phone (controller)                    Core                     Renderers
    ─────────────────                     ────                     ─────────
-   subscribe: all sessions   ──────►  session store  ──────►  Living Room  (Tizen/webOS app)
-   command: pause balcony    ──────►  command bus    ──────►  Balcony      (Denon ZONE2)
-           ◄────── live state fan-out ─────────────────────   Bedroom      (Tizen app)
+   poll: your rooms' sessions ─────►  session store  ──────►  Room A  (TV app)
+   command: pause room B     ──────►  command bus    ──────►  Room B  (Denon ZONE2)
+           ◄────── state, filtered to your rooms ──────────   Room C  (TV app)
 ```
 
-All of it over one authenticated WebSocket per client, with heartbeats. If a renderer loses the
+Controllers poll an authenticated endpoint that applies each account's rooms; each renderer holds
+one authenticated WebSocket, with heartbeats. If a renderer loses the
 core it keeps playing from its buffer and re-syncs on reconnect — a network blip doesn't stop
 the music.
 
@@ -619,26 +617,26 @@ offering things that will fail:
 | Renderer | Video | Audio | Seek | Volume | Transport |
 |---|---|---|---|---|---|
 | TV app (webOS / Tizen / Android TV) | ✅ | ✅ | ✅ | ✅ | our WebSocket protocol |
-| Denon ZONE2 (balcony) | ❌ | ✅ | limited | ✅ via port 23 | HEOS `play_stream` + AVR telnet |
+| Denon ZONE2 | ❌ | ✅ | limited | ✅ via port 23 | HEOS `play_stream` + AVR telnet |
 | Cast device | ✅ | ✅ | ✅ | ✅ | Cast SDK |
 | Browser / phone itself | ✅ | ✅ | ✅ | ✅ | local playback |
 
-So the balcony never gets offered a film, and a zone without seek support shows no scrub bar.
+So an audio-only zone never gets offered a film, and a zone without seek support shows no scrub bar.
 
 #### Zones carry hardware orchestration, not just a stream
 
 A zone is more than a destination — it owns the steps needed to make sound actually come out.
-The balcony zone, concretely:
+A ZONE2 zone, concretely:
 
 ```
-Balcony:
+Second zone:
   pre-roll:   AVR power on  ──►  Z2ON  ──►  Z2NET  ──►  set Z2 volume     (port 23)
   transport:  heos://player/play_stream  with a signed URL                (port 1255)
   post-roll:  Z2OFF on idle timeout
 ```
 
-Network Control is now set to "Always On", so the pre-roll can wake the receiver from standby —
-"play this on the balcony" genuinely is one button from a cold start.
+With Network Control set to "Always On" the pre-roll can wake the receiver from standby, so
+"play this in the second zone" is one button from a cold start.
 
 #### Availability is shown, never guessed
 
@@ -647,15 +645,15 @@ Wake-on-LAN capable TV), or **unavailable** (TV physically off, app not running)
 offers to wake what it can and says plainly what it can't, rather than failing silently after
 you press play.
 
-The hardware constraint from §5.6 surfaces here too: if the balcony is streaming and you ask for
-*different* network audio in the living room, the tower routes the living room through the TV app
+The hardware constraint from §5.6 surfaces here too: if the second zone is streaming and you ask for
+*different* network audio in the main zone, the tower routes the main zone through the TV app
 if the TV is on, and otherwise tells you the receiver can't do both and offers to play the same
 thing in each.
 
-#### Bedroom and beyond
+#### Further rooms
 
-The bedroom TV needs no new engineering — if it's one of the Samsungs, it runs the same Tizen app
-and appears in the tower as another zone. Every additional room is either a screen running our app
+Another screen needs no new engineering — it runs the same app and appears in the tower as
+another zone. Every additional room is either a screen running our app
 or a cheap Snapcast endpoint, and neither requires protocol work.
 
 ---
@@ -802,7 +800,7 @@ embedding search and still works.
 | Web client | **React + TypeScript, PWA** | One codebase packaged four ways: browser PWA, Tizen app, webOS app, Android TV app. See §5.6 |
 | Media | **ffmpeg** | Remux + thumbnails on the critical path; transcode only as an optional late feature |
 | Transport | **WireGuard** | Outbound-only, no third party, no ToS limits on streaming volume |
-| Device control | **HEOS CLI (:1255)** + **Denon telnet (:23)** | Documented protocols; drive the AVR-X1600H's playback and ZONE2 orchestration |
+| Device control | **HEOS CLI (:1255)** + **Denon telnet (:23)** | Documented protocols; drive the receiver's playback and ZONE2 orchestration |
 | Deploy | **Docker Compose, multi-arch** | One `docker compose up` on Windows, Pi or cloud; `linux/amd64` + `linux/arm64` images built in CI. The agent ships as a separate native installer |
 | Ingress | **Cloudflare Tunnel** or **WireGuard** | Both free, both zero-inbound-port; selected by config |
 
@@ -852,19 +850,19 @@ quietly edited to match the outcome teaches nobody anything.
 | Phase | Deliverable | Your involvement | Where it got to |
 |---|---|---|---|
 | **0. Foundation** | Repo, CI (multi-arch builds), Compose stack, Postgres schema, passkey auth, web shell running in Mode A on your PC | Nothing yet | ✅ Done |
-| **0.5. Go always-on** | Same stack deployed to Oracle Always Free, ingress + TLS, agent split out to Mode B | Create Oracle account; register your passkey | ⬜ Not started. Runs on the PC; portability is built in and untested in anger |
+| **0.5. Go always-on** | Same stack deployed to Oracle Always Free, ingress + TLS, agent split out to Mode B | Create Oracle account; register your passkey | 🔨 Redesigned as a standby rather than a move: the PC stays primary, a free-tier instance restores its hourly backups and serves the catalog and Drive files when the PC is off (`docs/STANDBY.md`). The Go agent is deferred |
 | **1. Sources & catalog** | Drive connector, Go agent + WireGuard, unified tree, folder browser, filename-first UI, search | Google Cloud project + OAuth consent; install agent on PC | ✅ Done, without the agent or OAuth — service account for Drive, granted mounts for local (§1.2) |
 | **2. Playback** | Audio player w/ gapless, video **direct play + remux** (no transcode), photo viewer, doc preview | QA on real content | ✅ Done, **plus the transcode this phase explicitly excluded** (§3.2.1). Gapless is still outstanding |
 | **3. Control tower, renderers & zones** | Server-owned sessions, WebSocket renderer protocol, multi-zone control tower UI, zone orchestration, Denon via HEOS CLI + telnet | ~~Probe~~ done; ~~Network Control~~ done; physical testing | ✅ Done and verified against the receiver |
-| **4. TV apps** | **Android TV** — likely the only one needed, since nearly every screen has an Android box in front of it. webOS and Tizen only if a screen turns out to have none | Confirm which screens have a box | ✅ Android TV only, as predicted. No Gradle: aapt2/javac/d8/apksigner, built by CI on every commit |
-| **5. Playlists & music intelligence** | Winamp import w/ path repair, smart playlists, AcoustID tag repair | Point me at your `.m3u` files | 🔨 Winamp import done — 41 lists, 98.6% matched. AcoustID repair not started |
+| **4. TV apps** | **Android TV** — likely the only one needed, since most screens can have an Android box in front of them. webOS and Tizen only if a screen turns out to have none | Confirm which screens have a box | ✅ Android TV only, as predicted. No Gradle: aapt2/javac/d8/apksigner, built by CI on every commit |
+| **5. Playlists & music intelligence** | Winamp import w/ path repair, smart playlists, AcoustID tag repair | Point me at your `.m3u` files | 🔨 Winamp import done, nearly every track matched. AcoustID repair not started |
 | **6. AI** | Local CLIP/Whisper embedding pipeline, NL search, auto-tagging, doc Q&A | Anthropic API key | ⬜ Designed and agreed, not built. Backups landed first, deliberately: they are what makes it safe |
 | **7. Photo availability** | RAID → Drive sync, Wake-on-LAN, optional Takeout gap-fill | Decide originals vs. compressed after I measure | ⬜ Not started |
-| **8. Optional transcode** | Agent-side transcode for the edge cases in §3.2 | Only if we hit a file that needs it | ❌ Overtaken — see §3.2.1. It was never optional for this library |
+| **8. Optional transcode** | Agent-side transcode for the edge cases in §3.2 | Only if we hit a file that needs it | ❌ Overtaken — see §3.2.1. It was never optional for a library of home videos |
 | **9. Public release** | Docs, AGPL-3.0, security policy, install guide, screenshots | Pick a name; approve going public | 🔨 Public since August; docs and screenshots outstanding |
 
 Phases 0–2 give you a working replacement for Plex's core. Phases 3–4 are what make it better
-than Plex for your living room.
+than Plex for a main room.
 
 The prediction that aged worst is in the line above this one, which used to say transcoding had
 moved to phase 8 and might never be needed at all. It was needed in week one. §3.2.1 has the
@@ -881,11 +879,10 @@ All resolved. Nothing is blocking a start.
 2. ~~Google Photos strategy~~ — **RAID copy is the source of truth.** Catalog and thumbnails on
    the core node keep browsing and search always-on; RAID→Drive sync and Wake-on-LAN handle
    originals. Takeout deferred to gap-fill (§1.1).
-3. ~~Google account~~ — **personal `@gmail.com` with paid storage.** No Workspace, so the 7-day
-   refresh-token expiry applies; mitigation in §11.1 below. Paid storage is what makes the
-   RAID→Drive photo sync viable.
-4. ~~Devices~~ — webOS, Tizen and Android TV displays, plus a **Denon AVR-X1600H**. Full matrix
-   and protocol plan in §5.6.
+3. ~~Google account~~ — **a personal Google account.** No Workspace, so the 7-day
+   refresh-token expiry applies to OAuth; solved with a service account (§11.1 below).
+4. ~~Devices~~ — webOS, Tizen and Android TV displays, plus a **Denon receiver with HEOS**. Full
+   matrix and protocol plan in §5.6.
 5. ~~License~~ — **AGPL-3.0.** Requirement was "derivatives must also be open source." For
    software reached over a network, plain GPL leaves a loophole: someone can modify it, run it as
    a hosted service, and never distribute the source. AGPL closes exactly that. It's also what
@@ -907,9 +904,10 @@ refresh token **revoked every 7 days**. Three ways out, in preference order:
    others will run, but it involves a CASA security assessment — not worth it before the project
    is real.
 
-**Plan: build against (1), keep (2) as fallback, revisit (3) at public release.** The connector
-sits behind a token-acquisition interface, so switching is a config change, not a rewrite. This
-does not block phase 0 or 1.
+**What was built: (2).** A service account and ordinary folder sharing — no consent flow, no
+expiry clock, and no verification. Its limit is that a service account owns no storage, so it
+reads what is shared with it but cannot create files; anything that must write to Drive needs
+either a person's own sign-in or Drive's desktop client.
 
 ---
 
@@ -922,17 +920,17 @@ repository.
 
 | Role | Profile |
 |---|---|
-| Server / agent host | Low-power mini PC: 4 efficiency cores, integrated graphics, **no discrete GPU**. The only such machine — there is no second, beefier one |
+| Server / agent host | Low-power mini PC, integrated graphics, **no discrete GPU**. The only such machine — there is no second, beefier one |
 | Bulk storage | Directly attached, **intermittently powered by design**. Not to be relied on for availability |
 | Always-on core | Free-tier arm64 cloud instance, or a Pi later (§3.4) |
 | Displays | **webOS**, **Tizen**, and **Android TV** — all three get an app from the same codebase |
-| Audio | **Denon AVR-X1600H**: main zone plus ZONE2. HEOS + AirPlay 2, no Chromecast. One network player only (§5.6) |
+| Audio | **A Denon receiver with HEOS**: main zone plus ZONE2. HEOS + AirPlay 2, no Chromecast. One network player only (§5.6) |
 | Network | DHCP throughout. Hence identity-not-IP addressing (§5.7), and no real address in any tracked file |
 
 ### Consequences already folded into the design
 
 - **No GPU** → AI indexing is a CPU batch job measured in hours, Whisper is on-demand only (§7).
-- **Modest CPU** → transcoding stays optional and last (§3.2); direct play and remux carry the load.
+- **Modest CPU** → direct play and remux first (§3.2); live transcoding only when asked, two at once at most.
 - **One PC, and it holds the RAID** → the agent and the storage share a single failure domain, so
   "PC off" and "RAID off" are the same event. The availability matrix in §3.3 already assumes this.
 - **Everything on DHCP** → no IP is ever configuration (§5.7).

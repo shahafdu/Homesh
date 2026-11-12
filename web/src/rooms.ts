@@ -5,7 +5,7 @@ import { listZones, type Zone } from "./zones";
  *
  * The tower answers this properly, but only once it is open. The point of the
  * status line is that the answer is visible without opening anything — the
- * question "is something still playing in the balcony?" should not require
+ * question "is something still playing in the second zone?" should not require
  * navigating to find out.
  */
 export function useRoomActivity(pollMs = 8000) {

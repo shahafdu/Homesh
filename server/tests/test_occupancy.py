@@ -71,8 +71,8 @@ class TestWhichZoneHearsIt:
     """One HEOS player, two zones — so "HEOS is playing" names no room.
 
     The receiver has a single network player. Asking it alone reported every
-    zone busy whenever anything streamed: Spotify in the living room marked the
-    balcony occupied while the balcony was switched off. The zone's own input is
+    zone busy whenever anything streamed: Spotify in the main room marked the
+    second zone occupied while the second zone was switched off. The zone's own input is
     what tells them apart.
     """
 

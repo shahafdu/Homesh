@@ -19,7 +19,7 @@
 
     A browser cannot do this at all, whichever way it is arranged: no browser
     tells a web page a real path. A file picker in the app returns names and
-    bytes and never "E:\music".
+    bytes and never "a music folder".
 
 .PARAMETER Path
     Skip the dialog and grant this folder. For scripting and headless hosts.

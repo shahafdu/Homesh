@@ -5,7 +5,7 @@ binds to a *zone*, so the phone can die mid-song and the music keeps playing, an
 moving audio to another room is a rebinding rather than a re-cast.
 
 A zone is more than a destination: it carries the orchestration needed to make
-sound actually come out. For the balcony that means powering the receiver on,
+sound actually come out. For the second zone that means powering the receiver on,
 enabling ZONE2 and selecting the network source before any audio is pushed.
 """
 
@@ -117,11 +117,11 @@ def _is_zone2(preroll: list[dict] | None) -> bool:
     """Whether a room uses the receiver's second zone *and nothing else*.
 
     It decides which zone's power and input the occupancy check reads, and both
-    mistakes are visible: judging the balcony by the main zone makes a television
-    downstairs look like the balcony being busy, and judging the living room by
+    mistakes are visible: judging the second zone by the main zone makes a television
+    in another room look like the second zone being busy, and judging the main room by
     zone 2 makes that television invisible.
 
-    A room that drives both — "Living Room + Balcony" — is not zone 2. It occupies
+    A room that drives both — "Main Room + Zone Two" — is not zone 2. It occupies
     the main zone, so it has to be judged by it.
     """
     commands = [c.get("avr", "") for c in (preroll or [])]
@@ -183,7 +183,7 @@ def _require_zone_access(zone_id: UUID, user: CurrentUser) -> None:
 async def _run_commands(zone: Zone, commands: list[dict]) -> list[str]:
     """Execute a zone's orchestration steps.
 
-    Each step names its transport, so a zone can mix them — the balcony needs AVR
+    Each step names its transport, so a zone can mix them — the second zone needs AVR
     telnet for power and zone selection, then HEOS for the audio itself.
     """
     if not commands:
@@ -684,7 +684,7 @@ async def _push_to_screen(zone: Zone, item_id: UUID, user: CurrentUser) -> dict:
             # live stream has no end yet, so the screen's own player reports a
             # length that is short and growing, and a bar drawn from that has
             # the film running off the end of it in the first few seconds. That
-            # is exactly what a conga lesson looked like: 0:21 of 0:10.
+            # is exactly what a lesson video looked like: 0:21 of 0:10.
             "duration_ms": _catalog_duration(item_id),
             # Absent for anything that ends by itself, which is what tells the
             # screen this is a slideshow rather than a photograph somebody sent.
@@ -925,8 +925,8 @@ async def seek(
     """Move to a point in what is playing in another room.
 
     The one control the tower was missing, and the one an hour-long video most
-    needs: without it the only way past a slow passage in the bedroom was to
-    walk to the bedroom.
+    needs: without it the only way past a slow passage in another room was to
+    walk to that room.
     """
     zone = _load_zone(zone_id)
     _require_zone_access(zone_id, user)

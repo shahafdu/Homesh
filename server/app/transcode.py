@@ -45,7 +45,7 @@ router = APIRouter(prefix="/api/videos", tags=["video"])
 NEEDS_CONVERSION = {
     # MPEG-2 and camcorder containers
     "m2t", "mts", "vob", "mpg", "mpeg", "m1v", "m2v", "mod", "tod", "dv", "mxf",
-    # Windows Media and friends: 329 .wmv and 298 .avi in this library alone, and
+    # Windows Media and friends: hundreds of .wmv and .avi files in this library alone, and
     # no browser has ever played either.
     "wmv", "avi", "asf", "divx", "xvid", "rm", "rmvb", "flv",
     # Phone video from before H.264 was universal
@@ -264,14 +264,14 @@ async def converted_video(item_id: UUID, user: CurrentUser = Depends(require_use
 # ── Watching it now ─────────────────────────────────────────────────────────
 #
 # Converting a whole tape takes tens of minutes and leaves a second copy on the
-# disk. Neither is what somebody wanting to watch a wedding video actually asked
+# disk. Neither is what somebody wanting to watch a family video actually asked
 # for, so the ordinary path is to encode as it plays and keep nothing.
 #
 # The cost is that a live stream cannot be scrubbed: there is no index to seek
 # in, because the file does not exist yet. Seeking is done by starting again at
 # a different point, which is what `start` is for.
 
-# Fast enough to stay ahead of playback on four efficiency cores, which matters
+# Fast enough to stay ahead of playback on a low-power CPU, which matters
 # more here than the file size that a slower preset would save — nothing is being
 # stored, so a bigger stream costs only bandwidth on a home network.
 LIVE_PRESET = "ultrafast"
@@ -338,7 +338,7 @@ async def live_stream(
     args = [
         "ffmpeg", "-hide_banner", "-nostdin", "-loglevel", "error",
         # Measured: ffmpeg spent eleven seconds inspecting a tape before emitting
-        # anything, most of it reading far more of a 13 GB file over the network
+        # anything, most of it reading far more of a large file over the network
         # than it needed to identify the stream.
         "-analyzeduration", "2M", "-probesize", "5M",
         # Before -i, so the seek happens by jumping rather than by decoding and
@@ -347,7 +347,7 @@ async def live_stream(
         "-i", source,
         # Deinterlace, then down to 720p. HDV is 1440x1080 interlaced; leaving the
         # interlacing produces combing on every pan, and leaving the height at
-        # 1080 left no margin over real time on four efficiency cores — a stream
+        # 1080 left no margin over real time on a low-power CPU — a stream
         # that cannot keep up stutters, which is worse than being 720p on a phone.
         #
         # min() rather than a flat 720: half of these files are camcorder video

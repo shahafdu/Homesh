@@ -120,7 +120,7 @@ final class Discovery {
         return address;
     }
 
-    /** "192.168.1." for this screen's own address, or null if it has none. */
+    /** "192.0.2." for this screen's own address, or null if it has none. */
     private static String subnetPrefix() {
         try {
             for (NetworkInterface nic : Collections.list(NetworkInterface.getNetworkInterfaces())) {

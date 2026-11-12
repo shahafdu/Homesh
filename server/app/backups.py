@@ -5,7 +5,7 @@ user's own disks, it is terabytes, and copying it somewhere else is a different
 job with a different answer. What is backed up is everything the server knows
 *about* those files, which is the part that exists nowhere else — accounts and
 their passkeys, who may see which folder, playlists somebody built by hand,
-where each person had got to in each film, and a catalog of 141,818 files whose
+where each person had got to in each film, and a catalog of files whose
 tags and durations took hours of reading to work out.
 
 It exists now because the AI work needs it (see CLAUDE.md): a model that can

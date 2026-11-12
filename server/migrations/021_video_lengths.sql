@@ -3,7 +3,7 @@
 -- Videos in a Drive folder are read as a prefix, the same as everything else
 -- remote. For tags that is fine. For duration it was not, and it failed
 -- silently: ffprobe handed a quarter-megabyte of a film reports how long that
--- quarter-megabyte lasts, which is a number. A 1.6 GB conga lesson was recorded
+-- quarter-megabyte lasts, which is a number. A 1.6 GB lesson video was recorded
 -- as 0.64 seconds long, a 988 MB one as 1.5 seconds, and the control tower drew
 -- exactly that -- a progress bar the film ran off the end of within a second.
 --

@@ -6,7 +6,7 @@ exactly like a folder that was empty. A library nobody has to maintain by hand
 is the whole point of indexing it.
 
 Daily rather than continuous: Drive charges API quota per listing, the mini PC
-has four efficiency cores, and photos added to a shared folder are not urgent.
+has a low-power CPU, and photos added to a shared folder are not urgent.
 Anything that *is* urgent has the manual button next to it.
 """
 

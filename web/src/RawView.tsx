@@ -45,7 +45,7 @@ export default function RawView(props: {
       try {
         const res = await fetch(props.url, {
           credentials: "same-origin",
-          // Only the window being looked at. Without this, opening a 13 GB tape
+          // Only the window being looked at. Without this, opening a long tape
           // to see what it is would try to hold 13 GB in a phone.
           headers: { Range: `bytes=${start}-${start + want - 1}` },
         });

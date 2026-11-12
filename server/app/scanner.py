@@ -165,7 +165,7 @@ def scan_source(source_id: UUID, connector: LocalConnector) -> ScanResult:
                     )
                     # Kind as well as size: the classifier improves over time, and
                     # a file catalogued as "other" under an older version should
-                    # not stay that way for the life of the library. Five wedding
+                    # not stay that way for the life of the library. Five family event
                     # tapes sat unopenable for exactly this reason.
                     conn.execute(
                         text(

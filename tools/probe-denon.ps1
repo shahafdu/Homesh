@@ -3,7 +3,7 @@
     Discovers Denon/Marantz AVRs on the LAN and probes their HEOS players/zones.
 
 .DESCRIPTION
-    Answers the open question in docs/ARCHITECTURE.md section 5.6: does the AVR-X1600H expose
+    Answers the open question in docs/ARCHITECTURE.md section 5.6: does the receiver expose
     ZONE2 as a separate HEOS player (allowing two independent network streams), or a single
     shared network player?
 

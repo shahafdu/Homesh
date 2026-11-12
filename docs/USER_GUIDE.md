@@ -294,8 +294,9 @@ Ten thousand photos are sent at a time — at five seconds each that is fourteen
 hours. If the folder holds more, the screen says so.
 
 **Shuffle then means a random sample of the whole folder**, not a shuffle of the
-first ten thousand. With 105,000 photos indexed here, two shuffled runs share
-about 950 photos, which is what a genuine sample of everything looks like.
+first ten thousand. With a hundred thousand photos indexed, two shuffled runs of
+ten thousand share about a thousand, which is what a genuine sample of
+everything looks like.
 
 ---
 

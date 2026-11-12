@@ -9,7 +9,8 @@ working when the machine holding your files is switched off.
 
 > **Status: in daily use, still being built.** The catalog, browsing, search, playback,
 > rooms and the TV app all work and are used every day in the house this was written
-> for — roughly 140,000 files across local disks and Google Drive. AI search and
+> for, on a library of well over a hundred thousand files across local disks and
+> Google Drive. AI search and
 > gapless playback are the notable things still ahead.
 >
 > [Architecture and roadmap](docs/ARCHITECTURE.md) · [User guide](docs/USER_GUIDE.md)

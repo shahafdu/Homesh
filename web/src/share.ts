@@ -2,7 +2,7 @@
  *
  * The rule this is built around: **share the bytes, never a link.** A link would
  * be a way into this server for whoever received it — forwarded, screenshotted,
- * left in a group chat — and the whole point of sending a wedding video to a
+ * left in a group chat — and the whole point of sending a family video to a
  * relative is that they get the video, not an account.
  *
  * So the file is fetched here and handed to the system share sheet as a real

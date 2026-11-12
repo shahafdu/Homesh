@@ -93,7 +93,7 @@ class TestSearch:
 
     @pytest.mark.parametrize(
         "typo,expected",
-        [("trck", "track2.mp3"), ("beech", "beach.mkv"), ("denonn", "Denon AVR-X1600H manual.pdf")],
+        [("trck", "track2.mp3"), ("beech", "beach.mkv"), ("denonn", "Denon AVR manual.pdf")],
     )
     def test_tolerates_typos(self, client, scanned, typo, expected):
         hits = client.get(f"/api/search?q={typo}").json()
