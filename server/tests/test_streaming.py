@@ -390,7 +390,7 @@ class TestReaderIsClosed:
 
 class TestLiveConversionLimits:
     def test_a_third_live_conversion_is_refused_rather_than_queued(
-        self, client, db, scanned, monkeypatch
+        self, anon_client, db, scanned, user, monkeypatch
     ):
         """Each one is an encoder; a third makes all of them stutter."""
         from app import transcode
@@ -401,6 +401,7 @@ class TestLiveConversionLimits:
         busy = {(uuid.uuid4(), uuid.uuid4()): Busy() for _ in range(transcode.LIVE_MAX)}
         monkeypatch.setattr(transcode, "_live", busy)
         item = _item(db, "beach.mkv")
-        r = client.get(f"/api/videos/{item}/live.mp4")
+        token = mint(item, user.id, "stream")
+        r = anon_client.get(f"/api/videos/{item}/live.mp4?t={token}")
         assert r.status_code == 503
         assert r.headers["retry-after"]
