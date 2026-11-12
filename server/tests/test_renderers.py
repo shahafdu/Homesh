@@ -63,7 +63,7 @@ class TestClaiming:
 
     def test_only_an_administrator_can_claim(self, client, anon_client, db):
         """Pairing creates and rebinds rooms and sets who they are for."""
-        first = _begin(anon_client, key="k1")
+        first = _begin(anon_client, key="device-one")
         assert (
             client.post(
                 "/api/renderers/pair/claim", json={"code": first["code"], "name": "Den"}
@@ -81,7 +81,7 @@ class TestClaiming:
         client.app.dependency_overrides[require_user] = lambda: guest
         client.app.dependency_overrides[optional_user] = lambda: guest
 
-        takeover = _begin(anon_client, key="k2")
+        takeover = _begin(anon_client, key="device-two")
         r = client.post(
             "/api/renderers/pair/claim",
             json={"code": takeover["code"], "name": "Den", "audience": "everyone"},
@@ -94,7 +94,7 @@ class TestClaiming:
                     "JOIN renderers r ON r.id = z.renderer_id WHERE z.name = 'Den'"
                 )
             ).one()
-        assert bound[0] == "k1"
+        assert bound[0] == "device-one"
         assert bound[1] != "everyone"
 
     def test_claim_then_collect(self, client, anon_client, db):
