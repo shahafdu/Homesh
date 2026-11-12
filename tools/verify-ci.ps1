@@ -50,7 +50,10 @@ $run = $null
 
 while ((Get-Date) -lt $deadline) {
     $runs = (Invoke-RestMethod -Uri "$api`?per_page=15" -Headers $headers).workflow_runs
-    $run = $runs | Where-Object { $_.head_sha -eq $sha } | Select-Object -First 1
+    # The CI workflow, pushed. Dependabot runs its own workflows against the
+    # same commit -- a dependency graph update finishes in seconds -- and the
+    # first of those once passed for the build while the tests were running.
+    $run = $runs | Where-Object { $_.head_sha -eq $sha -and $_.name -eq 'CI' -and $_.event -eq 'push' } | Select-Object -First 1
     if ($run -and $run.status -eq 'completed') { break }
     if (-not $run) { Write-Host "  no run for this commit yet..." -ForegroundColor DarkGray }
     else { Write-Host "  $($run.status)..." -ForegroundColor DarkGray }
