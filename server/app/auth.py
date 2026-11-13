@@ -33,7 +33,7 @@ from webauthn.helpers.structs import (
     UserVerificationRequirement,
 )
 
-from . import lanaddr, throttle
+from . import lanaddr, notify, throttle
 from .config import get_settings
 from .db import get_engine
 from .security import (
@@ -277,6 +277,9 @@ async def register_begin(
 
     if not handle or not display_name:
         raise HTTPException(422, "a username and display name are required")
+    # "everyone" and "admins" address groups in the mailbox (notify.send).
+    if notify.reserved_handle(handle):
+        raise HTTPException(422, "that username is reserved; choose another")
 
     with get_engine().connect() as conn:
         taken = conn.execute(

@@ -41,6 +41,14 @@ HOMESH = "Homesh"
 # server hold open.
 MAX_WAITERS = 200
 
+# What `to` means besides a handle. No account may have one of these as its
+# handle: a message meant for that one person would otherwise go to everybody.
+RESERVED_HANDLES = ("everyone", "admins")
+
+
+def reserved_handle(handle: str) -> bool:
+    return handle.strip().casefold() in RESERVED_HANDLES
+
 
 def valid_path(path: str) -> bool:
     """True when `path`, appended to an app's address, stays inside that app.
@@ -76,19 +84,21 @@ _INSERT = """
 _EVERYONE = text(_INSERT.format(who="TRUE"))
 _ADMINS = text(_INSERT.format(who="is_admin"))
 _ONE = text(_INSERT.format(who="handle = :handle"))
+_BY_ID = text(_INSERT.format(who="id = :uid"))
 
 
 def send(
     *,
     sender: str,
-    to: str,
+    to: str | UUID,
     title: str,
     body: str = "",
     path: str = "/",
     tag: str | None = None,
     ttl: timedelta = DEFAULT_TTL,
 ) -> int:
-    """Post one message to `to`: a handle, "everyone" or "admins".
+    """Post one message to `to`: a handle, "everyone" or "admins" -- or, from
+    inside the server, an account's id, which can never mean anyone else.
 
     Returns how many people it was written for. An unknown handle writes
     nothing and is not an error, so a sender cannot use this to find out which
@@ -105,7 +115,9 @@ def send(
         "tag": tag,
         "expires": datetime.now(UTC) + ttl,
     }
-    if to == "everyone":
+    if isinstance(to, UUID):
+        statement, params["uid"] = _BY_ID, str(to)
+    elif to == "everyone":
         statement = _EVERYONE
     elif to == "admins":
         statement = _ADMINS

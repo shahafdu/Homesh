@@ -28,6 +28,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlalchemy import text
 
+from . import notify
 from .db import get_engine
 from .security import CurrentUser, audit, require_user
 
@@ -188,6 +189,8 @@ async def create_invite(body: InviteCreate, user: CurrentUser = Depends(require_
     first sign-in, rather than existing briefly with the run of the house.
     """
     _require_admin(user)
+    if notify.reserved_handle(body.handle):
+        raise HTTPException(422, "that username is reserved; choose another")
 
     with get_engine().connect() as conn:
         taken = conn.execute(

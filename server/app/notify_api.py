@@ -241,7 +241,7 @@ def remove_phone(device_id: UUID, user: CurrentUser = Depends(require_user)) -> 
 def send_test(user: CurrentUser = Depends(require_user)) -> dict:
     throttle.hit("notify-test", str(user.id), TESTS)
     queued = notify.send(
-        sender=notify.HOMESH, to=user.handle, title="Notifications are working", path="/"
+        sender=notify.HOMESH, to=user.id, title="Notifications are working", path="/"
     )
     return {"queued": queued}
 

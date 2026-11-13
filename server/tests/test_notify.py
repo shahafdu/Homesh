@@ -642,3 +642,48 @@ class TestBackupsHaveStopped:
             title, tag = conn.execute(text("SELECT title, tag FROM notify_messages")).one()
         assert (title, tag) == ("Backups have stopped", "backup")
         assert upkeep.check_backups(now + timedelta(days=1))
+
+
+# ── Handles that are words in `to` ──────────────────────────────────────────
+
+
+class TestReservedHandles:
+    """`to` reads "everyone" and "admins" as groups, so an account named either
+    would turn a message for one person into a message for the house."""
+
+    def test_the_test_message_reaches_only_the_caller_whatever_their_handle(self, db, user):
+        odd = _person(db, "everyone")
+        with _as(odd) as c:
+            assert c.post("/api/notify/test").json() == {"queued": 1}
+        assert _rows(db) == [("everyone", "Homesh")]
+
+    def test_send_by_id_reaches_that_account_only(self, db, user):
+        _person(db, "sam")
+        assert notify.send(sender=notify.HOMESH, to=user.id, title="Only you") == 1
+        assert _rows(db) == [("tester", "Homesh")]
+
+    @pytest.mark.parametrize("handle", ["everyone", "Admins", "EVERYONE"])
+    def test_an_invite_cannot_take_a_reserved_handle(self, db, user, handle):
+        with _as(user) as c:
+            answer = c.post(
+                "/api/people/invites", json={"handle": handle, "display_name": "Odd"}
+            )
+        assert answer.status_code == 422
+        with db.connect() as conn:
+            made = conn.execute(
+                text("SELECT count(*) FROM invites WHERE lower(handle) = lower(:h)"),
+                {"h": handle},
+            ).scalar_one()
+        assert made == 0
+
+    def test_the_first_account_cannot_take_one_either(self, db, anon_client, monkeypatch):
+        from app import auth
+
+        with db.begin() as conn:
+            conn.execute(text("DELETE FROM users"))
+        monkeypatch.setattr(auth, "_bootstrap_code", "ABCD-EFGH")
+        answer = anon_client.post(
+            "/api/auth/register/begin",
+            json={"handle": "admins", "display_name": "First", "bootstrap_code": "ABCD-EFGH"},
+        )
+        assert answer.status_code == 422
