@@ -18,7 +18,7 @@ halfway through a task.
 | [`04-assistant.md`](04-assistant.md) | History, audit, chat and commands, voice, tagging | C1-C4 |
 | [`05-music.md`](05-music.md) | Gapless playback, loudness, tag repair | M1-M3 |
 | [`06-library-upkeep.md`](06-library-upkeep.md) | Change notices, photo availability, the converter sandbox | L1-L5, A5 |
-| [`07-notifications.md`](07-notifications.md) | A mailbox on the server, notifications in Homesh Connect | N1-N3 |
+| [`07-notifications.md`](07-notifications.md) | A mailbox on the server, notifications in Homesh Connect, alerts to administrators. **A separate track**: built alone with `-Track notifications` | N1-N4 |
 | [`ORCHESTRATOR.md`](ORCHESTRATOR.md) | For the session that runs the build: the loop, what to ask the owner | - |
 
 `docs/AI.md` (the rules) and `docs/AI_PLAN.md` (what was agreed) stay the
@@ -301,6 +301,7 @@ each task, what each task needs first, and what only the owner can supply.
 .\tools\run-build.ps1             # build until nothing more can be built
 .\tools\run-build.ps1 -Tick mockup-faces    # tell it an entry of yours is done
 .\tools\run-build.ps1 -Retry A5   # put a task that was set aside back
+.\tools\run-build.ps1 -Track notifications   # build one track only
 ```
 
 For each task: a session of the task's model builds it; the script itself
@@ -321,6 +322,15 @@ never publishes an app: those stay with the owner, and are listed in the same
 file once the task that needs them is built. Sessions run in Claude Code's
 auto permission mode with the deny-list in `tools/autobuild/settings.json`, and
 cannot read `.env`.
+
+**When the subscription's limit runs out in the middle of a task**, the
+session is cut off and the script waits, trying again every half hour, and a
+notification on the PC says it is paused. What the cut-off session had
+written stays in the working tree, and the session that takes over is told
+to look at it and carry on, not start over. The same holds when the script
+itself is stopped part-way (a restart, a closed window): running it again
+takes the task up where it was. `-Status` says whether a build is running,
+paused, or stopped in the middle of a task.
 
 It runs on the Claude subscription the PC is signed in to; the script removes
 any API key from its own environment so nothing is billed per token. When the

@@ -42,6 +42,52 @@ The sessions the script starts draw on the same Claude subscription you do.
 When the script logs that the limit was reached it waits by itself; do not
 work around it.
 
+### When the usage limit runs out, and when the owner says "continue"
+
+The building sessions and you draw on one subscription, so when the limit
+is reached it usually stops **both**. They behave differently:
+
+- **The script** is an ordinary program and does not stop. It notices the
+  session was cut off, shows a notification on the PC, writes
+  `.local\build\PAUSED.txt`, and tries again every half hour for a day. When
+  the limit resets it carries on by itself, telling the next session to pick
+  up the unfinished work in the working tree.
+- **You** stop until the owner writes to you again. You cannot warn them at
+  the moment it happens; the script's notification is what tells them.
+
+So the first thing you do whenever the owner returns and says to continue --
+and whenever you start -- is find out what state things are in, before
+touching anything:
+
+1. `.\tools\run-build.ps1 -Status`. Its first lines say whether a build is
+   running now, whether it is paused on the limit, and whether a task was
+   left in the middle.
+2. Read the tail of `.local\build\run.log`.
+3. Then:
+   - **running, or running and paused**: leave it alone. Do not start a
+     second copy and do not touch the working tree. Tell the owner it is
+     still going (or waiting for the limit) and which task it is on.
+   - **not running, with a task left in the middle** (the PC restarted, the
+     window was closed, the day of retries ran out): do **not** clean the
+     working tree -- the half-done work in it is what the next session
+     continues from. Start the script again; it takes that task up where it
+     was and does not count the interruption as a failed attempt.
+   - **not running, nothing in the middle**: the ordinary loop.
+4. Tell the owner in one or two sentences what you found and what you did:
+   "The build stopped at the usage limit during A5's review at 14:10. I have
+   restarted it; it is continuing that review."
+
+If you were yourself cut off in the middle of something -- a mockup, a
+review, a fix -- say what was half-done and finish it before starting
+anything new.
+
+### The notifications track is separate
+
+The tasks in `07-notifications.md` (N1-N4) depend on nothing else and nothing
+else depends on them. Run them alone with
+`.\tools\run-build.ps1 -Track notifications -Once`, at whatever point the
+owner asks for them, and report on them separately from the rest.
+
 ---
 
 ## 2. After each finished task

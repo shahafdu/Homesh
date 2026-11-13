@@ -28,6 +28,10 @@
 .PARAMETER Only
     Build just this task id.
 
+.PARAMETER Track
+    Build only the tasks of one track, e.g. -Track notifications. The tracks
+    are named in tools/autobuild/tasks.json.
+
 .PARAMETER Once
     Exit when nothing can be built, rather than waiting for the owner.
 
@@ -49,6 +53,7 @@
 param(
     [switch]$Status,
     [string]$Only = '',
+    [string]$Track = '',
     [switch]$Once,
     [int]$MaxTasks = 0,
     [string]$Tick = '',
@@ -68,6 +73,7 @@ $ownerFile  = Join-Path $buildDir 'owner.json'
 $needsFile  = Join-Path $buildDir 'NEEDS-YOU.md'
 $lockFile   = Join-Path $buildDir 'running.lock'
 $runLog     = Join-Path $buildDir 'run.log'
+$pauseFile  = Join-Path $buildDir 'PAUSED.txt'
 $planFile   = Join-Path $PSScriptRoot 'autobuild\tasks.json'
 $settings   = Join-Path $PSScriptRoot 'autobuild\settings.json'
 
@@ -283,9 +289,35 @@ function Write-NeedsYou {
     return $count
 }
 
+function Test-InScope($task) {
+    # Whether this run is meant to build this task.
+    if ($Only -ne '' -and $task.id -ne $Only) { return $false }
+    if ($Track -ne '' -and (Get-Prop $task 'track') -ne $Track) { return $false }
+    return $true
+}
+
 function Show-Status {
     Write-Host ''
+    $running = $false
+    if (Test-Path $lockFile) {
+        $other = Get-Content $lockFile -ErrorAction SilentlyContinue
+        if ($other -and (Get-Process -Id ([int]$other) -ErrorAction SilentlyContinue)) { $running = $true }
+    }
+    if ($running) { Write-Host '  A build is running now.' } else { Write-Host '  No build is running.' }
+    if (Test-Path $pauseFile) {
+        if ($running) { Write-Host ('  PAUSED: ' + ((Get-Content $pauseFile) -join ' ')) }
+        else { Write-Host ('  It stopped while paused: ' + ((Get-Content $pauseFile) -join ' ')) }
+    }
+    $half = @($plan.tasks | Where-Object { $st = (Get-TaskState $_.id).status; $st -eq 'building' -or $st -eq 'review' })
+    if (-not $running -and $half.Count -gt 0) {
+        Write-Host ('  Stopped in the middle of: ' + (($half | ForEach-Object { $_.id }) -join ', ') + '. Running the script again picks it up where it was.')
+    }
+    Write-Host ''
+    $lastTrack = ''
     foreach ($t in $plan.tasks) {
+        if ($Track -ne '' -and (Get-Prop $t 'track') -ne $Track) { continue }
+        $tr = [string](Get-Prop $t 'track')
+        if ($tr -ne $lastTrack) { Write-Host ('  -- ' + $tr + ' --'); $lastTrack = $tr }
         $s = Get-TaskState $t.id
         $why = ''
         if ($s.status -ne 'done' -and $s.status -ne 'failed') {
@@ -361,9 +393,24 @@ function Invoke-Claude([string]$model, [string]$prompt, [string]$logName) {
         }
 
         if ($isError -and ($raw -match '(?i)usage limit|rate limit|limit reached|limit will reset|overloaded')) {
-            Write-Log "    the subscription's limit was reached; waiting $LimitWaitMinutes minutes"
+            Write-Log "    the subscription's limit was reached in the middle of $logName; waiting $LimitWaitMinutes minutes, then carrying on"
+            if (-not (Test-Path $pauseFile)) {
+                Show-Notice 'Homesh build is paused' "Claude's usage limit was reached during $logName. It carries on by itself when the limit resets."
+            }
+            ('since {0}, during {1}: the usage limit was reached. Trying again every {2} minutes.' -f (Get-Date -Format 'yyyy-MM-dd HH:mm'), $logName, $LimitWaitMinutes) |
+                Out-File -FilePath $pauseFile -Encoding ascii
+            # What the cut-off session had written stays in the working tree.
+            # The session that takes over is told to look before it starts.
+            ($prompt + "`n`nNOTE: an earlier session working on this was cut off part-way by a usage limit. " +
+             "Its unfinished work may be in the working tree, and it may have committed or pushed some of it. " +
+             "Run git status, git diff and git log first, then carry on from there. Do not start over.") |
+                Out-File -FilePath $promptPath -Encoding utf8
             Start-Sleep -Seconds ($LimitWaitMinutes * 60)
             continue
+        }
+        if (Test-Path $pauseFile) {
+            Remove-Item $pauseFile -ErrorAction SilentlyContinue
+            Write-Log '    the limit has reset; carrying on'
         }
         if ($isError -and ($raw -match '(?i)not logged in|please run /login|invalid api key|authentication')) {
             Write-Log '    Claude is not signed in on this PC. Run "claude" once and sign in.'
@@ -388,7 +435,10 @@ function Expand-Prompt([string]$template, $task, [string]$range, [string]$extra)
 
 function Invoke-Task($task) {
     $s = Get-TaskState $task.id
-    if (-not (Test-TreeClean)) { throw 'The working tree has uncommitted changes. Commit or remove them first.' }
+    $interrupted = ($s.status -eq 'building' -or $s.status -eq 'review')
+    if (-not (Test-TreeClean) -and -not $interrupted) {
+        throw 'The working tree has uncommitted changes. Commit or remove them first.'
+    }
     if ((git rev-parse --abbrev-ref HEAD).Trim() -ne 'main') { throw 'Not on the main branch.' }
 
     $start = Get-Prop $s 'start'
@@ -404,6 +454,15 @@ function Invoke-Task($task) {
         $extra = "An earlier session stopped and asked the owner for help. Its question:`n`n" +
                  (Get-Content $question -Raw -ErrorAction SilentlyContinue) +
                  "`n`nThe owner's answer:`n`n" + (Get-Content $answer -Raw)
+    }
+    if ($interrupted) {
+        # The script itself was stopped while this task was being worked on.
+        # That attempt is taken up again, not counted as a failure.
+        Write-Log ("  {0} was interrupted part-way; taking it up again" -f $task.id)
+        $s.attempts = [Math]::Max(0, [int]$s.attempts - 1)
+        $extra += "`n`nNOTE: an earlier session working on this task was interrupted part-way. " +
+                  "Its unfinished work may be in the working tree, and it may have committed or pushed some of it. " +
+                  "Run git status, git diff and git log first, then carry on from there. Do not start over."
     }
     $lastReview = Join-Path $reviewDir ($task.id + '.md')
     if ($s.attempts -gt 0 -and (Test-Path $lastReview)) {
@@ -529,6 +588,7 @@ if (Test-Path $lockFile) {
 $PID | Out-File -FilePath $lockFile -Encoding ascii
 
 try {
+    Remove-Item $pauseFile -ErrorAction SilentlyContinue
     Write-Log 'run-build started'
     $finishedThisRun = 0
     $lastAsked = -1
@@ -537,7 +597,7 @@ try {
         $owner = Read-Json $ownerFile ([pscustomobject]@{})
         $next = $null
         foreach ($t in $plan.tasks) {
-            if ($Only -ne '' -and $t.id -ne $Only) { continue }
+            if (-not (Test-InScope $t)) { continue }
             $s = Get-TaskState $t.id
             if ($s.status -eq 'done' -or $s.status -eq 'failed') { continue }
             if (@(Get-Blockers $t).Count -eq 0) { $next = $t; break }
@@ -555,7 +615,7 @@ try {
         }
 
         $left = @($plan.tasks | Where-Object { $st = (Get-TaskState $_.id).status; $st -ne 'done' -and $st -ne 'failed' })
-        if ($Only -ne '') { $left = @($left | Where-Object { $_.id -eq $Only }) }
+        $left = @($left | Where-Object { Test-InScope $_ })
         if ($left.Count -eq 0) {
             Write-Log 'Nothing left to build.'
             Show-Notice 'Homesh build finished' 'Every task is done or set aside. See .local\build\NEEDS-YOU.md'

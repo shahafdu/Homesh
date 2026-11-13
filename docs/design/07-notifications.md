@@ -2,6 +2,11 @@
 
 Read [`README.md`](README.md) first. Needs nothing from the other tracks.
 
+**This track stands apart.** Nothing here needs any other design file, and no
+other track needs this one. It is its own group in the plan and can be built
+alone, before or after everything else:
+`.\tools\run-build.ps1 -Track notifications`.
+
 What this adds: a **mailbox** on the Homesh server that Homesh itself and the
 apps beside it can post short messages to, and **Homesh Connect** showing those
 messages as Android notifications. Tapping one opens the app that sent it, on
@@ -551,3 +556,182 @@ invented names.
 | The mailbox is used to flood a phone | per-sender rate limit, lengths capped, messages expire, a channel per app that the person can silence |
 | Sending keys or tokens leak through logs or backups | never logged; keys live in `.env`; tokens are stored only as hashes |
 | The household's other apps are named in the public repository | names come from `.env` at run time; tests and docs use invented names; the commit hooks refuse the real ones |
+
+---
+
+## 7. N4 - alerts to administrators
+
+Needs N1. An administrator's phone is told when somebody signs in, when a new
+device or passkey appears, when something knocks that should not, and when
+another person changes something.
+
+### 7.1 What can be recognised, and what cannot
+
+Stated plainly, because the request was "tell me when an unknown user
+connects":
+
+- **Nobody unknown can be signed in.** Every account was invited and holds a
+  passkey. So "an unknown user" shows up as one of the things below, not as a
+  session.
+- **Recognisable**: every sign-in and who it was; a failed sign-in; a new
+  passkey; a passkey that looks copied (the server already detects this); a
+  device signed in with a code; an invitation being used; a screen asking to
+  be paired, and one being paired; a rate limit being tripped at one of the
+  open doors; and every successful change, with who made it.
+- **Not recognisable from here**: a device merely joining the house network
+  or the tailnet, or one that opens the sign-in page and leaves. The server
+  sits behind Docker's port mapping, which makes every caller look like the
+  same address, so "a new device on the network" is invisible to it. That is
+  a job for the router or for Tailscale's own device approval, and the user
+  guide says so.
+
+### 7.2 Security events (`server/app/alerts.py`, new)
+
+`security.audit()` is already called for every sign-in event. Add one line at
+its end:
+
+```python
+    from . import alerts
+    alerts.on_audit(event, user_id, detail)
+```
+
+`on_audit` must never raise and never slow a sign-in: its whole body is in a
+`try/except` that logs and returns, and it only writes rows (through
+`notify.send`), which is quick.
+
+| Audit event | Title | Text | Tag | At most |
+|---|---|---|---|---|
+| `auth.login` | "<name> signed in" | the device label, when the session has one | - | every time |
+| `auth.login.failed` | "Failed sign-in attempts" | "5 in the last 10 minutes" | `login-failed` | once an hour, and only from the fifth failure in ten minutes |
+| `auth.passkey.added` | "<name> added a passkey" | - | - | every time |
+| `auth.passkey.removed` | "<name> removed a passkey" | - | - | every time |
+| `auth.signcount.anomaly` | "A passkey may have been copied" | "<name>'s passkey was used out of order. Remove it and make a new one." | `passkey-copied` | every time |
+| `auth.device_link.claimed` | "<name> signed in a new device with a code" | - | - | every time |
+| an invitation accepted (find the event written when an invited person first registers; if there is none, add an `audit` call there named `auth.invite.accepted`) | "<name> joined Homesh" | - | - | every time |
+
+Two more, raised where they happen and not from the audit log:
+
+- **A screen asks to be paired, or is paired** (`renderers.py`, `pair_begin`
+  and `pair_claim`): "A screen is asking to be paired" (tag `pairing`, at most
+  once an hour) and "<name> paired a screen" (every time).
+- **A rate limit is tripped** (`throttle.hit`, at the point where it already
+  logs its one warning per window): "Too many attempts" with the door in
+  plain words from a constant table (`sign-in`, `codes`, `invites`, `pairing`
+  ...). At most once per door per window -- reuse the `_announced` logic that
+  already limits the log line. `throttle.py` must not import the database at
+  module level; call `alerts.on_throttle(bucket)` through a lazy import inside
+  the branch.
+
+Every alert goes to administrators only, from sender "Homesh", path `/`, with
+a one-day life. Names are display names. **An alert never includes the name
+of a folder, a file, a playlist or a room, and never an address**: it says
+who and what kind of thing, and the administrator opens Homesh to see more.
+
+The "at most" limits are kept in memory (a dictionary of last-sent times).
+Losing them on a restart costs one extra notification.
+
+### 7.3 Changes made by other people
+
+A middleware in `main.py`, added beside `browser_guards`, which looks at each
+response after it is made:
+
+- only for `POST`, `PUT`, `PATCH`, `DELETE` with a 2xx status;
+- only for paths in the **watched** table below; everything else is ignored;
+- who did it: `request.state.replay_user` when set (a change replayed from
+  the standby, or made through the assistant), otherwise the session cookie
+  looked up with the function `tv_address` already uses. No user: ignore.
+
+| Watched path (regular expression) | Counted as |
+|---|---|
+| `^/api/playlists(/|$)` | playlists |
+| `^/api/library/items/[^/]+/tags$` | song and file details |
+| `^/api/faces/` | faces |
+| `^/api/sharing/` | shared links |
+| `^/api/people(/|$)` | accounts and access |
+| `^/api/library/sources(/|$)` | folders |
+| `^/api/zones/?$`, and `PUT`/`DELETE` on `^/api/zones/[^/]+$` | rooms |
+| `^/api/backups(/|$)` | backups |
+| `^/api/ai/` | assistant settings |
+| `^/api/notify/devices` | notification phones |
+
+Deliberately **not** watched: playing, pausing, skipping, volume and
+everything else under `/api/zones/<id>/...` (using the house is not a change
+to it); a person's own preferences; signing in and out; asking the assistant
+a question; searching. Routes added by later tasks are unwatched until
+somebody adds a row here -- say so in a comment above the table.
+
+**One notification per person per burst, not one per change.** Changes are
+counted in memory per actor and kind. Ten minutes after the first change of a
+burst, one message is sent and the count is cleared:
+
+- title: "<name> made changes"
+- text: "3 playlists, 2 song and file details" (kinds in the table's words,
+  largest first; "through the assistant" appended when every change in the
+  burst came from an assistant action)
+- tag: `changes-<first 8 characters of the actor's id>`
+
+It goes to every administrator **except the person who made the changes**.
+An administrator changing things alone therefore gets nothing.
+
+The timer is an `asyncio` task created on the first change of a burst.
+Counts are lost on a restart; that is accepted.
+
+### 7.4 Each administrator chooses
+
+Two preferences, added to `ALLOWED` in `prefs.py` and to `web/src/prefs.ts`:
+
+| Preference | Values | Default |
+|---|---|---|
+| `alert_signins` | `on`, `off` | `on` |
+| `alert_changes` | `on`, `off` | `on` |
+
+`alerts.py` sends per administrator, by handle, skipping one whose preference
+is off (so it does not use `to: "admins"`). `auth.signcount.anomaly` ignores
+the preference and always goes to every administrator.
+
+In Settings, shown to administrators only, two switches: "Tell me when
+someone signs in or a new device appears" and "Tell me when someone else
+changes something". If the notifications block from N3 exists they go inside
+it; otherwise they get a small block of their own under the same heading. No
+mockup needed: two switches.
+
+### 7.5 On the standby
+
+Sign-ins happen on the standby too, and its mailbox is local (section 2.5),
+so security alerts work there unchanged. The change watcher runs there as
+well; a change replayed later on the PC would be watched again when it is
+applied and notify twice. So on the PC, ignore requests that come **from the
+standby's replay** (mark those in `standby.replay` with
+`scope["state"]["from_standby"] = True`), and keep watching ones made through
+the assistant.
+
+### 7.6 Tests (`server/tests/test_alerts.py`)
+
+- a sign-in by one account produces a message for each administrator with
+  the preference on, and none for one with it off;
+- four failed sign-ins produce nothing; the fifth produces one; ten more in
+  the same hour produce none;
+- a copied-passkey event reaches an administrator whose preference is off;
+- `on_audit` raising inside (monkeypatch `notify.send` to raise) does not
+  break the sign-in that triggered it;
+- a playlist created by a non-administrator produces, after the burst timer
+  (shorten it in the test), one message titled with their name and counting
+  one playlist; three changes in the burst are one message;
+- the actor never receives their own changes, and an administrator changing
+  things alone produces nothing;
+- pause, volume and a preference change produce nothing;
+- a failed change (403, 404, 422) produces nothing;
+- no alert's title or text contains the playlist's name, a file name or a
+  room's name (create things with marker names and search the messages);
+- a rate-limit refusal produces one alert per window;
+- a change replayed from the standby is not counted twice.
+
+### 7.7 Threats specific to this task
+
+| Threat | What stops it |
+|---|---|
+| Alerts leak what the library holds to a locked phone | they name people and kinds of change only; lock-screen text is hidden by default |
+| Somebody floods the administrator's phone by failing to sign in | counted, sent from the fifth failure, at most once an hour |
+| The alert code breaks signing in | it runs after the audit row is written, inside a catch-all, and only writes rows |
+| An administrator is lulled by noise | bursts are merged, ordinary playback is not reported, and each kind can be switched off -- except a copied passkey |
+| A change slips by unwatched | the watched table is the list; anything not on it is silent, and the comment above it says so. This is a convenience for the household, not an audit: the audit log remains the record |
