@@ -11,7 +11,7 @@ import {
   gatherPhotos,
   resolveTransition,
   type PhotoSet,
-} from "./slideshow";
+} from "./slideshowSettings";
 
 /** A folder of photographs, shown one after another.
  *

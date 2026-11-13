@@ -306,7 +306,7 @@ routes work, from the restored labels; `similar` answers `{"state": "off"}`.
 **Mockup first.** Publish mockups of 5.1-5.3 and get the owner's answer before
 building.
 
-### 5.1 The Faces sheet (`web/src/Faces.tsx`, `web/src/faces.ts`)
+### 5.1 The Faces sheet (`web/src/Faces.tsx`, `web/src/facesApi.ts`)
 
 Opened from the main menu as "Faces", shown to everyone when
 `features.faces` is true. A wide sheet with three tabs (buttons with

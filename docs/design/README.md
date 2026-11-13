@@ -174,8 +174,10 @@ them; it never relaxes them.
     `navigator.clipboard`, `navigator.mediaDevices` and service workers do not
     exist. Use `randomId()` from `web/src/id.ts`.
 25. Network calls go through `api` in `web/src/api.ts`. Types for each feature
-    live in a helper file beside the component (`ai.ts` beside `Ai.tsx`), the
-    way `backups.ts` sits beside `Settings.tsx`.
+    live in a helper file beside the component, named `<feature>Api.ts`
+    (`aiApi.ts` beside `Ai.tsx`). **Never two files whose names differ only in
+    letter case** (`faces.ts` beside `Faces.tsx`): Windows cannot tell them
+    apart, and the build fails there while passing in CI.
 26. Colours come from the tokens in `styles.css` (`--bg`, `--surface`, `--line`,
     `--ink`, `--muted`, `--accent`, `--ok`, `--danger`). Never a literal colour.
     All three palettes and both appearances must look right.

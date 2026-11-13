@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { Audience, Person } from "./people";
+import type { Audience, Person } from "./peopleApi";
 
 export type Choice = Exclude<Audience, null>;
 

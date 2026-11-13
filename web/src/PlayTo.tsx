@@ -2,8 +2,8 @@ import { useEffect, useState } from "react";
 import { useLockScroll } from "./useLockScroll";
 import { ApiError } from "./api";
 import type { FileEntry } from "./library";
-import { listZones, playInZone, zoneAccepts, zoneStatus, type Zone } from "./zones";
-import { type ShowSettings } from "./slideshow";
+import { listZones, playInZone, zoneAccepts, zoneStatus, type Zone } from "./zonesApi";
+import { type ShowSettings } from "./slideshowSettings";
 
 /** Asks *where* something should play, rather than assuming the phone.
  *

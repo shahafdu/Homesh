@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { listZones, type Zone } from "./zones";
+import { listZones, type Zone } from "./zonesApi";
 
 /** How many rooms are in use, refreshed quietly in the background.
  *

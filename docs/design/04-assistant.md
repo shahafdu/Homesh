@@ -462,7 +462,7 @@ before building.
 A button labelled "Ask" beside the search box in `Browser.tsx`, present when
 `features.assistant` is true. It opens `web/src/Ask.tsx` as a sheet (wide on a
 desktop, full height on a phone). Helper types and calls in
-`web/src/assistant.ts`. `App.tsx` passes it the same `onPlay`, `onView` and
+`web/src/assistantApi.ts`. `App.tsx` passes it the same `onPlay`, `onView` and
 `onActions` handlers it passes to `Browser`, so a result behaves exactly like
 a file anywhere else.
 

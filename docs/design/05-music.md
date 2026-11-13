@@ -3,7 +3,7 @@
 Read [`README.md`](README.md) first. M1 needs nothing else. M2 and M3 need the
 worker and queue (A2) from [`01-ai-foundations.md`](01-ai-foundations.md).
 
-What exists today: `web/src/player.ts` (`usePlayer`) plays audio through one
+What exists today: `web/src/usePlayer.ts` (`usePlayer`) plays audio through one
 `Audio` element and moves to the next track on `ended`. The television plays
 through its own native player (`android/.../NativeVideo.java`) or the page.
 Tags are read at scan time by `server/app/metadata.py` into `item_metadata`
@@ -26,7 +26,7 @@ makes anything worse than today.
 
 ### 1.2 Two elements, one waiting
 
-In `player.ts`, keep two `Audio` elements: **current** and **next**.
+In `usePlayer.ts`, keep two `Audio` elements: **current** and **next**.
 
 1. When the current track has 20 seconds left (`duration - currentTime < 20`,
    checked in the existing `timeupdate` handler), and there is a following
@@ -147,7 +147,7 @@ night window like every other kind.
   `meta` object per file. Add `gain_db` and `peak_db` to it, chosen as: the
   `file` value if present, else `computed`. (Read how `meta` is built in
   `library.py` and extend that one place.)
-- In `player.ts`, when a track starts, compute a factor between 0 and 1 and
+- In `usePlayer.ts`, when a track starts, compute a factor between 0 and 1 and
   multiply the person's own volume setting by it before assigning
   `audio.volume`. **It only ever turns down**, so nothing can clip and nothing
   can become painfully loud:

@@ -659,7 +659,7 @@ Mock the HTTP layer with `httpx.MockTransport`; never call a provider in tests.
 
 ---
 
-## 5. The page: "Assistant and AI" (`web/src/Ai.tsx`, `web/src/ai.ts`)
+## 5. The page: "Assistant and AI" (`web/src/Ai.tsx`, `web/src/aiApi.ts`)
 
 **Mockup first**: publish a mockup of this page and get the owner's answer
 before building it.

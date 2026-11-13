@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { ApiError } from "./api";
 import { formatDuration, type FileEntry } from "./library";
-import type { QueueOrigin } from "./player";
+import type { QueueOrigin } from "./usePlayer";
 import {
   addToPlaylist,
   copyPlaylist,
@@ -15,7 +15,7 @@ import {
   setPlaylistShared,
   type Playlist,
   type PlaylistSummary,
-} from "./playlists";
+} from "./playlistsApi";
 import { useLockScroll } from "./useLockScroll";
 
 const SECTIONS: { kind: string; title: string; blurb?: string }[] = [

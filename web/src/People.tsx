@@ -22,8 +22,8 @@ import {
   type Invite,
   type Person,
   type Place,
-} from "./people";
-import { listZones, type Zone } from "./zones";
+} from "./peopleApi";
+import { listZones, type Zone } from "./zonesApi";
 
 const EMPTY: Grant = { library: [], zones: [], all_library: false, all_zones: false };
 

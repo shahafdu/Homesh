@@ -322,7 +322,8 @@ server/migrations 026 of them, plain SQL, tracked in `schema_migrations` and app
 server/tests/     one module per surface
 web/src/          App, Browser, Viewer, Player, Slideshow, Zones, Playlists, People,
                   Sources, Settings, PdfView, RawView, FileActions, PlayTo, Audience,
-                  LinkDevice, + api/auth/library/prefs/zones/playlists/backups helpers
+                  LinkDevice, + api/auth/library/prefs/backups and peopleApi/zonesApi/
+                  playlistsApi/usePlayer/slideshowSettings helpers
                   and styles.css. `web/src/tv/` is the television client, a separate
                   entry point (`tv.html`) sharing the same build
 android/          TV shell — Manifest, java/com/homesh/tv/{MainActivity,SetupActivity,

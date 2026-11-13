@@ -1,4 +1,4 @@
-import { formatTime, type PlayerState, type Track } from "./player";
+import { formatTime, type PlayerState, type Track } from "./usePlayer";
 
 /** The playing bar, in three rows.
  *

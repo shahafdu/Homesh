@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { useLockScroll } from "./useLockScroll";
 import AudiencePicker, { type Choice } from "./Audience";
-import { HOLDS, TRANSITIONS } from "./slideshow";
-import { listPeople, type Person } from "./people";
+import { HOLDS, TRANSITIONS } from "./slideshowSettings";
+import { listPeople, type Person } from "./peopleApi";
 import { ApiError, api } from "./api";
 import { copyText } from "./copy";
 import {
@@ -26,7 +26,7 @@ import {
   zoneStatus,
   type Zone,
   type ZoneSession,
-} from "./zones";
+} from "./zonesApi";
 
 /** The control tower: every zone and what is playing where.
  *
