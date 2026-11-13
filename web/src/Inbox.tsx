@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useLockScroll } from "./useLockScroll";
 import {
   ago,
@@ -17,6 +17,10 @@ export default function Inbox(props: { onClose: () => void; onRead: () => void }
   const [messages, setMessages] = useState<Message[] | null>(null);
   const [apps, setApps] = useState<BesideApp[]>([]);
   const [error, setError] = useState<string | null>(null);
+  // Held in a ref: the parent passes a fresh closure on every render, and as a
+  // dependency it restarted the minute timer and fetched again each time.
+  const onReadRef = useRef(onRead);
+  onReadRef.current = onRead;
 
   const load = useCallback(() => {
     listMessages()
@@ -25,11 +29,19 @@ export default function Inbox(props: { onClose: () => void; onRead: () => void }
         setError(null);
         const newest = list.reduce((n, m) => Math.max(n, m.id), 0);
         if (list.some((m) => !m.read)) {
-          markRead(newest).then(onRead).catch(() => undefined);
+          markRead(newest).then(() => onReadRef.current()).catch(() => undefined);
         }
       })
       .catch((e) => setError(e instanceof Error ? e.message : String(e)));
-  }, [onRead]);
+  }, []);
+
+  // Escape closes it wherever focus is: nothing inside takes focus on opening,
+  // so a handler on the sheet alone would never hear the key.
+  useEffect(() => {
+    const esc = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", esc);
+    return () => window.removeEventListener("keydown", esc);
+  }, [onClose]);
 
   useEffect(() => {
     load();
@@ -45,9 +57,8 @@ export default function Inbox(props: { onClose: () => void; onRead: () => void }
       aria-modal="true"
       aria-label="Messages"
       onClick={onClose}
-      onKeyDown={(e) => e.key === "Escape" && onClose()}
     >
-      <div className="sheet-inner" onClick={(e) => e.stopPropagation()}>
+      <div className="sheet-inner inbox" onClick={(e) => e.stopPropagation()}>
         <h2>Messages</h2>
 
         {error && (

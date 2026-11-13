@@ -8,11 +8,13 @@ thing in a notification that decides where a tap takes somebody.
 
 from __future__ import annotations
 
+import json
 import logging
 import threading
 import time
 import uuid
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -122,6 +124,13 @@ class TestThePath:
     )
     def test_anything_that_could_leave_the_app_is_refused(self, path):
         assert not notify.valid_path(path)
+
+    def test_the_cases_the_web_app_shares(self):
+        # The web app's validPath is tested against the same file
+        # (web/test/notifyLinks.test.ts), so the two copies cannot drift.
+        cases = json.loads((Path(__file__).parent / "notify_paths.json").read_text())
+        assert [p for p in cases["accepted"] if not notify.valid_path(p)] == []
+        assert [p for p in cases["refused"] if notify.valid_path(p)] == []
 
     def test_512_characters_is_the_limit(self):
         assert notify.valid_path("/" + "a" * 511)

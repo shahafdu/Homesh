@@ -515,6 +515,13 @@ function PhoneNotifications(props: { onStandby: boolean }) {
   }, []);
 
   useEffect(refresh, [refresh]);
+  // Coming back from Homesh Connect after it took the link: the new phone is
+  // there now, and the two-second check may have run before the claim did.
+  useEffect(() => {
+    const back = () => document.visibilityState === "visible" && refresh();
+    document.addEventListener("visibilitychange", back);
+    return () => document.removeEventListener("visibilitychange", back);
+  }, [refresh]);
 
   const turnOn = async () => {
     setBusy("link");
@@ -563,7 +570,7 @@ function PhoneNotifications(props: { onStandby: boolean }) {
   const off = props.onStandby;
 
   return (
-    <div className="setting">
+    <div className="setting notify-setting">
       <h3>Notifications on your phone</h3>
       <p>
         Homesh Connect can show a notification when Homesh or one of your other apps has something

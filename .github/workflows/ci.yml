@@ -131,6 +131,9 @@ jobs:
       - name: Build (runs tsc)
         working-directory: web
         run: npm run build
+      - name: Unit tests (plain Node, no framework)
+        working-directory: web
+        run: npm test
 
   tv:
     name: Android — build both APKs

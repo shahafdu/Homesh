@@ -151,7 +151,7 @@ to one goes to the other.
 | 8 · Optional transcode | ❌ overtaken | It was never optional for this library — see §3.2.1 of ARCHITECTURE for what actually happened |
 | 9 · Public release | 🔨 | Public since August. Docs current as of 14 September 2026; screenshots outstanding |
 
-**Tests: 818 passing. Migrations: 027. Lint: clean. CI green.**
+**Tests: 820 passing, and the web unit tests (`npm test`). Migrations: 027. Lint: clean. CI green.**
 
 ### AI design decisions — agreed, not yet built
 
@@ -322,7 +322,7 @@ server/migrations 027 of them, plain SQL, tracked in `schema_migrations` and app
                   startup. `ls server/migrations` is the list
 server/tests/     one module per surface
 web/src/          App, Browser, Viewer, Player, Slideshow, Zones, Playlists, People,
-                  Sources, Settings, Inbox (the bell), notifyApi, PdfView, RawView, FileActions, PlayTo, Audience,
+                  Sources, Settings, Inbox (the bell), notifyApi, notifyLinks (tested by web/test/), PdfView, RawView, FileActions, PlayTo, Audience,
                   LinkDevice, + api/auth/library/prefs/backups and peopleApi/zonesApi/
                   playlistsApi/usePlayer/slideshowSettings helpers
                   and styles.css. `web/src/tv/` is the television client, a separate
