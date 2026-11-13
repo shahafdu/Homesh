@@ -402,7 +402,9 @@ function Invoke-Claude([string]$model, [string]$prompt, [string]$logName) {
             }
         }
 
-        if ($isError -and ($raw -match '(?i)usage limit|rate limit|limit reached|limit will reset|overloaded')) {
+        # The wording changes ("You've hit your 5-hour limit" did not match the
+        # first list), so the machine-readable fields are checked as well.
+        if ($isError -and ($raw -match '(?i)usage.limit|rate.limit|limit reached|limit will reset|hit your .{0,20}limit|"api_error_status":\s*429|overloaded')) {
             Write-Log "    the subscription's limit was reached in the middle of $logName; waiting $LimitWaitMinutes minutes, then carrying on"
             if (-not (Test-Path $pauseFile)) {
                 Show-Notice 'Homesh build is paused' "Claude's usage limit was reached during $logName. It carries on by itself when the limit resets."
