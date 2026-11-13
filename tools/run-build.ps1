@@ -289,6 +289,20 @@ function Write-NeedsYou {
     return $count
 }
 
+function Test-BuildRunning {
+    # Whether the run that wrote the lock file is still alive. The lock holds a
+    # process id and that process's start time: after a restart of the PC the
+    # same id is soon handed to some other program, and the id alone would
+    # then say a build was running for ever.
+    if (-not (Test-Path $lockFile)) { return $false }
+    $parts = ([string](Get-Content $lockFile -ErrorAction SilentlyContinue | Select-Object -First 1)).Split('|')
+    if ($parts.Count -lt 2) { return $false }
+    try {
+        $proc = Get-Process -Id ([int]$parts[0]) -ErrorAction Stop
+        return ([string]$proc.StartTime.Ticks -eq $parts[1])
+    } catch { return $false }
+}
+
 function Test-InScope($task) {
     # Whether this run is meant to build this task.
     if ($Only -ne '' -and $task.id -ne $Only) { return $false }
@@ -298,11 +312,7 @@ function Test-InScope($task) {
 
 function Show-Status {
     Write-Host ''
-    $running = $false
-    if (Test-Path $lockFile) {
-        $other = Get-Content $lockFile -ErrorAction SilentlyContinue
-        if ($other -and (Get-Process -Id ([int]$other) -ErrorAction SilentlyContinue)) { $running = $true }
-    }
+    $running = Test-BuildRunning
     if ($running) { Write-Host '  A build is running now.' } else { Write-Host '  No build is running.' }
     if (Test-Path $pauseFile) {
         if ($running) { Write-Host ('  PAUSED: ' + ((Get-Content $pauseFile) -join ' ')) }
@@ -579,13 +589,8 @@ if ($Status) {
 
 if (-not (Get-Command claude -ErrorAction SilentlyContinue)) { throw 'The claude command is not on the PATH.' }
 
-if (Test-Path $lockFile) {
-    $other = Get-Content $lockFile -ErrorAction SilentlyContinue
-    if ($other -and (Get-Process -Id ([int]$other) -ErrorAction SilentlyContinue)) {
-        throw "Another run-build.ps1 is already running (process $other)."
-    }
-}
-$PID | Out-File -FilePath $lockFile -Encoding ascii
+if (Test-BuildRunning) { throw 'Another run-build.ps1 is already running.' }
+('{0}|{1}' -f $PID, (Get-Process -Id $PID).StartTime.Ticks) | Out-File -FilePath $lockFile -Encoding ascii
 
 try {
     Remove-Item $pauseFile -ErrorAction SilentlyContinue
