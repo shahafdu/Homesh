@@ -283,3 +283,41 @@ A task is complete when all of these exist:
 Screens are shown to the owner as mockups before they are built when a design
 says "mockup first". That is a rule of this project: the owner reviews pictures,
 not a running build.
+
+---
+
+## 5. Building it unattended
+
+`tools/run-build.ps1` works through the tasks without anyone watching. The
+plan it follows is `tools/autobuild/tasks.json`: the order, which model builds
+each task, what each task needs first, and what only the owner can supply.
+
+```powershell
+.\tools\run-build.ps1 -Status     # where every task stands
+.\tools\run-build.ps1             # build until nothing more can be built
+.\tools\run-build.ps1 -Tick mockup-faces    # tell it an entry of yours is done
+.\tools\run-build.ps1 -Retry A5   # put a task that was set aside back
+```
+
+For each task: a session of the task's model builds it; the script itself
+checks that the work was pushed and CI is green; an Opus session reviews the
+commits against the rules above and fixes what it finds; the script checks CI
+again. Two failed attempts hand the task to Opus once; a third failure sets it
+aside and the run carries on with whatever does not depend on it.
+
+**It asks rather than guesses.** A task that needs a file, an approved mockup
+or a decision is skipped until that exists, and a session that hits a stop
+condition (section 2.7) writes its question down and ends. Everything waiting
+for the owner is collected in `.local\build\NEEDS-YOU.md`, rewritten on every
+pass, with what to do for each entry -- and a notification is shown on the PC
+when the list changes or the run can go no further.
+
+It never starts, rebuilds or deploys the running server or the standby, and
+never publishes an app: those stay with the owner, and are listed in the same
+file once the task that needs them is built. Sessions run in Claude Code's
+auto permission mode with the deny-list in `tools/autobuild/settings.json`, and
+cannot read `.env`.
+
+It runs on the Claude subscription the PC is signed in to; the script removes
+any API key from its own environment so nothing is billed per token. When the
+subscription's limit is reached it waits and carries on.

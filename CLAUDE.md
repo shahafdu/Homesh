@@ -331,6 +331,8 @@ android/          TV shell — Manifest, java/com/homesh/tv/{MainActivity,SetupA
 tools/            probe-denon.ps1, configure-network.ps1, run-tests.ps1,
                   build-tv-apk.sh, grant-folder.ps1, start-homesh.ps1,
                   homesh-common.ps1, verify-ci.ps1, scan-apk.py, githooks/
+                  run-build.ps1 + autobuild/ (builds docs/design unattended;
+                  what it needs from the owner lands in .local/build/NEEDS-YOU.md)
 (repo root)       "Start Homesh.cmd", "Add a folder to Homesh.cmd", "Sign in to the
                   standby.cmd" — the jobs done by double-click rather than
                   through a terminal

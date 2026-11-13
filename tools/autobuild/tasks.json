@@ -1,0 +1,65 @@
+{
+  "comment": "The work in docs/design, in the order the runner tries it. 'model' is who builds it; every task is then reviewed by 'reviewer'. 'needs' are tasks that must be done first. 'inputs' are things only the owner can supply (see inputs below); a task waits until all of its inputs are there. 'afterwards' is what the owner does to start using it.",
+  "reviewer": "opus",
+  "inputs": {
+    "spike": {
+      "check": "file",
+      "path": "docs/design/SPIKE_RESULTS.md",
+      "ask": "Run the model trial (task A1) in an ordinary Claude session with Opus: 'do task A1 from docs/design'. It needs a few hundred of your photos, some clips and a few voice recordings in a folder of your choice, and it writes docs/design/SPIKE_RESULTS.md."
+    },
+    "mockup-ai-page": {
+      "check": "tick",
+      "ask": "Approve the mockup of the 'Assistant and AI' settings page. Ask Claude for it ('draw the mockup for docs/design/01-ai-foundations.md section 5'), then tick this entry."
+    },
+    "mockup-faces": {
+      "check": "tick",
+      "ask": "Approve the mockups of the Faces page and the face boxes in the photo viewer ('draw the mockups for docs/design/03-faces.md section 5'), then tick this entry."
+    },
+    "mockup-ask": {
+      "check": "tick",
+      "ask": "Approve the mockup of the Ask panel and its history ('draw the mockups for docs/design/04-assistant.md section 4'), then tick this entry."
+    },
+    "takeout-sample": {
+      "check": "file",
+      "path": ".local/takeout-sample",
+      "ask": "Put three or four of the small .json files from a Google Takeout export, with the photos they belong to, in .local\\takeout-sample (never committed). The import is checked against them."
+    }
+  },
+  "tasks": [
+    {"id": "M1",  "model": "sonnet", "doc": "05-music.md",          "title": "Gapless playback",                         "needs": [],            "inputs": []},
+    {"id": "L1",  "model": "sonnet", "doc": "06-library-upkeep.md", "title": "Notice changed folders on the PC",         "needs": [],            "inputs": [],
+     "afterwards": "Run Start Homesh once so the folder watcher is registered and the server is rebuilt."},
+    {"id": "L2",  "model": "sonnet", "doc": "06-library-upkeep.md", "title": "Drive changes without walking Drive",      "needs": ["L1"],        "inputs": []},
+    {"id": "A5",  "model": "opus",   "doc": "06-library-upkeep.md", "title": "The converter sandbox",                    "needs": [],            "inputs": [],
+     "afterwards": "Rebuild with tools\\start-homesh.ps1 -Rebuild and open one Word or Excel file to see that documents still open. The standby needs deploying again too."},
+    {"id": "L3",  "model": "sonnet", "doc": "06-library-upkeep.md", "title": "User guide: copying photos to Drive",      "needs": [],            "inputs": []},
+    {"id": "A4a", "model": "sonnet", "doc": "01-ai-foundations.md", "title": "Model router and catalogue (server only: sections 4.1 to 4.7)", "needs": [], "inputs": [],
+     "afterwards": "To use Gemini, put GEMINI_API_KEY in .env, and GEMINI_NO_BILLING=true once you have checked its Google project has no billing account."},
+    {"id": "C1a", "model": "sonnet", "doc": "04-assistant.md",      "title": "History and audit (server only: sections 1.1 to 1.4)", "needs": ["A4a"],  "inputs": []},
+    {"id": "L4",  "model": "sonnet", "doc": "06-library-upkeep.md", "title": "Wake the PC from Homesh Connect",          "needs": [],            "inputs": [],
+     "afterwards": "Put the PC's network adapter address in .env as WAKE_MAC, enable wake-on-LAN in the PC's firmware, and install the new Homesh Connect."},
+    {"id": "L5",  "model": "sonnet", "doc": "06-library-upkeep.md", "title": "Google Takeout import",                    "needs": [],            "inputs": ["takeout-sample"]},
+    {"id": "A4b", "model": "sonnet", "doc": "01-ai-foundations.md", "title": "The 'Assistant and AI' page (section 5)",  "needs": ["A4a"],       "inputs": ["mockup-ai-page"]},
+    {"id": "A2",  "model": "opus",   "doc": "01-ai-foundations.md", "title": "Worker container and job queue (section 3)", "needs": ["A5"],      "inputs": ["spike"],
+     "afterwards": "Run tools\\fetch-models.ps1, then tools\\start-homesh.ps1 -Rebuild."},
+    {"id": "A3",  "model": "sonnet", "doc": "02-search.md",         "title": "Embeddings table and scope-first query (section 1)", "needs": [],  "inputs": ["spike"]},
+    {"id": "E1",  "model": "sonnet", "doc": "02-search.md",         "title": "Photo embeddings (sections 2 and 3)",      "needs": ["A2", "A3"],  "inputs": ["spike"]},
+    {"id": "E4",  "model": "sonnet", "doc": "02-search.md",         "title": "The search box (section 6)",               "needs": ["E1"],        "inputs": []},
+    {"id": "E2",  "model": "sonnet", "doc": "02-search.md",         "title": "Clips: frames and sound (section 4)",      "needs": ["E1"],        "inputs": []},
+    {"id": "E3",  "model": "sonnet", "doc": "02-search.md",         "title": "Documents (section 5)",                    "needs": ["E1", "A5"],  "inputs": []},
+    {"id": "E5",  "model": "sonnet", "doc": "02-search.md",         "title": "Search on the standby (section 7)",        "needs": ["E4"],        "inputs": [],
+     "afterwards": "Deploy the standby again with tools\\deploy-standby.ps1."},
+    {"id": "P1",  "model": "sonnet", "doc": "03-faces.md",          "title": "Face detection, matching and grouping (sections 1 to 3)", "needs": ["A2"], "inputs": ["spike"]},
+    {"id": "P2a", "model": "opus",   "doc": "03-faces.md",          "title": "Faces API (section 4)",                    "needs": ["P1", "A3"],  "inputs": []},
+    {"id": "P2b", "model": "sonnet", "doc": "03-faces.md",          "title": "Faces screens (section 5)",                "needs": ["P2a"],       "inputs": ["mockup-faces"]},
+    {"id": "P3",  "model": "sonnet", "doc": "03-faces.md",          "title": "More of this person (section 6)",          "needs": ["P2b"],       "inputs": []},
+    {"id": "C2a", "model": "opus",   "doc": "04-assistant.md",      "title": "Chat and commands (server: sections 2 and 3)", "needs": ["C1a", "E4"], "inputs": []},
+    {"id": "C2b", "model": "sonnet", "doc": "04-assistant.md",      "title": "The Ask panel, history and audit views (section 4)", "needs": ["C2a", "A4b"], "inputs": ["mockup-ask"]},
+    {"id": "C4",  "model": "sonnet", "doc": "04-assistant.md",      "title": "Tagging (section 5)",                      "needs": ["A2", "A4a", "E1"], "inputs": []},
+    {"id": "C3",  "model": "sonnet", "doc": "04-assistant.md",      "title": "Voice (section 6)",                        "needs": ["C2b", "A2"], "inputs": ["spike"],
+     "afterwards": "Install the new Homesh Connect on each phone."},
+    {"id": "M2",  "model": "sonnet", "doc": "05-music.md",          "title": "Loudness (section 2)",                     "needs": ["A2", "M1"],  "inputs": []},
+    {"id": "M3",  "model": "sonnet", "doc": "05-music.md",          "title": "Tag repair (section 3)",                   "needs": ["A2"],        "inputs": [],
+     "afterwards": "Get a free application key from AcoustID, put it in .env as ACOUSTID_API_KEY, and turn on 'Look up songs with missing names' on the Assistant and AI page."}
+  ]
+}

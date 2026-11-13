@@ -1,0 +1,36 @@
+{
+  "permissions": {
+    "deny": [
+      "Read(./.env)",
+      "Edit(./.env)",
+      "Write(./.env)",
+      "Read(./.secrets/**)",
+      "Edit(./.local/private-words.txt)",
+      "Write(./.local/private-words.txt)",
+      "Edit(./tools/githooks/**)",
+      "Write(./tools/githooks/**)",
+      "Bash(git push --force:*)",
+      "Bash(git push -f:*)",
+      "Bash(git push --no-verify:*)",
+      "Bash(git commit --no-verify:*)",
+      "Bash(git reset --hard:*)",
+      "Bash(git filter-repo:*)",
+      "Bash(git config:*)",
+      "Bash(docker compose down:*)",
+      "Bash(docker volume rm:*)",
+      "Bash(docker system prune:*)",
+      "PowerShell(git push --force*)",
+      "PowerShell(git push -f*)",
+      "PowerShell(git push --no-verify*)",
+      "PowerShell(git commit --no-verify*)",
+      "PowerShell(git reset --hard*)",
+      "PowerShell(git config*)",
+      "PowerShell(docker compose down*)",
+      "PowerShell(docker volume rm*)",
+      "PowerShell(docker system prune*)",
+      "PowerShell(.\\tools\\start-homesh.ps1*)",
+      "PowerShell(.\\tools\\deploy-standby.ps1*)",
+      "PowerShell(.\\tools\\publish-android-release.ps1*)"
+    ]
+  }
+}
