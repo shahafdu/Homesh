@@ -339,7 +339,8 @@ tools/            probe-denon.ps1, configure-network.ps1, run-tests.ps1,
 docs/             ARCHITECTURE.md, USER_GUIDE.md, TV_APP.md, PHONE_APP.md,
                   OFFSITE_BACKUPS.md, STANDBY.md, AI.md, AI_PLAN.md,
                   TLS.md, design/ (how to build what is left: start at
-                  design/README.md)
+                  design/README.md); design/ORCHESTRATOR.md is for the
+                  session that runs the build
 ```
 
 ---

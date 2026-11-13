@@ -18,6 +18,8 @@ halfway through a task.
 | [`04-assistant.md`](04-assistant.md) | History, audit, chat and commands, voice, tagging | C1-C4 |
 | [`05-music.md`](05-music.md) | Gapless playback, loudness, tag repair | M1-M3 |
 | [`06-library-upkeep.md`](06-library-upkeep.md) | Change notices, photo availability, the converter sandbox | L1-L5, A5 |
+| [`07-notifications.md`](07-notifications.md) | A mailbox on the server, notifications in Homesh Connect | N1-N3 |
+| [`ORCHESTRATOR.md`](ORCHESTRATOR.md) | For the session that runs the build: the loop, what to ask the owner | - |
 
 `docs/AI.md` (the rules) and `docs/AI_PLAN.md` (what was agreed) stay the
 authority on *what* and *why*. These files are the *how*. If one of them
@@ -112,7 +114,9 @@ them; it never relaxes them.
 
 9. **Every new route takes `user: CurrentUser = Depends(require_user)`** from
    `server/app/security.py`. There is no new unauthenticated route in any of
-   these designs. An administrator-only route starts with:
+   these designs. (`07-notifications.md` adds three routes that take a key, a
+   device token or a single-use code in place of a session, and says exactly
+   which; nothing else may.) An administrator-only route starts with:
 
    ```python
    if not user.is_admin:
