@@ -377,8 +377,20 @@ final class Mailbox {
    `wait + 10` seconds. Use the cursor stored for the role the *response*
    reports; if the first request used the wrong role's cursor, repeat once
    with the right one.
-4. HTTP 401: the phone was removed. Delete the token, cancel everything, show
-   one notification: "Homesh notifications were turned off for this phone."
+4. HTTP 401 **from the PC**: the phone was removed. Delete the token, cancel
+   everything, show one notification: "Homesh notifications were turned off
+   for this phone."
+
+   HTTP 401 **from the standby** means something else, and must not turn
+   anything off: a phone registered on the PC reaches the standby only with
+   the next hourly backup, so for up to an hour the standby does not know it.
+   Keep the token, try the PC again at the next check, and show nothing.
+
+   To tell the two apart, the server's 401 from `inbox` carries a JSON body
+   `{"detail": "...", "role": "primary" | "standby"}` (add `role` there in
+   `notify_api.py` as part of this task, with a test). A 401 whose body cannot
+   be read, or names no role, is treated as the standby's: never delete the
+   token on a response you are not sure came from the PC.
 5. For each message, `show`; then store the new cursor.
 
 `show`:

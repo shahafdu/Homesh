@@ -26,7 +26,9 @@ Check, in this order, and stop at nothing you find -- list all of it:
 Then:
 
 - Fix every finding yourself, with tests, in new commits (never amend, never
-  force-push). Run `.\tools\run-tests.ps1`, push, and run
+  force-push). While fixing, run only the affected tests with
+  `.\tools\run-tests.ps1 -Filter <test file or name>`; run the full
+  `.\tools\run-tests.ps1` once before you push. Push, and run
   `.\tools\verify-ci.ps1` until it prints "CI is green.".
 - Do not start, stop, rebuild or deploy anything, do not read .env, and do not
   pass --no-verify.

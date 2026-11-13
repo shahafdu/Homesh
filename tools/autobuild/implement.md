@@ -15,7 +15,12 @@ Do this, in order:
    "Asking for help").
 3. Build it: migration, server code, tests, web or Android code, and the
    documentation changes the README lists.
-4. Run the tests: `.\tools\run-tests.ps1`. Fix what fails.
+4. Run the tests. The full suite takes about ten minutes, so while you work
+   run only the tests for what you are changing, with
+   `.\tools\run-tests.ps1 -Filter <part of a test file or test name>`
+   (for example `-Filter test_notify`). Run the full `.\tools\run-tests.ps1`
+   once, when you believe you are finished and before you push; it must pass.
+   Fix what fails.
 5. Commit with a message that explains why. Push to main. Run
    `.\tools\verify-ci.ps1` and wait for it. If CI is red, fix it and repeat.
 6. Leave the working tree clean.
