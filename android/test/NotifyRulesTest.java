@@ -54,6 +54,9 @@ public class NotifyRulesTest {
         check(!NotifyRules.removedByPc(null), "an unreadable 401 does not");
         check(!NotifyRules.removedByPc(""), "a 401 naming no role does not");
 
+        check(NotifyRules.remember("primary"), "the PC is asked first next time");
+        check(!NotifyRules.remember("standby"), "the standby is not: the PC is tried again at every check");
+
         if (failures > 0) {
             System.err.println(failures + " notify check(s) failed");
             System.exit(1);

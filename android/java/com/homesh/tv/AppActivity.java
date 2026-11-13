@@ -534,7 +534,8 @@ public final class AppActivity extends Activity {
             ui.post(() -> {
                 on = pc;
                 String path = takeStartPath();
-                web.loadUrl(path == null ? pc : pc + path);
+                String url = path == null ? pc : pc + path;
+                web.loadUrl(Origins.under(url, pc) ? url : pc);
             });
         }).start();
     }
@@ -797,6 +798,8 @@ public final class AppActivity extends Activity {
         on = base;
         showWhere();
         String url = path == null || path.isEmpty() ? base : base + path;
+        // A notification's page, checked once more against the machine it lands on.
+        if (!Origins.under(url, base)) url = base;
         web.loadUrl(url);
         if (standby.equals(base)) sayOnStandby();
         else strip.setVisibility(View.GONE);

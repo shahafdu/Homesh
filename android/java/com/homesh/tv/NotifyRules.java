@@ -93,4 +93,14 @@ final class NotifyRules {
     static boolean removedByPc(String role) {
         return "primary".equals(role);
     }
+
+    /**
+     * Whether the machine that answered is worth asking first next time. Only
+     * the PC's: once the standby has answered, the PC must still be tried at
+     * every check, or the phone would stay with the standby after the PC came
+     * back and miss what was posted there.
+     */
+    static boolean remember(String role) {
+        return !"standby".equals(role);
+    }
 }

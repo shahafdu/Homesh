@@ -13,10 +13,12 @@ import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.nio.charset.StandardCharsets;
 
 /**
  * Fetching the mailbox and showing what is in it as notifications.
@@ -105,14 +107,23 @@ final class Mailbox {
             role = reply.role;
             reply = fetch(address, token, cursor(context, role), waitSeconds);
         }
-        lastGood = address;
+        // The standby is remembered for nothing: messages posted on the PC are
+        // never copied to it, so a phone that stayed with the standby once it
+        // answered would miss everything the PC holds after the PC came back.
+        lastGood = NotifyRules.remember(role) ? address : null;
 
         if (reply.status == 401) {
             // Only the PC's refusal means this phone was removed. The standby
             // learns of a new phone with the next backup; deleting the token on
             // its word would switch notifications off for a phone that is fine.
-            if (NotifyRules.removedByPc(reply.role)) turnOff(context, true);
-            return 0;
+            if (NotifyRules.removedByPc(reply.role)) {
+                turnOff(context, true);
+                return 0;
+            }
+            // Not reached, for this check's purposes: Instant then backs off
+            // rather than asking the standby again at once, without end.
+            lastGood = null;
+            return -1;
         }
         if (reply.status != 200) throw new IOException("status " + reply.status);
 
@@ -195,15 +206,17 @@ final class Mailbox {
     }
 
     private static String read(InputStream in) throws IOException {
-        StringBuilder body = new StringBuilder();
+        // Bytes first and decoded once: a character of a right-to-left name
+        // split across two reads would otherwise turn into two broken ones.
+        ByteArrayOutputStream body = new ByteArrayOutputStream();
         try (InputStream stream = in) {
             byte[] buf = new byte[4096];
             int n;
-            while ((n = stream.read(buf)) > 0 && body.length() < 256 * 1024) {
-                body.append(new String(buf, 0, n, "UTF-8"));
+            while ((n = stream.read(buf)) > 0 && body.size() < 256 * 1024) {
+                body.write(buf, 0, n);
             }
         }
-        return body.toString();
+        return new String(body.toByteArray(), StandardCharsets.UTF_8);
     }
 
     /** Claim a code for a device token. Returns {token, cursor, who} or null. */
@@ -288,7 +301,11 @@ final class Mailbox {
                 .setContentText(body)
                 .setAutoCancel(true);
         if (tap != null) builder.setContentIntent(tap);
-        if (!showOnLock && publicText != null) {
+        if (showOnLock) {
+            // The person asked for the text there: say so outright rather than
+            // leave it to the default, which is private.
+            builder.setVisibility(Notification.VISIBILITY_PUBLIC);
+        } else if (publicText != null) {
             builder.setVisibility(Notification.VISIBILITY_PRIVATE);
             Notification.Builder hidden = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
                     ? new Notification.Builder(context, channel) : new Notification.Builder(context);

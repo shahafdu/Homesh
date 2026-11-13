@@ -105,13 +105,23 @@ public final class NotifyService extends Service {
                 .setContentTitle("Homesh is listening for messages")
                 .setContentIntent(open)
                 .setOngoing(true)
-                .addAction(new Notification.Action.Builder(null, "Turn off instant", stop).build());
+                .addAction(turnOff(stop));
         Notification notification = builder.build();
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
             startForeground(ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_REMOTE_MESSAGING);
         } else {
             startForeground(ID, notification);
         }
+    }
+
+    /** The Icon form of the builder arrived in Android 6; the app still runs on 5. */
+    @SuppressWarnings("deprecation")
+    private static Notification.Action turnOff(PendingIntent stop) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            return new Notification.Action.Builder((android.graphics.drawable.Icon) null,
+                    "Turn off instant", stop).build();
+        }
+        return new Notification.Action.Builder(0, "Turn off instant", stop).build();
     }
 
     @Override

@@ -6,6 +6,7 @@ import android.app.job.JobScheduler;
 import android.app.job.JobService;
 import android.content.ComponentName;
 import android.content.Context;
+import android.os.Build;
 
 /**
  * The default way messages arrive: a check every fifteen minutes, which is the
@@ -20,12 +21,23 @@ public final class NotifyJob extends JobService {
     /** Harmless to call again: an already scheduled job is left as it is. */
     static void schedule(Context context) {
         JobScheduler scheduler = (JobScheduler) context.getSystemService(Context.JOB_SCHEDULER_SERVICE);
-        if (scheduler == null || scheduler.getPendingJob(JOB_ID) != null) return;
+        if (scheduler == null || scheduled(scheduler)) return;
         scheduler.schedule(new JobInfo.Builder(JOB_ID, new ComponentName(context, NotifyJob.class))
                 .setPeriodic(EVERY_MS)
                 .setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY)
                 .setPersisted(true)
                 .build());
+    }
+
+    /** getPendingJob arrived in Android 7; the app still runs on 5. */
+    private static boolean scheduled(JobScheduler scheduler) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            return scheduler.getPendingJob(JOB_ID) != null;
+        }
+        for (JobInfo job : scheduler.getAllPendingJobs()) {
+            if (job.getId() == JOB_ID) return true;
+        }
+        return false;
     }
 
     static void cancel(Context context) {
