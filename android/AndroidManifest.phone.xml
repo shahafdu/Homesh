@@ -14,14 +14,22 @@
 -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.homesh.phone"
-    android:versionCode="21"
-    android:versionName="1.8.0">
+    android:versionCode="22"
+    android:versionName="1.9.0">
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <!-- "Check for updates" installs what it finds. Android still shows its own
          installer prompt; what this removes is finding /phone in a browser. -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+
+    <!-- Notifications. POST_NOTIFICATIONS is asked for when the person turns them
+         on, not at install. The foreground service is "Instant", off unless
+         switched on; its type is explained in NotifyService. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_REMOTE_MESSAGING" />
 
     <!-- Android 11 hides other apps unless they are named here. Without this
          Tailscale is invisible: the launch intent comes back null and the app
@@ -57,6 +65,15 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <!-- homeshconnect://notify?claim=...&origin=... : Homesh's settings page
+                 handing over a single-use code. Honoured only for an address the
+                 app already holds, and only after the person confirms. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="homeshconnect" android:host="notify" />
+            </intent-filter>
         </activity>
 
         <!-- Passes a downloaded update to the system installer as content, the
@@ -75,6 +92,24 @@
             android:name="com.homesh.tv.AppActivity"
             android:exported="false"
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden" />
+
+        <service
+            android:name="com.homesh.tv.NotifyJob"
+            android:exported="false"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
+
+        <service
+            android:name="com.homesh.tv.NotifyService"
+            android:exported="false"
+            android:foregroundServiceType="remoteMessaging" />
+
+        <receiver
+            android:name="com.homesh.tv.NotifyBoot"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
 
         <!-- Typing an address, shared with the television app. -->
         <activity

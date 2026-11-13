@@ -153,6 +153,56 @@ One exception: an app opened in its own screen is a WebView, and a WebView keeps
 its own history and cookies, which name the app's address. That data is private
 to the phone app, like everything else it stores, but it is not encrypted by it.
 
+## Notifications
+
+Homesh, and the apps beside it, can leave short messages in a mailbox on the
+server; Homesh Connect shows them as Android notifications. Tapping one opens the
+app that sent it, on the page the message names. Nothing goes through Google's
+push service: the phone asks the server.
+
+**Turning it on.** In Homesh's settings, press "Turn on for this phone". The page
+makes a single-use code that lives two minutes and hands it to the app through a
+`homeshconnect://notify` link. The app honours the link only for an address it
+already holds for the PC, and only after you confirm. The code is exchanged for a
+device token, which the phone keeps encrypted by `Vault`, as it keeps the
+addresses. The token reads that one person's messages and nothing else.
+
+**Two modes.**
+
+- *Background* (the default): a check about every 15 minutes, longer while
+  Android is saving battery, and one whenever the app comes to the front.
+- *Instant* (a switch on the app's screen): a small "Homesh is listening"
+  notification stays up and the phone holds a request open, so a message arrives
+  within seconds. Android suspends the network of a sleeping app unless it is
+  exempt from battery optimisation; the app offers the system screen for that.
+  Declined, Instant works while the phone is awake and the 15-minute checks cover
+  the rest.
+
+A phone receives only while it can reach the PC or the standby. Otherwise
+messages wait in the mailbox until it can. The text of a message is hidden on
+the lock screen unless you switch that on.
+
+**Turning it off.** "Turn off on this phone" on the app's screen deletes the token
+and stops the checks. "Remove" beside the phone in Homesh's settings revokes it
+at once, and the phone clears itself at its next check. A refusal from the
+standby does not do that: a phone added on the PC reaches the standby only with
+the next hourly backup.
+
+**For an app beside Homesh.** Each gets a sending key in `NOTIFY_SENDERS` (see
+`.env.example`) and posts when it has something to say:
+
+```
+POST <the Homesh server>/api/notify/send
+Authorization: Bearer <its key>
+Content-Type: application/json
+
+{"to": "everyone", "title": "...", "body": "...", "path": "/the/page", "tag": "optional"}
+```
+
+The sender's name comes from the key, never from the request. `path` is a path
+inside the app, never an address. Post to the standby's Homesh too, for the times
+the PC is off. A later message with the same `tag` replaces the earlier one.
+
 ## Which version, and updating it
 
 The version installed is shown at the bottom of the screen, under the buttons.

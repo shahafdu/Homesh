@@ -1,16 +1,21 @@
 package com.homesh.tv;
 
+import android.app.AlertDialog;
+import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
 import android.graphics.Color;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
+import android.provider.Settings;
 import android.util.Log;
 import android.view.Gravity;
 import android.view.View;
 import android.widget.Button;
 import android.widget.LinearLayout;
+import android.widget.Switch;
 import android.widget.TextView;
 
 import org.json.JSONArray;
@@ -90,6 +95,15 @@ public final class PhoneActivity extends Activity {
     private TextView about;
     private Button updates;
 
+    /** Notifications: what state they are in, and the controls that change it. */
+    private TextView notifyState;
+    private Button notifyTurnOn;
+    private Button notifyTurnOff;
+    private Switch notifyInstant;
+    private Switch notifyLockScreen;
+    private boolean settingSwitches;
+    private static final int ASK_NOTIFICATIONS = 11;
+
     /** What the server offered at the last check, once there is something newer. */
     private PhoneUpdates.Offer newer;
     private volatile boolean checkingUpdates;
@@ -143,6 +157,13 @@ public final class PhoneActivity extends Activity {
             handedOff = state.getBoolean(SAVED_HANDED_OFF, false);
         }
         autoOpen = state == null;
+        // Opened by tapping a notification or by Homesh's settings page: the
+        // person wants that and not the menu, or Homesh opening by itself.
+        if (state == null && getIntent() != null
+                && (Mailbox.ACTION_OPEN_MESSAGE.equals(getIntent().getAction())
+                || getIntent().getData() != null)) {
+            autoOpen = false;
+        }
 
         root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
@@ -191,6 +212,24 @@ public final class PhoneActivity extends Activity {
         about.setPadding(0, 56, 0, 8);
         updates = button("Check for updates", v -> onUpdatesPressed());
 
+        notifyState = new TextView(this);
+        notifyState.setTextColor(Color.parseColor("#A79B8D"));
+        notifyState.setTextSize(14);
+        notifyState.setPadding(0, 40, 0, 8);
+        notifyTurnOn = button("Turn on notifications", v -> openNotificationSettings());
+        notifyInstant = toggle("Instant: a message arrives within seconds", (v, on) -> {
+            if (!settingSwitches) setInstant(on);
+        });
+        notifyLockScreen = toggle("Show message text on the lock screen", (v, on) -> {
+            if (!settingSwitches) {
+                Vault.put(this, Mailbox.KEY_LOCKSCREEN, on ? "1" : null);
+            }
+        });
+        notifyTurnOff = button("Turn off on this phone", v -> {
+            Mailbox.turnOff(this, false);
+            showNotifyRow();
+        });
+
         root.addView(brand);
         root.addView(message);
         root.addView(openHomesh);
@@ -198,16 +237,233 @@ public final class PhoneActivity extends Activity {
         root.addView(apps);
         root.addView(searchAgain);
         root.addView(changeAddress);
+        root.addView(notifyState);
+        root.addView(notifyTurnOn);
+        root.addView(notifyInstant);
+        root.addView(notifyLockScreen);
+        root.addView(notifyTurnOff);
         root.addView(about);
         root.addView(updates);
         setContentView(root);
 
         showActions(false);
+        showNotifyRow();
+        if (state == null) handleIntent(getIntent());
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(new Intent(this, PhoneActivity.class));
+        handleIntent(intent);
+    }
+
+    private Switch toggle(String label, android.widget.CompoundButton.OnCheckedChangeListener l) {
+        Switch s = new Switch(this);
+        s.setText(label);
+        s.setTextColor(Color.parseColor("#F2EBE2"));
+        s.setPadding(0, 16, 0, 16);
+        s.setOnCheckedChangeListener(l);
+        return s;
+    }
+
+    // -- Notifications -------------------------------------------------------
+
+    /** The row's state, and only the controls that make sense for it. */
+    private void showNotifyRow() {
+        boolean on = Mailbox.on(this);
+        String who = Vault.get(this, Mailbox.KEY_WHO);
+        notifyState.setText("Notifications: " + (!on ? "off"
+                : (Mailbox.instant(this) ? "on, instant" : "on")
+                + (who != null && !who.isEmpty() ? " for " + who : "")));
+        notifyTurnOn.setVisibility(on ? View.GONE : View.VISIBLE);
+        notifyInstant.setVisibility(on ? View.VISIBLE : View.GONE);
+        notifyLockScreen.setVisibility(on ? View.VISIBLE : View.GONE);
+        notifyTurnOff.setVisibility(on ? View.VISIBLE : View.GONE);
+        settingSwitches = true;
+        notifyInstant.setChecked(Mailbox.instant(this));
+        notifyLockScreen.setChecked("1".equals(Vault.get(this, Mailbox.KEY_LOCKSCREEN)));
+        settingSwitches = false;
+    }
+
+    /**
+     * Turning it on starts in Homesh's own settings, in the tab: only there is
+     * the person signed in, and only there can a single-use code be made. The
+     * page then sends it back as a homeshconnect:// link.
+     */
+    private void openNotificationSettings() {
+        String at = reachedAt != null ? reachedAt : Vault.get(this, KEY_ORIGIN);
+        if (at == null) at = lan();
+        if (at == null) {
+            message.setText("Find your server first, then open Homesh's settings.");
+            return;
+        }
+        openAt(at, "");
+        message.setText("Open Settings in Homesh, then press Turn on for this phone.");
+    }
+
+    private void setInstant(boolean on) {
+        if (!on) {
+            Vault.put(this, Mailbox.KEY_INSTANT, null);
+            NotifyService.stop(this);
+            showNotifyRow();
+            return;
+        }
+        Vault.put(this, Mailbox.KEY_INSTANT, "1");
+        try {
+            NotifyService.start(this);
+        } catch (RuntimeException e) {
+            Vault.put(this, Mailbox.KEY_INSTANT, null);
+            message.setText("Android would not start Instant. The 15-minute checks carry on.");
+            showNotifyRow();
+            return;
+        }
+        // Android suspends the network for a sleeping app unless it is exempt
+        // from battery saving. Say why, then open the screen where that is done.
+        message.setText("So messages arrive at once, allow Homesh Connect to run in the "
+                + "background. Without it Instant works while the phone is awake, and "
+                + "checks every 15 minutes while it sleeps.");
+        try {
+            startActivity(new Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS));
+        } catch (RuntimeException e) {
+            Log.i(TAG, "no battery screen to open");
+        }
+        showNotifyRow();
+    }
+
+    /** A link from Homesh's settings page, or a tapped notification. */
+    private void handleIntent(Intent intent) {
+        if (intent == null) return;
+        Uri data = intent.getData();
+        if (Intent.ACTION_VIEW.equals(intent.getAction()) && data != null
+                && "homeshconnect".equals(data.getScheme()) && "notify".equals(data.getHost())) {
+            offerToTurnOn(data.getQueryParameter("claim"), data.getQueryParameter("origin"));
+        } else if (Mailbox.ACTION_OPEN_MESSAGE.equals(intent.getAction())) {
+            openMessage(intent.getStringExtra(Mailbox.EXTRA_SENDER),
+                    intent.getStringExtra(Mailbox.EXTRA_PATH));
+        }
+    }
+
+    private void offerToTurnOn(String claim, String origin) {
+        // Any web page can produce this link. It is honoured only for an
+        // address this app already holds for the PC.
+        String address = NotifyRules.match(origin, lan(), Vault.get(this, KEY_ORIGIN));
+        if (address == null || !NotifyRules.validClaim(claim)) {
+            message.setText("This link is not from your Homesh.");
+            return;
+        }
+        new AlertDialog.Builder(this)
+                .setMessage("Turn on Homesh notifications on this phone?")
+                .setPositiveButton("Turn on", (d, w) -> turnOn(address, claim))
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
+    private void turnOn(String address, String claim) {
+        // Asked for now, at the moment it is first needed.
+        if (Build.VERSION.SDK_INT >= 33) {
+            requestPermissions(new String[] {"android.permission.POST_NOTIFICATIONS"},
+                    ASK_NOTIFICATIONS);
+        }
+        message.setText("Turning on notifications...");
+        new Thread(() -> {
+            String[] got = Mailbox.claim(address, claim);
+            runOnUiThread(() -> {
+                if (got == null) {
+                    message.setText("That did not work. Try again from Homesh's settings.");
+                    return;
+                }
+                Mailbox.turnOff(this, false);
+                Vault.put(this, Mailbox.KEY_TOKEN, got[0]);
+                Vault.put(this, NotifyRules.cursorKey("primary"), got[1]);
+                Vault.put(this, Mailbox.KEY_WHO, got[2]);
+                NotifyJob.schedule(this);
+                message.setText("Notifications are on" + (got[2].isEmpty() ? "." : " for " + got[2] + "."));
+                showNotifyRow();
+            });
+        }).start();
+    }
+
+    /**
+     * A tapped notification. The path is checked again here, and only an app
+     * from the stored list is ever opened: an address is never taken from a
+     * message.
+     */
+    private void openMessage(String sender, String path) {
+        if (!NotifyRules.validPath(path) || path.equals("/")) path = "";
+        final String page = path;
+
+        if (sender != null && sender.equals(NotifyRules.HOMESH)) {
+            inApp = false;
+            new Thread(() -> {
+                String reachable = Reach.pick(new String[] {lan(), Vault.get(this, KEY_ORIGIN)},
+                        standbyList(), Server::reachable, PATIENT_MS, PATIENT_MS);
+                runOnUiThread(() -> {
+                    if (reachable == null) cannotReach();
+                    else openAt(reachable, page);
+                });
+            }).start();
+            return;
+        }
+        try {
+            String stored = Vault.get(this, KEY_APPS);
+            JSONArray list = new JSONArray(stored == null ? "[]" : stored);
+            for (int i = 0; i < list.length(); i++) {
+                JSONObject app = list.getJSONObject(i);
+                if (!app.optString("name", "").equals(sender)) continue;
+                String url = trimSlash(app.optString("url", ""));
+                String standby = app.isNull("standby") ? null : trimSlash(app.optString("standby", ""));
+                if (!isWeb(url) || !Origins.under(url + page, url)) break;
+                inApp = true;
+                if (isWeb(standby)) {
+                    startActivity(new Intent(this, AppActivity.class)
+                            .putExtra(AppActivity.EXTRA_NAME, sender)
+                            .putExtra(AppActivity.EXTRA_PC, url)
+                            .putExtra(AppActivity.EXTRA_STANDBY, standby)
+                            .putExtra(AppActivity.EXTRA_SAME, app.optBoolean("same", false))
+                            .putExtra(AppActivity.EXTRA_PATH, page));
+                } else {
+                    launchApp(sender, url + page);
+                }
+                return;
+            }
+        } catch (Exception e) {
+            Log.i(TAG, "could not open a message's app: " + e.getClass().getSimpleName());
+        }
+        // Not an app this phone knows any more: this screen, nothing else.
+        message.setText("");
+    }
+
+    private String[] standbyList() {
+        String standby = Vault.get(this, KEY_STANDBY);
+        return standby == null ? new String[0] : new String[] {standby};
+    }
+
+    private static String trimSlash(String url) {
+        while (url != null && url.endsWith("/")) url = url.substring(0, url.length() - 1);
+        return url;
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int code, String[] permissions, int[] results) {
+        super.onRequestPermissionsResult(code, permissions, results);
+        if (code == ASK_NOTIFICATIONS && results.length > 0
+                && results[0] != PackageManager.PERMISSION_GRANTED) {
+            message.setText("Notifications are blocked for Homesh Connect. Allow them in "
+                    + "Android's settings for this app, and they will start showing.");
+        }
     }
 
     @Override
     protected void onResume() {
         super.onResume();
+
+        if (Mailbox.on(this)) {
+            NotifyJob.schedule(this);
+            final Context context = getApplicationContext();
+            new Thread(() -> Mailbox.check(context, 0)).start();
+        }
+        showNotifyRow();
 
         if (inApp) {
             inApp = false;
@@ -487,11 +743,16 @@ public final class PhoneActivity extends Activity {
 
     /** Open Homesh over this screen, in a tab that belongs to this app. */
     private void open(String base) {
+        openAt(base, "");
+    }
+
+    /** {@code path} has been through NotifyRules.validPath, or is empty. */
+    private void openAt(String base, String path) {
         reachedAt = base;
         message.setText("Opening Homesh…");
         showActions(false);
         try {
-            startActivity(browserIntent(Uri.parse(base)));
+            startActivity(browserIntent(Uri.parse(base + path)));
             handedOff = true;
         } catch (Exception e) {
             message.setText("No browser on this phone would open " + base + ".");

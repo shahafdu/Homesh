@@ -97,6 +97,8 @@ public final class AppActivity extends Activity {
     static final String EXTRA_STANDBY = "standby";
     /** The two copies are interchangeable: relay each request, never move the page. */
     static final String EXTRA_SAME = "same";
+    /** A page inside the app to open first, from a notification. Validated here again. */
+    static final String EXTRA_PATH = "path";
 
     private static final String TAG = "HomeshApp";
 
@@ -114,6 +116,8 @@ public final class AppActivity extends Activity {
     private String name;
     private String pc;
     private String standby;
+    /** Where to go once the machine is chosen, from a notification; then cleared. */
+    private String startPath;
     // The page showing now, as the view last said. Read from the bridge's thread.
     private volatile String page;
     /** The machine showing the app now: pc, standby, or null before the first. */
@@ -214,6 +218,7 @@ public final class AppActivity extends Activity {
             finish();
             return;
         }
+        startPath = validPathOrNull(getIntent().getStringExtra(EXTRA_PATH));
 
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
@@ -508,7 +513,7 @@ public final class AppActivity extends Activity {
                     });
                     return;
                 }
-                show(go, null);
+                show(go, takeStartPath());
             });
         }).start();
     }
@@ -528,7 +533,8 @@ public final class AppActivity extends Activity {
             checking = false;
             ui.post(() -> {
                 on = pc;
-                web.loadUrl(pc);
+                String path = takeStartPath();
+                web.loadUrl(path == null ? pc : pc + path);
             });
         }).start();
     }
@@ -755,6 +761,30 @@ public final class AppActivity extends Activity {
             say("Opening " + name + "…");
             web.reload();
         });
+    }
+
+    private String takeStartPath() {
+        String path = startPath;
+        startPath = null;
+        return path;
+    }
+
+    /** A path from a notification, or null. Checked here as well as before it was sent. */
+    private static String validPathOrNull(String path) {
+        return NotifyRules.validPath(path) ? path : null;
+    }
+
+    /**
+     * A notification for this app tapped while it is already open: go to its
+     * page, on whichever machine is showing.
+     */
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        String path = validPathOrNull(intent.getStringExtra(EXTRA_PATH));
+        if (path == null || on == null || !name.equals(intent.getStringExtra(EXTRA_NAME))) return;
+        if (Origins.under(on + path, on)) web.loadUrl(on + path);
     }
 
     /** The part of an address after the machine, or null for another site. */

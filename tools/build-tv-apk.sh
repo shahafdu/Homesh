@@ -34,7 +34,7 @@ PUBLISHED_NAME="homesh-$APP.json"
 # bump and every screen in the house was offered an update to code that does not
 # affect it. An app is the files it uses.
 case "$APP" in
-  tv)    SKIP="PhoneActivity.java PhoneUpdates.java AppActivity.java Reach.java Vault.java Follow.java Relay.java" ;;
+  tv)    SKIP="PhoneActivity.java PhoneUpdates.java AppActivity.java Reach.java Vault.java Follow.java Relay.java Mailbox.java NotifyJob.java NotifyService.java NotifyBoot.java NotifyRules.java" ;;
   phone) SKIP="MainActivity.java NativeVideo.java Updater.java" ;;
   *)     SKIP="" ;;
 esac
@@ -169,6 +169,10 @@ mkdir -p "$WORK/testclasses"
 # Whether a page belongs to the server: parsed, never a prefix of the address.
 "$JAVAC" -nowarn -encoding UTF-8 --release 17 -d "$WORK/testclasses"   "$(winpath "$SRC/java/com/homesh/tv/Origins.java")"   "$(winpath "$SRC/test/OriginsTest.java")"
 "$JAVA_BIN" -cp "$(winpath "$WORK/testclasses")" com.homesh.tv.OriginsTest
+
+# What a notification may open, and when a link may turn them on.
+"$JAVAC" -nowarn -encoding UTF-8 --release 17 -d "$WORK/testclasses"   "$(winpath "$SRC/java/com/homesh/tv/Origins.java")"   "$(winpath "$SRC/java/com/homesh/tv/NotifyRules.java")"   "$(winpath "$SRC/test/NotifyRulesTest.java")"
+"$JAVA_BIN" -cp "$(winpath "$WORK/testclasses")" com.homesh.tv.NotifyRulesTest
 
 # ── 1. Resources ─────────────────────────────────────────────────────────────
 "$AAPT2" compile --dir "$SRC/res" -o "$WORK/res.zip"

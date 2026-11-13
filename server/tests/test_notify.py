@@ -324,6 +324,15 @@ class TestTheInbox:
         assert _inbox(anon_client, "not-a-token").status_code == 401
         assert anon_client.get("/api/notify/inbox").status_code == 401
 
+    def test_the_refusal_says_which_machine_refused(self, db, anon_client, monkeypatch):
+        # The phone deletes its token only on the PC's 401; the standby may not
+        # have heard of a new phone until the next backup arrives.
+        body = _inbox(anon_client, "not-a-token").json()
+        assert body["role"] == "primary"
+        assert body["detail"]
+        monkeypatch.setattr(standby, "role", lambda: "standby")
+        assert _inbox(anon_client, "not-a-token").json()["role"] == "standby"
+
     def test_unknown_tokens_are_rate_limited(self, db, anon_client):
         for _ in range(30):
             assert _inbox(anon_client, "not-a-token").status_code == 401

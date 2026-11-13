@@ -22,6 +22,7 @@ from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import text
 
@@ -327,12 +328,12 @@ def _phone_for(token: str) -> tuple[UUID, UUID] | None:
     return row.id, row.user_id
 
 
-@router.get("/inbox")
+@router.get("/inbox", response_model=None)
 async def phone_inbox(
     request: Request,
     after: int = Query(0, ge=0),
     wait: int = Query(0, ge=0, le=50),
-) -> dict:
+) -> dict | JSONResponse:
     """What is new for this phone's person. Optionally held open until there is.
 
     Async so that a held request costs a coroutine rather than one of the
@@ -345,7 +346,12 @@ async def phone_inbox(
     found = await asyncio.to_thread(_phone_for, token) if token else None
     if found is None:
         throttle.hit("notify-token", throttle.caller(request), WRONG_TOKENS)
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "this phone is not registered")
+        # The phone must be able to tell the PC's refusal (it was removed) from
+        # the standby's (it may simply not have arrived with a backup yet).
+        return JSONResponse(
+            {"detail": "this phone is not registered", "role": role()},
+            status_code=status.HTTP_401_UNAUTHORIZED,
+        )
     _, user_id = found
 
     mark = notify.generation(user_id)
