@@ -5,6 +5,9 @@ when the work begins; `AI.md` describes what is already built and the rules it
 follows. Where the two disagree, this file is the newer decision and `AI.md` is
 updated when the work lands.
 
+**How to build it** is in [`design/`](design/README.md): tables, endpoints,
+screens and tests for each step below, written in November 2026.
+
 Nothing here changes the rules in `AI.md`: the AI acts only through the API as
 the person asking, spending is refused by the platform rather than avoided by the
 code, and what is private stays in the house.

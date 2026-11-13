@@ -335,7 +335,8 @@ tools/            probe-denon.ps1, configure-network.ps1, run-tests.ps1,
                   through a terminal
 docs/             ARCHITECTURE.md, USER_GUIDE.md, TV_APP.md, PHONE_APP.md,
                   OFFSITE_BACKUPS.md, STANDBY.md, AI.md, AI_PLAN.md,
-                  TLS.md
+                  TLS.md, design/ (how to build what is left: start at
+                  design/README.md)
 ```
 
 ---
