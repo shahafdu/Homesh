@@ -15,6 +15,7 @@ import {
   type Offsite,
 } from "./backups";
 import { formatSize } from "./library";
+import { ago, claimLink, listPhones, newClaim, removePhone, sendTest, type Phone } from "./notifyApi";
 
 /** "today at 14:03", or the date for anything older. Relative because the only
  *  question being asked is "is this the build I think it is". */
@@ -42,6 +43,8 @@ export default function Settings(props: {
   /** Backups are an administrator's business, and the server refuses anyone
    *  else — so the section is simply absent rather than present and failing. */
   isAdmin?: boolean;
+  /** The standby refuses changes to phones; the buttons say so instead. */
+  onStandby?: boolean;
 }) {
   useLockScroll();
   const { prefs, onChange, onLinkDevice, onClose } = props;
@@ -111,6 +114,8 @@ export default function Settings(props: {
             Sign in on a phone or tablet that cannot create a passkey.
           </p>
         </div>
+
+        <PhoneNotifications onStandby={!!props.onStandby} />
 
         {props.isAdmin && <Backups />}
 
@@ -485,6 +490,162 @@ function Backups() {
       {note && <p className="muted small">{note}</p>}
 
       <OffsiteCopies state={offsite} busy={busy !== null} onChange={run} />
+    </div>
+  );
+}
+
+
+/** Phones that get Homesh's messages as notifications. */
+function PhoneNotifications(props: { onStandby: boolean }) {
+  const [phones, setPhones] = useState<Phone[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [asking, setAsking] = useState(false);
+  const [label, setLabel] = useState("My phone");
+  const [busy, setBusy] = useState<"link" | "test" | null>(null);
+  const [sure, setSure] = useState<string | null>(null);
+  const [note, setNote] = useState<string | null>(null);
+
+  const refresh = useCallback(() => {
+    listPhones()
+      .then((p) => {
+        setPhones(p);
+        setError(null);
+      })
+      .catch((e) => setError(e instanceof Error ? e.message : String(e)));
+  }, []);
+
+  useEffect(refresh, [refresh]);
+
+  const turnOn = async () => {
+    setBusy("link");
+    setNote(null);
+    try {
+      const { claim } = await newClaim(label.trim() || "My phone");
+      window.location.href = claimLink(claim);
+      // A browser that cannot open the link stays where it is.
+      window.setTimeout(() => {
+        if (document.visibilityState === "visible") {
+          setNote("That only works inside the Homesh Connect app on a phone.");
+        }
+        setBusy(null);
+        setAsking(false);
+        refresh();
+      }, 2000);
+    } catch (e) {
+      setNote(e instanceof Error ? e.message : String(e));
+      setBusy(null);
+    }
+  };
+
+  const test = async () => {
+    setBusy("test");
+    setNote(null);
+    try {
+      await sendTest();
+      setNote("Sent. It should arrive within 15 minutes, or at once if Instant is on.");
+    } catch (e) {
+      setNote(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const remove = async (id: string) => {
+    setSure(null);
+    try {
+      await removePhone(id);
+    } catch (e) {
+      setNote(e instanceof Error ? e.message : String(e));
+    }
+    refresh();
+  };
+
+  const off = props.onStandby;
+
+  return (
+    <div className="setting">
+      <h3>Notifications on your phone</h3>
+      <p>
+        Homesh Connect can show a notification when Homesh or one of your other apps has something
+        for you.
+      </p>
+
+      {error && (
+        <p className="muted small" role="status">
+          {error}{" "}
+          <button className="compact" onClick={refresh}>
+            Try again
+          </button>
+        </p>
+      )}
+      {!error && phones === null && <p className="muted small">Loading...</p>}
+      {!error && phones?.length === 0 && (
+        <p className="muted small">No phones yet. Turn it on from the phone you want.</p>
+      )}
+
+      {phones?.map((p) => (
+        <div key={p.id} className="phone-row">
+          <div>
+            <b dir="auto">{p.label}</b>
+            <div className="muted small">last checked {ago(p.last_seen_at)}</div>
+          </div>
+          {sure === p.id ? (
+            <span>
+              Sure?{" "}
+              <button className="compact" onClick={() => void remove(p.id)}>
+                Yes, remove
+              </button>{" "}
+              <button className="compact" onClick={() => setSure(null)}>
+                Cancel
+              </button>
+            </span>
+          ) : (
+            <button className="compact" disabled={off} onClick={() => setSure(p.id)}>
+              Remove
+            </button>
+          )}
+        </div>
+      ))}
+
+      {asking ? (
+        <div>
+          <label htmlFor="phone-label">Name for this phone</label>
+          <input
+            id="phone-label"
+            value={label}
+            maxLength={60}
+            dir="auto"
+            onChange={(e) => setLabel(e.target.value)}
+          />
+          <div style={{ marginTop: 8 }}>
+            <button className="compact" disabled={busy === "link" || !label.trim()} onClick={() => void turnOn()}>
+              {busy === "link" ? "Opening..." : "Continue"}
+            </button>{" "}
+            <button className="compact" onClick={() => setAsking(false)}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div style={{ marginTop: 8 }}>
+          <button className="compact" disabled={off} onClick={() => setAsking(true)}>
+            Turn on for this phone
+          </button>{" "}
+          <button
+            className="compact"
+            disabled={off || busy === "test" || !phones?.length}
+            onClick={() => void test()}
+          >
+            {busy === "test" ? "Sending..." : "Send a test"}
+          </button>
+        </div>
+      )}
+
+      <p className="muted small" role="status">
+        {off
+          ? "Phones are changed on the main server. Try again when the PC is on."
+          : note ?? "Open this page inside Homesh Connect to turn it on there."}
+      </p>
     </div>
   );
 }

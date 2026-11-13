@@ -197,6 +197,17 @@ The gear icon, top right.
 
 Both are stored on your account, not in the browser, so you set them once.
 
+**Notifications on your phone** — lists the phones that get Homesh's messages
+as notifications. Open Settings inside the Homesh Connect app and press
+*Turn on for this phone*; the app asks you to confirm. *Send a test* checks it
+works, and *Remove* switches a phone off at once. These buttons are disabled
+while the standby is answering, because phones are changed on the PC.
+
+**The bell** — the bell in the top bar opens the last 50 messages from Homesh
+and the apps beside it, newest first, and a dot says some are unread. Opening
+it marks them read. A message links to the page it names; one from an app that
+is no longer set up shows without a link.
+
 ---
 
 ## 7. Adding a folder of your own

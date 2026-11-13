@@ -13,6 +13,8 @@ import {
 import Browser from "./Browser";
 import Player from "./Player";
 import Settings from "./Settings";
+import Inbox from "./Inbox";
+import { listMessages } from "./notifyApi";
 import Sources from "./Sources";
 import Slideshow, { SlideshowSetup } from "./Slideshow";
 import Boundary from "./Boundary";
@@ -41,6 +43,8 @@ export default function App() {
   const [health, setHealth] = useState<Health | null>(null);
   const [prefs, setPrefs] = useState<Prefs>(DEFAULT_PREFS);
   const [showSettings, setShowSettings] = useState(false);
+  const [showInbox, setShowInbox] = useState(false);
+  const [unread, setUnread] = useState(0);
   const [showSources, setShowSources] = useState(false);
   // Setting one up, and then running one. Two states rather than one,
   // because the room picker can be reached from the setup screen and the
@@ -106,6 +110,15 @@ export default function App() {
   useEffect(() => {
     refresh().catch((e) => setError(String(e)));
   }, [refresh]);
+
+  // One look when the app loads; the bell is not polled while it is closed.
+  const signedIn = !!state?.authenticated;
+  useEffect(() => {
+    if (!signedIn) return;
+    listMessages()
+      .then((list) => setUnread(list.filter((m) => !m.read).length))
+      .catch(() => undefined);
+  }, [signedIn]);
 
   const run = async (fn: () => Promise<void>) => {
     setBusy(true);
@@ -187,6 +200,8 @@ export default function App() {
           view={prefs.view}
           onViewChange={(view) => void changePrefs({ view })}
           onOpenSettings={() => setShowSettings(true)}
+          onOpenInbox={() => setShowInbox(true)}
+          unread={unread}
           onOpenSources={state.user.is_admin ? () => setShowSources(true) : undefined}
           onSlideshow={(path, name) => setSettingUp({ path, name })}
           onOpenZones={() => setShowZones(true)}
@@ -333,10 +348,15 @@ export default function App() {
           />
         )}
 
+        {showInbox && (
+          <Inbox onClose={() => setShowInbox(false)} onRead={() => setUnread(0)} />
+        )}
+
         {showSettings && (
           <Settings
             prefs={prefs}
             isAdmin={state.user.is_admin}
+            onStandby={health?.role === "standby"}
             onChange={(patch) => void changePrefs(patch)}
             onLinkDevice={() => {
               setShowSettings(false);

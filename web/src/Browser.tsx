@@ -36,6 +36,9 @@ export default function Browser(props: {
   view: View;
   onViewChange: (v: View) => void;
   onOpenSettings: () => void;
+  onOpenInbox?: () => void;
+  /** Messages not yet read, for the dot on the bell. */
+  unread?: number;
   onOpenZones: () => void;
   onOpenPlaylists: () => void;
   onOpenPeople?: () => void;
@@ -51,7 +54,7 @@ export default function Browser(props: {
   onRevealed: () => void;
 }) {
   const {
-    view, onViewChange, onOpenSettings, onOpenZones, onOpenPlaylists, onOpenPeople,
+    view, onViewChange, onOpenSettings, onOpenInbox, unread = 0, onOpenZones, onOpenPlaylists, onOpenPeople,
     onOpenSources, onSlideshow,
     onPlay, onView, onActions, playingId,
   } = props;
@@ -188,6 +191,16 @@ export default function Browser(props: {
           <button className="iconbtn" onClick={onOpenSources} aria-label="Sources"
                   title="Sources">
             ◫
+          </button>
+        )}
+        {onOpenInbox && (
+          <button
+            className="iconbtn"
+            onClick={onOpenInbox}
+            aria-label={unread > 0 ? `Messages, ${unread} unread` : "Messages"}
+            title="Messages"
+          >
+            &#128276;{unread > 0 && <span className="bell-dot" aria-hidden="true" />}
           </button>
         )}
         <button className="iconbtn" onClick={onOpenSettings} aria-label="Settings" title="Settings">
