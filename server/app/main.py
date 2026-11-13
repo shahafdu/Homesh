@@ -19,7 +19,7 @@ from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 
-from . import lanaddr, webguard
+from . import alerts, lanaddr, webguard
 from .ai_api import router as ai_router
 from .auth import ensure_bootstrap_code
 from .auth import router as auth_router
@@ -223,6 +223,32 @@ async def browser_guards(request, call_next):
                     request.headers.get("origin"))
         return webguard.add_security_headers(webguard.refuse_cross_origin())
     return webguard.add_security_headers(await call_next(request))
+
+
+@app.middleware("http")
+async def watch_changes(request, call_next):
+    """Count what other people change, so an administrator hears of it once.
+
+    Looks only at successful writes to the paths in `alerts.WATCHED`. A change
+    replayed from the standby was already counted where it was made.
+    """
+    response = await call_next(request)
+    try:
+        if 200 <= response.status_code < 300:
+            kind = alerts.watched_kind(request.method, request.url.path)
+            if kind and not getattr(request.state, "from_standby", False):
+                actor = getattr(request.state, "replay_user", None)
+                if actor is None:
+                    token = request.cookies.get(SESSION_COOKIE)
+                    actor = _lookup_session(token) if token else None
+                if actor is not None:
+                    alerts.record_change(
+                        actor.id, kind,
+                        via_assistant=bool(getattr(request.state, "via_assistant", False)),
+                    )
+    except Exception:  # noqa: BLE001 - a response is never lost to the watcher
+        log.exception("could not watch a change")
+    return response
 
 
 @app.middleware("http")

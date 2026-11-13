@@ -117,6 +117,31 @@ export default function Settings(props: {
 
         <PhoneNotifications onStandby={!!props.onStandby} />
 
+        {props.isAdmin && (
+          <div className="setting">
+            <h3>Alerts for administrators</h3>
+            <label style={{ display: "block", margin: "8px 0" }}>
+              <input
+                type="checkbox"
+                checked={prefs.alert_signins !== "off"}
+                onChange={(e) => onChange({ alert_signins: e.target.checked ? "on" : "off" })}
+              />{" "}
+              Tell me when someone signs in or a new device appears
+            </label>
+            <label style={{ display: "block", margin: "8px 0" }}>
+              <input
+                type="checkbox"
+                checked={prefs.alert_changes !== "off"}
+                onChange={(e) => onChange({ alert_changes: e.target.checked ? "on" : "off" })}
+              />{" "}
+              Tell me when someone else changes something
+            </label>
+            <p className="muted small">
+              A passkey that may have been copied is always reported.
+            </p>
+          </div>
+        )}
+
         {props.isAdmin && <Backups />}
 
         {/* Which build you are looking at.

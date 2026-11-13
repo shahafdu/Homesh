@@ -208,6 +208,21 @@ and the apps beside it, newest first, and a dot says some are unread. Opening
 it marks them read. A message links to the page it names; one from an app that
 is no longer set up shows without a link.
 
+**Alerts for administrators** — administrators' phones are also told when
+someone signs in, adds or removes a passkey, signs a device in with a code,
+joins by invitation, or when a screen asks to be paired; when sign-in is
+failing repeatedly or something is knocking too often; and when someone *else*
+changes something (playlists, song details, shared links, accounts, folders,
+rooms, backups, assistant settings). Changes arrive as one message per person
+per ten minutes, saying how many of each kind, never what they were; you are
+never told about your own. Settings has two switches for these. A passkey that
+may have been copied is always reported.
+
+What it cannot tell you: a device merely joining the house network or the
+tailnet, or opening the sign-in page and leaving, is invisible to Homesh,
+because every caller reaches it looking like the same address. Your router, or
+Tailscale's device approval, is the place for that.
+
 ---
 
 ## 7. Adding a folder of your own

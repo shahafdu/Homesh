@@ -160,3 +160,6 @@ def audit(conn: Connection, event: str, user_id: UUID | None, detail: dict, ip: 
             "ip": _as_inet(ip),
         },
     )
+    from . import alerts
+
+    alerts.on_audit(event, user_id, detail)

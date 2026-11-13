@@ -151,7 +151,7 @@ to one goes to the other.
 | 8 · Optional transcode | ❌ overtaken | It was never optional for this library — see §3.2.1 of ARCHITECTURE for what actually happened |
 | 9 · Public release | 🔨 | Public since August. Docs current as of 14 September 2026; screenshots outstanding |
 
-**Tests: 820 passing, and the web unit tests (`npm test`). Migrations: 027. Lint: clean. CI green.**
+**Tests: 852 passing, and the web unit tests (`npm test`). Migrations: 027. Lint: clean. CI green.**
 
 ### AI design decisions — agreed, not yet built
 
@@ -314,7 +314,7 @@ server/app/       config, db, main, auth, security, people, access, prefs, libra
                   thumbs, sharing, playlists, zones, denon, renderers, discovery,
                   occupancy, lanaddr, upkeep, backups, crypt, offsite, standby,
                   thumbsync, signin_code, throttle, audiocache, ai, ai_api,
-                  notify, notify_api (the mailbox phones read),
+                  notify, notify_api (the mailbox phones read), alerts (what administrators are told),
                   webguard (headers, cross-origin writes, log redaction),
                   childenv (the environment child programs get),
                   sources/{base,local,gdrive}

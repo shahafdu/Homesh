@@ -111,6 +111,10 @@ def hit(bucket: str, key: str, limit: Limit, now: datetime | None = None) -> Non
                 "%s: too many attempts (%d in %s) -- refusing for now",
                 bucket, len(tried), limit.per,
             )
+            # Lazy: this module must not pull the database in at import.
+            from . import alerts
+
+            alerts.on_throttle(bucket, limit.per)
         raise HTTPException(
             status.HTTP_429_TOO_MANY_REQUESTS,
             "too many attempts -- wait a few minutes",

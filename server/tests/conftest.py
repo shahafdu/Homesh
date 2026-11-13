@@ -87,11 +87,13 @@ def _schema():
 def _fresh_attempt_limits():
     """Attempt limits are counted in memory for the life of the process, so one
     test's hammering would refuse the next test's first knock."""
-    from app import throttle
+    from app import alerts, throttle
 
     throttle.clear()
+    alerts.clear()
     yield
     throttle.clear()
+    alerts.clear()
 
 
 @pytest.fixture

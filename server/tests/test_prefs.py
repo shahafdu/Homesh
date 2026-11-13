@@ -14,6 +14,8 @@ def test_defaults_when_unset(client):
         # Keeping to the kind you opened, which is what it did before there was
         # a choice about it.
         "viewer_scope": "kind",
+        "alert_signins": "on",
+        "alert_changes": "on",
     }
 
 

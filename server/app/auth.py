@@ -540,7 +540,7 @@ async def login_complete(body: CompleteBody, request: Request, response: Respons
             {"sc": verified.new_sign_count, "id": str(cred_row_id)},
         )
         token = create_session(conn, user_id, body.device_label)
-        audit(conn, "auth.login", user_id, {}, ip)
+        audit(conn, "auth.login", user_id, {"label": body.device_label}, ip)
 
     # Somebody who got in is not left carrying the count of their own fumbles.
     throttle.forgive("sign-in", who)

@@ -35,6 +35,9 @@ ALLOWED: dict[str, tuple[frozenset[str], str]] = {
     # a folder of holiday photographs is one thing, and a folder holding a film,
     # its subtitles and the photographs from the same weekend is another.
     "viewer_scope": (frozenset({"kind", "all"}), "kind"),
+    # Alerts to an administrator's phone. Only read for administrators.
+    "alert_signins": (frozenset({"on", "off"}), "on"),
+    "alert_changes": (frozenset({"on", "off"}), "on"),
 }
 
 DEFAULTS = {k: default for k, (_, default) in ALLOWED.items()}
@@ -45,6 +48,8 @@ class PrefsUpdate(BaseModel):
     appearance: str | None = None
     view: str | None = None
     viewer_scope: str | None = None
+    alert_signins: str | None = None
+    alert_changes: str | None = None
 
 
 def _merged(raw: dict) -> dict:

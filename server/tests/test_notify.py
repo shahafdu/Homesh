@@ -527,9 +527,10 @@ class TestForAPerson:
                 c.post("/api/notify/test")
             assert c.post("/api/notify/test").status_code == 429
             listed = c.get("/api/notify/messages").json()
-        assert listed[0]["sender"] == "Homesh"
-        assert listed[0]["title"] == "Notifications are working"
-        assert listed[0]["path"] == "/"
+        # The refusal above also tells the administrator (alerts.on_throttle).
+        sent = [m for m in listed if m["title"] == "Notifications are working"]
+        assert sent and sent[0]["sender"] == "Homesh"
+        assert sent[0]["path"] == "/"
 
     def test_making_claims_is_limited(self, db, user):
         with _as(user) as c:

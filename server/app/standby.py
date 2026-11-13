@@ -431,7 +431,7 @@ async def replay(op: dict) -> tuple[str, int | None, str]:
         # Identity handed over in the ASGI scope, which only code in this process
         # can set. Nothing arriving over the network can put it there.
         scope = dict(scope)
-        scope["state"] = {**scope.get("state", {}), "replay_user": user}
+        scope["state"] = {**scope.get("state", {}), "replay_user": user, "from_standby": True}
         await app(scope, receive, send)
 
     transport = httpx.ASGITransport(app=as_them)

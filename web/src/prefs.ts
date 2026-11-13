@@ -20,6 +20,9 @@ export interface Prefs {
   // camelCase name would be dropped by the server's allow-list without a
   // word said, and the setting would simply never stick.
   viewer_scope: ViewerScope;
+  // Alerts to an administrator's phone; only read for administrators.
+  alert_signins: "on" | "off";
+  alert_changes: "on" | "off";
 }
 
 export const DEFAULT_PREFS: Prefs = {
@@ -27,6 +30,8 @@ export const DEFAULT_PREFS: Prefs = {
   appearance: "auto",
   view: "details",
   viewer_scope: "kind",
+  alert_signins: "on",
+  alert_changes: "on",
 };
 
 export const PALETTES: { id: Palette; name: string; blurb: string; swatch: string[] }[] = [

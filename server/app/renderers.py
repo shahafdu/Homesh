@@ -209,6 +209,9 @@ async def pair_begin(body: PairBegin, request: Request) -> dict:
             },
         )
 
+    from . import alerts
+
+    alerts.on_pairing_started()
     return {
         "code": code,
         "poll_token": poll_token,
@@ -362,6 +365,9 @@ async def pair_claim(body: PairClaim, user: CurrentUser = Depends(require_user))
                 body=AudienceUpdate(audience=body.audience, users=body.grant_to),
             )
 
+    from . import alerts
+
+    alerts.on_paired(user.id)
     return {"renderer_id": str(renderer_id), "name": body.name}
 
 
