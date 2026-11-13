@@ -115,7 +115,9 @@ def _admins(pref: str | None, *, skip: UUID | None = None) -> list[UUID]:
     return out
 
 
-def _tell(title: str, body: str, tag: str | None, pref: str | None, skip: UUID | None = None) -> None:
+def _tell(
+    title: str, body: str, tag: str | None, pref: str | None, skip: UUID | None = None
+) -> None:
     for uid in _admins(pref, skip=skip):
         notify.send(
             sender=notify.HOMESH, to=uid, title=title[:80], body=body[:300],
@@ -195,7 +197,8 @@ def on_throttle(bucket: str, window: timedelta) -> None:
     this narrows it to once per door per window."""
     try:
         if _due(f"throttle:{bucket}", window.total_seconds()):
-            _tell("Too many attempts", f"Somebody is knocking too often at {DOORS.get(bucket, 'a door')}.",
+            door = DOORS.get(bucket, "a door")
+            _tell("Too many attempts", f"Somebody is knocking too often at {door}.",
                   f"throttle-{bucket}"[:64], SIGNINS)
     except Exception:  # noqa: BLE001
         log.exception("could not raise a rate-limit alert")
