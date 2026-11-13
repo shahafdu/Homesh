@@ -94,6 +94,12 @@ class Settings(BaseSettings):
     # one particular tailnet, and this repository is public.
     phone_apps: str = ""
 
+    # Who may post to the notification mailbox: `Name|key` pairs separated by
+    # ';', each name one of the PHONE_APPS. The key is what identifies the
+    # sender -- a request never names itself -- so it lives here, beside the
+    # other secrets, and never in a table. See main.notify_senders.
+    notify_senders: str = ""
+
     media_url_ttl_minutes: int = Field(default=5, ge=1, le=60)
 
     # Receivers pull for the length of a whole track or film, so the short browser

@@ -48,6 +48,8 @@ home.
 | Playlists — make, rename, reorder, add, remove, copy, share | ✅ kept, and carried back to the PC |
 | Your own settings — colour, appearance, view | ✅ kept, and carried back |
 | Accounts, invitations, who may see what, rooms, folders, backups | ❌ refused on the standby |
+| Notifications posted by an app beside Homesh | ✅ the standby keeps a mailbox of its own, and phones read it there |
+| Turning notifications on or off for a phone | ❌ done on the PC; the phone list arrives with its backup |
 
 ## How changes made on the standby get back
 
@@ -88,7 +90,9 @@ refreshed out from under somebody browsing it with the PC off.
 
 **What stays on the standby and is never replaced.** Its own passkeys (a passkey
 belongs to an address, and the standby has a different one), who is signed in,
-and the list of changes not yet carried back. Everything else is replaced from
+the list of changes not yet carried back, and the notification mailbox -- a
+message posted to the standby is delivered from there and expires, and is never
+copied to the PC. Everything else is replaced from
 the PC's backup — and only once that backup already contains every change the
 standby made, so an hourly refresh can never throw away something you did.
 

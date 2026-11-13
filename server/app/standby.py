@@ -53,7 +53,11 @@ OUTBOX_PREFIX = "outbox/"
 # standby kept its own -- which meant setting every device up twice. They now
 # belong to the tailnet's domain, which both machines sit under, so the PC's
 # passkeys arrive with its backup and work here as they are.
-STANDBY_LOCAL = ("auth_sessions", "device_links", "outbox_ops")
+#
+# The notification mailbox is the standby's own as well: apps beside Homesh post
+# to whichever machine is up, and a message posted here belongs to the phones
+# that read it here. Its ids are per machine, which the phones allow for.
+STANDBY_LOCAL = ("auth_sessions", "device_links", "outbox_ops", "notify_messages")
 
 
 def role() -> str:
@@ -80,7 +84,12 @@ _UUID = r"[0-9a-fA-F-]{36}"
 
 # Handled by the standby itself and not carried back. Signing in there is about
 # being there.
-_LOCAL = [re.compile(r"^/api/auth/")]
+#
+# Posting to the mailbox and marking messages read are the same: the standby's
+# mailbox is its own (STANDBY_LOCAL). Registering and removing phones is not --
+# phones are registered on the PC and arrive here with its backup, so one token
+# works on both -- and stays refused by the default rule, as does the test.
+_LOCAL = [re.compile(r"^/api/auth/"), re.compile(r"^/api/notify/(send|messages/read)$")]
 
 # ...except making and removing passkeys. The standby's passkeys are the PC's,
 # restored with every backup, so one made here would vanish within the hour and

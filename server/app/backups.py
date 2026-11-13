@@ -466,9 +466,12 @@ def restore(name: str, keep: tuple[str, ...] = ()) -> dict:
                 {"t": table},
             ).first()
             condition = " WHERE user_id IN (SELECT id FROM users)" if owned else ""
+            # OVERRIDING SYSTEM VALUE puts kept ids back as they were in a table
+            # whose id is GENERATED ALWAYS (the mailbox), which refuses them
+            # otherwise; it changes nothing for a table without one.
             conn.execute(
                 text(
-                    f'INSERT INTO public."{table}" '  # noqa: S608 - fixed names
+                    f'INSERT INTO public."{table}" OVERRIDING SYSTEM VALUE '  # noqa: S608 - fixed names
                     f'SELECT * FROM "keep_{table}"{condition}'
                 )
             )
@@ -484,15 +487,28 @@ def restore(name: str, keep: tuple[str, ...] = ()) -> dict:
                 "FROM information_schema.columns WHERE table_schema = 'public'"
             )
         ).all()
+        #
+        # Never moved backwards, though. A phone remembers the last message id
+        # it had from each machine, and on the standby the mailbox is kept
+        # across restores: emptied by expiry and then restored, it would start
+        # again from 1 and the phone would skip everything below its cursor.
+        # A sequence left ahead of the table costs a gap in the ids, nothing else.
         for table, column, seq in serials:
             if seq is None:
                 continue
+            # Read from the sequence itself: pg_sequence_last_value says NULL
+            # for one that was set and not yet used, which is exactly the state
+            # the previous restore left it in.
+            last, called = conn.execute(
+                text(f"SELECT last_value, is_called FROM {seq}")  # noqa: S608 - from the catalog
+            ).one()
+            ahead = last if called else last - 1
             conn.execute(
                 text(
-                    f'SELECT setval(:seq, COALESCE((SELECT max("{column}") '  # noqa: S608 - from the catalog
-                    f'FROM public."{table}"), 0) + 1, false)'
+                    f'SELECT setval(:seq, GREATEST(COALESCE((SELECT max("{column}") '  # noqa: S608 - from the catalog
+                    f'FROM public."{table}"), 0), :ahead) + 1, false)'
                 ),
-                {"seq": seq},
+                {"seq": seq, "ahead": ahead},
             )
 
     total = sum(counts.values())

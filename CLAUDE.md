@@ -151,7 +151,7 @@ to one goes to the other.
 | 8 · Optional transcode | ❌ overtaken | It was never optional for this library — see §3.2.1 of ARCHITECTURE for what actually happened |
 | 9 · Public release | 🔨 | Public since August. Docs current as of 14 September 2026; screenshots outstanding |
 
-**Tests: 720 passing. Migrations: 026. Lint: clean. CI green.**
+**Tests: 812 passing. Migrations: 027. Lint: clean. CI green.**
 
 ### AI design decisions — agreed, not yet built
 
@@ -314,10 +314,11 @@ server/app/       config, db, main, auth, security, people, access, prefs, libra
                   thumbs, sharing, playlists, zones, denon, renderers, discovery,
                   occupancy, lanaddr, upkeep, backups, crypt, offsite, standby,
                   thumbsync, signin_code, throttle, audiocache, ai, ai_api,
+                  notify, notify_api (the mailbox phones read),
                   webguard (headers, cross-origin writes, log redaction),
                   childenv (the environment child programs get),
                   sources/{base,local,gdrive}
-server/migrations 026 of them, plain SQL, tracked in `schema_migrations` and applied at
+server/migrations 027 of them, plain SQL, tracked in `schema_migrations` and applied at
                   startup. `ls server/migrations` is the list
 server/tests/     one module per surface
 web/src/          App, Browser, Viewer, Player, Slideshow, Zones, Playlists, People,

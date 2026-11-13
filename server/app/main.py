@@ -30,6 +30,7 @@ from .discovery import serve as serve_discovery
 from .documents import router as documents_router
 from .library import register_sources
 from .library import router as library_router
+from .notify_api import router as notify_router
 from .occupancy import refresh_loop as watch_receiver
 from .people import router as people_router
 from .playlists import router as playlists_router
@@ -126,6 +127,12 @@ async def lifespan(app: FastAPI):
 
     syncing = asyncio.create_task(sync_forever())
 
+    # The notification mailbox: "backups have stopped", and expired messages
+    # thrown away.
+    from .upkeep import mailbox_forever
+
+    mailbox = asyncio.create_task(mailbox_forever())
+
     # Answers "where is the server?" on the LAN, so a television never has to be
     # told an address with a remote control.
     finder = asyncio.create_task(serve_discovery())
@@ -141,7 +148,7 @@ async def lifespan(app: FastAPI):
 
     yield
 
-    for task in (upkeep, finder, watcher, address, syncing):
+    for task in (upkeep, finder, watcher, address, syncing, mailbox):
         task.cancel()
         with suppress(asyncio.CancelledError):
             await task
@@ -193,6 +200,7 @@ app.include_router(auth_router)
 app.include_router(backups_router)
 app.include_router(documents_router)
 app.include_router(library_router)
+app.include_router(notify_router)
 app.include_router(people_router)
 app.include_router(playlists_router)
 app.include_router(prefs_router)
@@ -383,6 +391,51 @@ def phone_apps(configured: str) -> list[dict[str, str | bool | None]]:
                 app["same"] = True
             apps.append(app)
     return apps
+
+
+# Entries of NOTIFY_SENDERS already reported as skipped, by position, so a
+# typo is one line in the log rather than one per message.
+_senders_reported: set[tuple[int, str]] = set()
+
+# Shorter than this and a key is guessable in a way the rate limit alone does
+# not make up for. secrets.token_urlsafe(32) gives 43.
+MIN_SENDER_KEY = 32
+
+
+def notify_senders(configured: str, apps: list[dict]) -> dict[str, str]:
+    """name -> key. An entry is kept only if its key is at least 32 characters
+    and its name is an app in PHONE_APPS. Anything else is skipped and logged
+    once, by position ("entry 2"), never by content.
+
+    The name must be an app the phone knows, because a message's path is
+    opened inside the app of that name: a sender with no app has nowhere to
+    send anyone. "Homesh" is the server's own and cannot be configured, so no
+    key can post as Homesh. A key given twice is dropped the second time,
+    since it could no longer say which app is posting.
+    """
+    from .notify import HOMESH
+
+    known = {str(app["name"]) for app in apps}
+    out: dict[str, str] = {}
+    for position, entry in enumerate(configured.split(";"), start=1):
+        if not entry.strip():
+            continue
+        name, _, key = (part.strip() for part in entry.partition("|"))
+        if name.casefold() == HOMESH.casefold():
+            why = "the name is reserved for Homesh itself"
+        elif name not in known:
+            why = "the name is not one of PHONE_APPS"
+        elif len(key) < MIN_SENDER_KEY:
+            why = f"the key is shorter than {MIN_SENDER_KEY} characters"
+        elif name in out or key in out.values():
+            why = "the name or the key is given twice"
+        else:
+            out[name] = key
+            continue
+        if (position, why) not in _senders_reported:
+            _senders_reported.add((position, why))
+            log.warning("NOTIFY_SENDERS entry %d skipped: %s", position, why)
+    return out
 
 
 # Successes are kept; a failure is retried after a few minutes. Kept for good,

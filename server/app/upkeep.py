@@ -330,6 +330,78 @@ async def sync_forever() -> None:
         await asyncio.sleep(SYNC_EVERY.total_seconds())
 
 
+# -- The mailbox ---------------------------------------------------------------
+
+# Hourly backups, so a day without one is a day and two hours of nothing: room
+# for a machine that slept through a night, not for one that has stopped.
+BACKUPS_STALE = timedelta(hours=26)
+MAILBOX_EVERY = timedelta(hours=1)
+
+# The day the "backups have stopped" message last went out. In memory: losing
+# it on a restart costs one extra message, and the restart itself is often the
+# thing an administrator wants to hear about.
+_backup_alert_day: str | None = None
+_pruned_day: str | None = None
+
+
+def backups_stale(backups: list, now: datetime) -> bool:
+    """True when the newest regular backup is older than BACKUPS_STALE.
+
+    A shelf with none at all says nothing: a server that has never taken one
+    is a fresh install, and the first is minutes away.
+    """
+    from .backups import BEFORE_RESTORE
+
+    regular = [b for b in backups if BEFORE_RESTORE not in b.name]
+    if not regular:
+        return False
+    return now - max(b.taken_at for b in regular) > BACKUPS_STALE
+
+
+def check_backups(now: datetime | None = None) -> bool:
+    """Tell the administrators, at most once a day, that backups have stopped."""
+    global _backup_alert_day
+    from . import notify
+    from .backups import list_backups
+
+    now = now or datetime.now(UTC)
+    day = now.date().isoformat()
+    if _backup_alert_day == day or not backups_stale(list_backups(), now):
+        return False
+    notify.send(sender=notify.HOMESH, to="admins", title="Backups have stopped",
+                path="/", tag="backup")
+    _backup_alert_day = day
+    return True
+
+
+async def mailbox_forever() -> None:
+    """Hourly: say so when backups stop; daily: empty out what has expired.
+
+    On both machines -- the standby's mailbox is its own -- except the backup
+    check, which belongs to the machine that takes them.
+    """
+    global _pruned_day
+    from . import notify
+    from .standby import is_standby
+
+    await asyncio.sleep(FIRST_SWEEP_DELAY.total_seconds())
+    while True:
+        try:
+            if not is_standby():
+                await asyncio.to_thread(check_backups)
+            today = datetime.now(UTC).date().isoformat()
+            if _pruned_day != today:
+                gone = await asyncio.to_thread(notify.prune)
+                _pruned_day = today
+                if gone:
+                    log.info("mailbox: %d expired message(s) and claim(s) removed", gone)
+        except asyncio.CancelledError:
+            raise
+        except Exception:  # noqa: BLE001 - the next hour tries again
+            log.exception("mailbox upkeep failed")
+        await asyncio.sleep(MAILBOX_EVERY.total_seconds())
+
+
 def next_due(interval_hours: int) -> datetime | None:
     """When the earliest source becomes due, for showing in the UI."""
     if interval_hours <= 0:

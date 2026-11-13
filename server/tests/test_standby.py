@@ -533,3 +533,27 @@ class TestTheStandbyKeepsWhatIsItsOwn:
         backups.restore(taken.name, keep=standby.STANDBY_LOCAL)
         with db.connect() as conn:
             assert conn.execute(text("SELECT count(*) FROM auth_sessions")).scalar_one() == 1
+
+    def test_the_standbys_own_messages_survive_a_restore(self, db, user, bucket):
+        """Apps post to the standby while the PC is off; its hourly restore
+        must not throw those messages away, nor hand out an id again."""
+        from app import backups, notify
+
+        taken = backups.make_backup()
+        notify.send(sender="AppOne", to=user.handle, title="Posted on the standby")
+        with db.connect() as conn:
+            first = conn.execute(text("SELECT max(id) FROM notify_messages")).scalar_one()
+
+        backups.restore(taken.name, keep=standby.STANDBY_LOCAL)
+        with db.connect() as conn:
+            kept = conn.execute(text("SELECT id, title FROM notify_messages")).all()
+        assert [tuple(r) for r in kept] == [(first, "Posted on the standby")]
+
+        # Emptied by expiry and restored again: the ids still go forward, so a
+        # phone's cursor does not skip what comes next.
+        with db.begin() as conn:
+            conn.execute(text("DELETE FROM notify_messages"))
+        backups.restore(taken.name, keep=standby.STANDBY_LOCAL)
+        notify.send(sender="AppOne", to=user.handle, title="Next")
+        with db.connect() as conn:
+            assert conn.execute(text("SELECT max(id) FROM notify_messages")).scalar_one() > first
