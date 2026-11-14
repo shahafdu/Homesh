@@ -198,8 +198,9 @@ The gear icon, top right.
 Both are stored on your account, not in the browser, so you set them once.
 
 **Notifications on your phone** — lists the phones that get Homesh's messages
-as notifications. Open Settings inside the Homesh Connect app and press
-*Turn on for this phone*; the app asks you to confirm. *Send a test* checks it
+as notifications. In Homesh Connect press *Turn on notifications*: Android asks
+for permission, then Homesh opens here asking for the phone's name. Press
+*Continue*, and the app asks you to confirm. *Send a test* checks it
 works, and *Remove* switches a phone off at once. These buttons are disabled
 while the standby is answering, because phones are changed on the PC.
 

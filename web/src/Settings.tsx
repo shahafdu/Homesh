@@ -1,5 +1,5 @@
 import { useLockScroll } from "./useLockScroll";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { addPasskey, listPasskeys, passkeysSupported, removePasskey, type Passkey } from "./auth";
 import { formatDate } from "./library";
 import { PALETTES, type Appearance, type Palette, type Prefs } from "./prefs";
@@ -45,6 +45,8 @@ export default function Settings(props: {
   isAdmin?: boolean;
   /** The standby refuses changes to phones; the buttons say so instead. */
   onStandby?: boolean;
+  /** Opened from Homesh Connect to turn notifications on for that phone. */
+  turnOnPhone?: boolean;
 }) {
   useLockScroll();
   const { prefs, onChange, onLinkDevice, onClose } = props;
@@ -117,6 +119,7 @@ export default function Settings(props: {
 
         <PhoneNotifications
           onStandby={!!props.onStandby}
+          startAsking={!!props.turnOnPhone}
           alerts={props.isAdmin ? { prefs, onChange } : null}
         />
 
@@ -503,10 +506,20 @@ function Backups() {
 // only for administrators: nobody else is ever sent an alert.
 type AlertSwitches = { prefs: Prefs; onChange: (patch: Partial<Prefs>) => void } | null;
 
-function PhoneNotifications(props: { onStandby: boolean; alerts: AlertSwitches }) {
+function PhoneNotifications(props: {
+  onStandby: boolean;
+  alerts: AlertSwitches;
+  startAsking?: boolean;
+}) {
   const [phones, setPhones] = useState<Phone[] | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [asking, setAsking] = useState(false);
+  const [asking, setAsking] = useState(!!props.startAsking && !props.onStandby);
+  // Arriving from Homesh Connect: the block is the reason the page opened, so
+  // it is brought into view rather than left below Colour and Passkeys.
+  const block = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (props.startAsking) block.current?.scrollIntoView({ block: "start" });
+  }, [props.startAsking]);
   const [label, setLabel] = useState("My phone");
   const [busy, setBusy] = useState<"link" | "test" | null>(null);
   const [sure, setSure] = useState<string | null>(null);
@@ -577,7 +590,7 @@ function PhoneNotifications(props: { onStandby: boolean; alerts: AlertSwitches }
   const off = props.onStandby;
 
   return (
-    <div className="setting notify-setting">
+    <div className="setting notify-setting" ref={block}>
       <h3>Notifications on your phone</h3>
       <p>
         Homesh Connect can show a notification when Homesh or one of your other apps has something

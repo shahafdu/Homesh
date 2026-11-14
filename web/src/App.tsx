@@ -120,6 +120,16 @@ export default function App() {
       .catch(() => undefined);
   }, [signedIn]);
 
+  // Homesh Connect's "Turn on notifications" opens /#notifications: Settings,
+  // at the phone block, already asking for this phone's name. Kept until the
+  // person has signed in, so a sign-in on the way does not lose it.
+  const [turnOnAsked, setTurnOnAsked] = useState(() => window.location.hash === "#notifications");
+  useEffect(() => {
+    if (!signedIn || !turnOnAsked) return;
+    setShowSettings(true);
+    window.history.replaceState(null, "", window.location.pathname + window.location.search);
+  }, [signedIn, turnOnAsked]);
+
   const run = async (fn: () => Promise<void>) => {
     setBusy(true);
     setError(null);
@@ -357,12 +367,16 @@ export default function App() {
             prefs={prefs}
             isAdmin={state.user.is_admin}
             onStandby={health?.role === "standby"}
+            turnOnPhone={turnOnAsked}
             onChange={(patch) => void changePrefs(patch)}
             onLinkDevice={() => {
               setShowSettings(false);
               setLinking(true);
             }}
-            onClose={() => setShowSettings(false)}
+            onClose={() => {
+              setShowSettings(false);
+              setTurnOnAsked(false);
+            }}
           />
         )}
 

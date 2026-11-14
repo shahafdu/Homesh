@@ -160,7 +160,12 @@ server; Homesh Connect shows them as Android notifications. Tapping one opens th
 app that sent it, on the page the message names. Nothing goes through Google's
 push service: the phone asks the server.
 
-**Turning it on.** In Homesh's settings, press "Turn on for this phone". The page
+**Turning it on.** Press "Turn on notifications" in the app. Android asks for
+permission there and then (or, if it was refused before, the app opens Android's
+notification page for it), and Homesh opens at Settings with the phone's name
+already being asked for: Homesh's own page is the only place you are signed in,
+so the single-use code can only be made there. Pressing "Turn on for this phone"
+in Homesh's settings does the same from the other end. The page
 makes a single-use code that lives two minutes and hands it to the app through a
 `homeshconnect://notify` link. The app honours the link only for an address it
 already holds for the PC, and only after you confirm. The code is exchanged for a

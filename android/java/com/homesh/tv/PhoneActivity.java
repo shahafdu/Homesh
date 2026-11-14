@@ -103,6 +103,8 @@ public final class PhoneActivity extends Activity {
     private Switch notifyLockScreen;
     private boolean settingSwitches;
     private static final int ASK_NOTIFICATIONS = 11;
+    private static final int ASK_BEFORE_TURN_ON = 12;
+    private static final String POST_NOTIFICATIONS = "android.permission.POST_NOTIFICATIONS";
 
     /** What the server offered at the last check, once there is something newer. */
     private PhoneUpdates.Offer newer;
@@ -286,20 +288,47 @@ public final class PhoneActivity extends Activity {
         settingSwitches = false;
     }
 
+    private boolean mayNotify() {
+        return Build.VERSION.SDK_INT < 33
+                || checkSelfPermission(POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED;
+    }
+
     /**
-     * Turning it on starts in Homesh's own settings, in the tab: only there is
-     * the person signed in, and only there can a single-use code be made. The
-     * page then sends it back as a homeshconnect:// link.
+     * Android's own question comes first, at the button that was pressed --
+     * that is what the person expects to see. Then Homesh's settings, in the
+     * tab: only there is the person signed in, and only there can a single-use
+     * code be made. The page opens straight at the phone block (#notifications)
+     * and sends the code back as a homeshconnect:// link.
      */
     private void openNotificationSettings() {
+        if (!mayNotify()) {
+            requestPermissions(new String[] {POST_NOTIFICATIONS}, ASK_BEFORE_TURN_ON);
+            return;
+        }
         String at = reachedAt != null ? reachedAt : Vault.get(this, KEY_ORIGIN);
         if (at == null) at = lan();
         if (at == null) {
-            message.setText("Find your server first, then open Homesh's settings.");
+            message.setText("Find your server first, then turn notifications on.");
             return;
         }
-        openAt(at, "");
-        message.setText("Open Settings in Homesh, then press Turn on for this phone.");
+        openAt(at, "/#notifications");
+        message.setText("In Homesh, name this phone and press Continue.");
+    }
+
+    /** Asked before and refused: Android no longer asks, so open its page for this app. */
+    private void openAndroidNotificationPage() {
+        message.setText("Notifications are blocked for Homesh Connect. Allow them here, "
+                + "then press Turn on notifications again.");
+        try {
+            Intent i = Build.VERSION.SDK_INT >= 26
+                    ? new Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                            .putExtra(Settings.EXTRA_APP_PACKAGE, getPackageName())
+                    : new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                            Uri.parse("package:" + getPackageName()));
+            startActivity(i);
+        } catch (RuntimeException e) {
+            Log.i(TAG, "no notification settings screen to open");
+        }
     }
 
     private void setInstant(boolean on) {
@@ -360,10 +389,10 @@ public final class PhoneActivity extends Activity {
     }
 
     private void turnOn(String address, String claim) {
-        // Asked for now, at the moment it is first needed.
-        if (Build.VERSION.SDK_INT >= 33) {
-            requestPermissions(new String[] {"android.permission.POST_NOTIFICATIONS"},
-                    ASK_NOTIFICATIONS);
+        // Normally granted already, by the button that started this. Asked here
+        // too for a link that arrived some other way.
+        if (!mayNotify()) {
+            requestPermissions(new String[] {POST_NOTIFICATIONS}, ASK_NOTIFICATIONS);
         }
         message.setText("Turning on notifications...");
         new Thread(() -> {
@@ -447,6 +476,12 @@ public final class PhoneActivity extends Activity {
     @Override
     public void onRequestPermissionsResult(int code, String[] permissions, int[] results) {
         super.onRequestPermissionsResult(code, permissions, results);
+        if (code == ASK_BEFORE_TURN_ON) {
+            boolean granted = results.length > 0 && results[0] == PackageManager.PERMISSION_GRANTED;
+            if (granted) openNotificationSettings();
+            else openAndroidNotificationPage();
+            return;
+        }
         if (code == ASK_NOTIFICATIONS && results.length > 0
                 && results[0] != PackageManager.PERMISSION_GRANTED) {
             message.setText("Notifications are blocked for Homesh Connect. Allow them in "
