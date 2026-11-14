@@ -15,25 +15,94 @@ from app.main import app
 from app.sources.local import LocalConnector
 
 # Every route that legitimately changes state. None of these touch media files:
-# auth manages credentials, prefs writes a JSON column, scan reads the filesystem
-# and writes only catalog rows.
+# they write catalog rows, accounts, playlists, rooms, backups or the
+# notification mailbox, and the media volume is mounted read-only beneath them.
 ALLOWED_MUTATING_ROUTES = {
-    ("POST", "/api/auth/register/begin"),
-    ("POST", "/api/auth/register/complete"),
+    ("DELETE", "/api/auth/passkeys/{credential_id}"),
+    ("DELETE", "/api/backups/{name}"),
+    ("DELETE", "/api/items/{item_id}/drive-link"),
+    ("DELETE", "/api/notify/devices/{device_id}"),
+    ("DELETE", "/api/people/invites/{code}"),
+    ("DELETE", "/api/people/{user_id}"),
+    ("DELETE", "/api/playlists/{playlist_id}"),
+    ("DELETE", "/api/playlists/{playlist_id}/items/{entry_id}"),
+    ("DELETE", "/api/sources/{source_id}"),
+    ("DELETE", "/api/zones/{zone_id}"),
+    ("POST", "/api/auth/devices/claim"),
+    ("POST", "/api/auth/devices/link"),
     ("POST", "/api/auth/login/begin"),
     ("POST", "/api/auth/login/complete"),
     ("POST", "/api/auth/logout"),
-    ("POST", "/api/sources/{source_id}/scan"),
-    ("PUT", "/api/prefs"),
-    ("PUT", "/api/people/{user_id}/rules"),
-    ("DELETE", "/api/people/{user_id}"),
+    ("POST", "/api/auth/passkeys/begin"),
+    ("POST", "/api/auth/passkeys/complete"),
+    ("POST", "/api/auth/register/begin"),
+    ("POST", "/api/auth/register/complete"),
+    ("POST", "/api/backups"),
+    ("POST", "/api/backups/offsite/{name}"),
+    ("POST", "/api/backups/{name}/restore"),
+    ("POST", "/api/items/{item_id}/drive-link"),
+    ("POST", "/api/notify/devices"),
+    ("POST", "/api/notify/devices/claim"),
+    ("POST", "/api/notify/messages/read"),
+    ("POST", "/api/notify/send"),
+    ("POST", "/api/notify/test"),
+    ("POST", "/api/people/invites"),
+    ("POST", "/api/playlists"),
+    ("POST", "/api/playlists/import/{source_id}"),
+    ("POST", "/api/playlists/{playlist_id}/copy"),
+    ("POST", "/api/playlists/{playlist_id}/items"),
+    ("POST", "/api/renderers/crash"),
     ("POST", "/api/renderers/pair/begin"),
     ("POST", "/api/renderers/pair/claim"),
+    ("POST", "/api/sources/discover"),
+    ("POST", "/api/sources/{source_id}/scan"),
+    ("POST", "/api/videos/{item_id}/conversion"),
     ("POST", "/api/zones"),
+    ("POST", "/api/zones/{zone_id}/jump"),
+    ("POST", "/api/zones/{zone_id}/next"),
+    ("POST", "/api/zones/{zone_id}/pause"),
     ("POST", "/api/zones/{zone_id}/play"),
+    ("POST", "/api/zones/{zone_id}/previous"),
+    ("POST", "/api/zones/{zone_id}/resume"),
+    ("POST", "/api/zones/{zone_id}/seek"),
+    ("POST", "/api/zones/{zone_id}/shuffle"),
+    ("POST", "/api/zones/{zone_id}/slideshow"),
     ("POST", "/api/zones/{zone_id}/stop"),
     ("POST", "/api/zones/{zone_id}/volume"),
+    ("PUT", "/api/people/audiences/folders/{source_id}"),
+    ("PUT", "/api/people/audiences/rooms/{zone_id}"),
+    ("PUT", "/api/people/{user_id}/admin"),
+    ("PUT", "/api/people/{user_id}/rules"),
+    ("PUT", "/api/playlists/{playlist_id}"),
+    ("PUT", "/api/playlists/{playlist_id}/order"),
+    ("PUT", "/api/playlists/{playlist_id}/share"),
+    ("PUT", "/api/prefs"),
+    ("PUT", "/api/zones/{zone_id}"),
 }
+
+
+def mutating_routes() -> set[tuple[str, str]]:
+    """Every (method, path) that is not a read, however the router nests it.
+
+    `app.routes` alone is not enough: this FastAPI keeps each included router
+    as one lazy entry there, so walking it saw 22 entries and 15 writes while
+    the server had 60, and every write endpoint added since slipped past. The
+    OpenAPI schema lists the routes of included routers in full; the top-level
+    walk adds those hidden from the schema.
+    """
+    found = set()
+    for path, ops in app.openapi()["paths"].items():
+        for method in ops:
+            if method.upper() not in {"GET", "HEAD", "OPTIONS"}:
+                found.add((method.upper(), path))
+    for route in app.routes:
+        methods = getattr(route, "methods", set()) or set()
+        path = getattr(route, "path", None)
+        if path is None:
+            continue
+        for method in methods - {"GET", "HEAD", "OPTIONS"}:
+            found.add((method, path))
+    return found
 
 
 def test_no_unexpected_mutating_routes():
@@ -42,14 +111,16 @@ def test_no_unexpected_mutating_routes():
     If this fails because you added a route, confirm it cannot modify a source
     file, then add it to the allowlist above.
     """
-    found = set()
-    for route in app.routes:
-        methods = getattr(route, "methods", set()) or set()
-        for method in methods - {"GET", "HEAD", "OPTIONS"}:
-            found.add((method, route.path))
-
-    unexpected = found - ALLOWED_MUTATING_ROUTES
+    unexpected = mutating_routes() - ALLOWED_MUTATING_ROUTES
     assert not unexpected, f"unexpected mutating routes: {sorted(unexpected)}"
+
+
+def test_the_walk_sees_the_routers():
+    """The guard above went blind once without failing; this makes that loud."""
+    found = mutating_routes()
+    assert ("POST", "/api/zones/{zone_id}/pause") in found
+    assert ("POST", "/api/notify/send") in found
+    assert len(found) >= len(ALLOWED_MUTATING_ROUTES) - 5
 
 
 class TestConnectorSurface:
