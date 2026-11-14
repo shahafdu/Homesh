@@ -15,6 +15,7 @@ import android.view.Gravity;
 import android.view.View;
 import android.widget.Button;
 import android.widget.LinearLayout;
+import android.widget.ScrollView;
 import android.widget.Switch;
 import android.widget.TextView;
 
@@ -88,6 +89,12 @@ public final class PhoneActivity extends Activity {
     private Button searchAgain;
     private Button changeAddress;
     private LinearLayout root;
+    private LinearLayout home;
+    private LinearLayout settings;
+    private ScrollView settingsPage;
+    private TextView settingsNote;
+    private boolean settingsShown;
+    private static final String SAVED_SETTINGS = "settingsShown";
     /** One button per app in KEY_APPS, rebuilt whenever the PC lists them again. */
     private LinearLayout apps;
 
@@ -180,7 +187,7 @@ public final class PhoneActivity extends Activity {
         brand.setPadding(0, 0, 0, 24);
 
         message = new TextView(this);
-        message.setText("Looking for your server…");
+        say("Looking for your server…");
         message.setTextColor(Color.parseColor("#A79B8D"));
         message.setTextSize(16);
         message.setPadding(0, 0, 0, 28);
@@ -193,7 +200,12 @@ public final class PhoneActivity extends Activity {
         apps = new LinearLayout(this);
         apps.setOrientation(LinearLayout.VERTICAL);
         showApps();
-        searchAgain = button("Search on this network", v -> check(true, true));
+        // The search reports on the front page, where its result -- Homesh
+        // opening, or why not -- is shown.
+        searchAgain = button("Search on this network", v -> {
+            showSettings(false);
+            check(true, true);
+        });
         changeAddress = button("Change the address", v -> {
             // The setup screen is the television's too, and reads the address
             // from the plain store. Put there for as long as that screen is
@@ -232,21 +244,69 @@ public final class PhoneActivity extends Activity {
             showNotifyRow();
         });
 
-        root.addView(brand);
-        root.addView(message);
-        root.addView(openHomesh);
-        root.addView(openTailscale);
-        root.addView(apps);
-        root.addView(searchAgain);
-        root.addView(changeAddress);
-        root.addView(notifyState);
-        root.addView(notifyTurnOn);
-        root.addView(notifyInstant);
-        root.addView(notifyLockScreen);
-        root.addView(notifyTurnOff);
-        root.addView(about);
-        root.addView(updates);
+        // Two pages on one screen. The front holds only the apps -- the reason
+        // anyone opens this -- and the gear leads to everything that sets the
+        // app up. One screen rather than a second activity, so the server
+        // check, the status line and the notification state stay one object.
+        Button gear = button("⚙", v -> showSettings(true));
+        gear.setContentDescription("Settings");
+        gear.setTextSize(22);
+        LinearLayout top = new LinearLayout(this);
+        top.setOrientation(LinearLayout.HORIZONTAL);
+        top.setGravity(Gravity.CENTER_VERTICAL);
+        top.addView(brand, new LinearLayout.LayoutParams(0,
+                LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+        top.addView(gear);
+        brand.setPadding(0, 0, 0, 0);
+
+        home = new LinearLayout(this);
+        home.setOrientation(LinearLayout.VERTICAL);
+        home.setGravity(Gravity.CENTER_VERTICAL);
+        home.addView(top);
+        home.addView(message);
+        home.addView(openHomesh);
+        home.addView(apps);
+        home.addView(openTailscale);
+
+        Button back = button("←  Back", v -> showSettings(false));
+        TextView title = new TextView(this);
+        title.setText("Settings");
+        title.setTextColor(Color.parseColor("#F2EBE2"));
+        title.setTextSize(24);
+        title.setPadding(0, 24, 0, 8);
+        settingsNote = new TextView(this);
+        settingsNote.setTextColor(Color.parseColor("#A79B8D"));
+        settingsNote.setTextSize(14);
+        settingsNote.setPadding(0, 8, 0, 8);
+
+        settings = new LinearLayout(this);
+        settings.setOrientation(LinearLayout.VERTICAL);
+        settings.addView(back);
+        settings.addView(title);
+        settings.addView(settingsNote);
+        settings.addView(group("Server"));
+        settings.addView(searchAgain);
+        settings.addView(changeAddress);
+        settings.addView(group("Notifications"));
+        notifyState.setPadding(0, 0, 0, 8);
+        settings.addView(notifyState);
+        settings.addView(notifyTurnOn);
+        settings.addView(notifyInstant);
+        settings.addView(notifyLockScreen);
+        settings.addView(notifyTurnOff);
+        settings.addView(group("Updates"));
+        settings.addView(updates);
+        about.setPadding(0, 8, 0, 8);
+        settings.addView(about);
+        settingsPage = new ScrollView(this);
+        settingsPage.addView(settings);
+
+        root.addView(home, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.MATCH_PARENT));
+        root.addView(settingsPage, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.MATCH_PARENT));
         setContentView(root);
+        showSettings(state != null && state.getBoolean(SAVED_SETTINGS, false));
 
         showActions(false);
         showNotifyRow();
@@ -308,16 +368,16 @@ public final class PhoneActivity extends Activity {
         String at = reachedAt != null ? reachedAt : Vault.get(this, KEY_ORIGIN);
         if (at == null) at = lan();
         if (at == null) {
-            message.setText("Find your server first, then turn notifications on.");
+            say("Find your server first, then turn notifications on.");
             return;
         }
         openAt(at, "/#notifications");
-        message.setText("In Homesh, name this phone and press Continue.");
+        say("In Homesh, name this phone and press Continue.");
     }
 
     /** Asked before and refused: Android no longer asks, so open its page for this app. */
     private void openAndroidNotificationPage() {
-        message.setText("Notifications are blocked for Homesh Connect. Allow them here, "
+        say("Notifications are blocked for Homesh Connect. Allow them here, "
                 + "then press Turn on notifications again.");
         try {
             Intent i = Build.VERSION.SDK_INT >= 26
@@ -343,13 +403,13 @@ public final class PhoneActivity extends Activity {
             NotifyService.start(this);
         } catch (RuntimeException e) {
             Vault.put(this, Mailbox.KEY_INSTANT, null);
-            message.setText("Android would not start Instant. The 15-minute checks carry on.");
+            say("Android would not start Instant. The 15-minute checks carry on.");
             showNotifyRow();
             return;
         }
         // Android suspends the network for a sleeping app unless it is exempt
         // from battery saving. Say why, then open the screen where that is done.
-        message.setText("So messages arrive at once, allow Homesh Connect to run in the "
+        say("So messages arrive at once, allow Homesh Connect to run in the "
                 + "background. Without it Instant works while the phone is awake, and "
                 + "checks every 15 minutes while it sleeps.");
         try {
@@ -378,7 +438,7 @@ public final class PhoneActivity extends Activity {
         // address this app already holds for the PC.
         String address = NotifyRules.match(origin, lan(), Vault.get(this, KEY_ORIGIN));
         if (address == null || !NotifyRules.validClaim(claim)) {
-            message.setText("This link is not from your Homesh.");
+            say("This link is not from your Homesh.");
             return;
         }
         new AlertDialog.Builder(this)
@@ -394,12 +454,12 @@ public final class PhoneActivity extends Activity {
         if (!mayNotify()) {
             requestPermissions(new String[] {POST_NOTIFICATIONS}, ASK_NOTIFICATIONS);
         }
-        message.setText("Turning on notifications...");
+        say("Turning on notifications...");
         new Thread(() -> {
             String[] got = Mailbox.claim(address, claim);
             runOnUiThread(() -> {
                 if (got == null) {
-                    message.setText("That did not work. Try again from Homesh's settings.");
+                    say("That did not work. Try again from Homesh's settings.");
                     return;
                 }
                 Mailbox.turnOff(this, false);
@@ -407,7 +467,7 @@ public final class PhoneActivity extends Activity {
                 Vault.put(this, NotifyRules.cursorKey("primary"), got[1]);
                 Vault.put(this, Mailbox.KEY_WHO, got[2]);
                 NotifyJob.schedule(this);
-                message.setText("Notifications are on" + (got[2].isEmpty() ? "." : " for " + got[2] + "."));
+                say("Notifications are on" + (got[2].isEmpty() ? "." : " for " + got[2] + "."));
                 showNotifyRow();
             });
         }).start();
@@ -460,7 +520,7 @@ public final class PhoneActivity extends Activity {
             Log.i(TAG, "could not open a message's app: " + e.getClass().getSimpleName());
         }
         // Not an app this phone knows any more: this screen, nothing else.
-        message.setText("");
+        say("");
     }
 
     private String[] standbyList() {
@@ -484,7 +544,7 @@ public final class PhoneActivity extends Activity {
         }
         if (code == ASK_NOTIFICATIONS && results.length > 0
                 && results[0] != PackageManager.PERMISSION_GRANTED) {
-            message.setText("Notifications are blocked for Homesh Connect. Allow them in "
+            say("Notifications are blocked for Homesh Connect. Allow them in "
                     + "Android's settings for this app, and they will start showing.");
         }
     }
@@ -502,7 +562,7 @@ public final class PhoneActivity extends Activity {
 
         if (inApp) {
             inApp = false;
-            message.setText("");
+            say("");
             if (reachedAt != null) openHomesh.setVisibility(View.VISIBLE);
             showActions(true);
             return;
@@ -512,7 +572,7 @@ public final class PhoneActivity extends Activity {
             // Back from the tab, on purpose. Offer to open it again rather than
             // doing it unasked, which would make closing it impossible.
             handedOff = false;
-            message.setText("Homesh was open. Closed it?");
+            say("Homesh was open. Closed it?");
             openHomesh.setVisibility(View.VISIBLE);
             showActions(true);
             return;
@@ -530,6 +590,7 @@ public final class PhoneActivity extends Activity {
         super.onSaveInstanceState(out);
         out.putBoolean(SAVED_IN_APP, inApp);
         out.putBoolean(SAVED_HANDED_OFF, handedOff);
+        out.putBoolean(SAVED_SETTINGS, settingsShown);
     }
 
     /** Whether the PC has listed apps beside Homesh, so this screen is a menu. */
@@ -544,13 +605,45 @@ public final class PhoneActivity extends Activity {
         return b;
     }
 
+    /** A small heading over a group of settings. */
+    private TextView group(String name) {
+        TextView t = new TextView(this);
+        t.setText(name.toUpperCase(java.util.Locale.ROOT));
+        t.setTextColor(Color.parseColor("#A79B8D"));
+        t.setTextSize(12.5f);
+        t.setLetterSpacing(0.08f);
+        t.setPadding(0, 40, 0, 8);
+        return t;
+    }
+
+    private void showSettings(boolean show) {
+        settingsShown = show;
+        home.setVisibility(show ? View.GONE : View.VISIBLE);
+        settingsPage.setVisibility(show ? View.VISIBLE : View.GONE);
+        root.setGravity(show ? Gravity.TOP : Gravity.CENTER_VERTICAL);
+        if (show) settingsNote.setText("");
+    }
+
+    /**
+     * The status line. The settings page has its own copy, so what pressing
+     * a button there did is said where it was pressed.
+     */
+    private void say(CharSequence text) {
+        message.setText(text);
+        if (settingsNote != null) settingsNote.setText(text);
+    }
+
+    @Override
+    public void onBackPressed() {
+        if (settingsShown) showSettings(false);
+        else super.onBackPressed();
+    }
+
     private void showActions(boolean show) {
         int visibility = show ? View.VISIBLE : View.GONE;
         openTailscale.setVisibility(
                 show && tailscaleInstalled() ? View.VISIBLE : View.GONE);
         apps.setVisibility(visibility);
-        searchAgain.setVisibility(visibility);
-        changeAddress.setVisibility(visibility);
         // Only offered once something has answered; otherwise it is a button
         // whose only outcome is the error already on the screen.
         if (!show || reachedAt == null) openHomesh.setVisibility(View.GONE);
@@ -587,14 +680,14 @@ public final class PhoneActivity extends Activity {
             // A search of this network looks for the PC, so it comes before the
             // standby: somebody who pressed it expects the PC to be here.
             if (reachable == null && sweep) {
-                runOnUiThread(() -> message.setText("Searching this network…"));
+                runOnUiThread(() -> say("Searching this network…"));
                 String found = Discovery.find();
                 if (found != null) {
                     Vault.put(this, KEY_LAN, found);
                     reachable = found;
                 }
                 if (reachable == null && standby != null) {
-                    runOnUiThread(() -> message.setText(
+                    runOnUiThread(() -> say(
                             "Your PC is not answering. Trying the standby…"));
                     if (Server.reachable(standby)) reachable = standby;
                 }
@@ -610,7 +703,7 @@ public final class PhoneActivity extends Activity {
                     if (!go) {
                         // Found, and left on the screen to open: the menu.
                         reachedAt = at;
-                        message.setText(onStandby
+                        say(onStandby
                                 ? "Your PC is not answering, so Homesh will open on the standby."
                                 : "");
                         showActions(true);
@@ -622,7 +715,7 @@ public final class PhoneActivity extends Activity {
                     // bar: it is the moment somebody decides whether to wait
                     // for the PC or carry on.
                     if (onStandby) {
-                        message.setText("Your PC is off, so Homesh opened on the standby. "
+                        say("Your PC is off, so Homesh opened on the standby. "
                                 + "Files on Drive play; files kept only on the PC do not.");
                     }
                 });
@@ -772,7 +865,7 @@ public final class PhoneActivity extends Activity {
             startActivity(browserIntent(Uri.parse(url)));
         } catch (Exception e) {
             inApp = false;
-            message.setText("No browser on this phone would open " + name + ".");
+            say("No browser on this phone would open " + name + ".");
         }
     }
 
@@ -784,13 +877,13 @@ public final class PhoneActivity extends Activity {
     /** {@code path} has been through NotifyRules.validPath, or is empty. */
     private void openAt(String base, String path) {
         reachedAt = base;
-        message.setText("Opening Homesh…");
+        say("Opening Homesh…");
         showActions(false);
         try {
             startActivity(browserIntent(Uri.parse(base + path)));
             handedOff = true;
         } catch (Exception e) {
-            message.setText("No browser on this phone would open " + base + ".");
+            say("No browser on this phone would open " + base + ".");
             showActions(true);
         }
     }
@@ -864,7 +957,7 @@ public final class PhoneActivity extends Activity {
     }
 
     private void cannotReach() {
-        message.setText(
+        say(
                 tailscaleInstalled()
                         ? "Cannot reach your server.\n\nAway from home, Homesh is reached "
                           + "over Tailscale, and Android stops it to save battery. Opening "
@@ -952,10 +1045,10 @@ public final class PhoneActivity extends Activity {
     private void launchTailscale() {
         Intent go = getPackageManager().getLaunchIntentForPackage(TAILSCALE);
         if (go == null) {
-            message.setText("Tailscale is not installed on this phone.");
+            say("Tailscale is not installed on this phone.");
             return;
         }
-        message.setText("Opening Tailscale. Come back here once it says Connected.");
+        say("Opening Tailscale. Come back here once it says Connected.");
         startActivity(go);
     }
 }
