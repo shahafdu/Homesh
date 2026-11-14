@@ -151,7 +151,7 @@ to one goes to the other.
 | 8 · Optional transcode | ❌ overtaken | It was never optional for this library — see §3.2.1 of ARCHITECTURE for what actually happened |
 | 9 · Public release | 🔨 | Public since August. Docs current as of 14 September 2026; screenshots outstanding |
 
-**Tests: 862 passing, and the web unit tests (`npm test`). Migrations: 027. Lint: clean. CI green.**
+**Tests: 863 passing, and the web unit tests (`npm test`). Migrations: 027. Lint: clean. CI green.**
 
 ### AI design decisions — agreed, not yet built
 
