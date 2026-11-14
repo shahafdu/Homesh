@@ -163,6 +163,61 @@ class TestSecurityEvents:
         assert "sign-in codes" in rows[0].body
 
 
+    def test_a_limit_on_a_signed_in_persons_own_button_is_not_a_knock(self, db):
+        _person(db, "boss", admin=True)
+        limit = throttle.Limit(1, timedelta(minutes=5))
+        for bucket in ("notify-test", "notify-phones", "something-new"):
+            throttle.hit(bucket, "a", limit)
+            with pytest.raises(HTTPException):
+                throttle.hit(bucket, "a", limit)
+        assert _messages(db) == []
+
+    def test_an_unknown_passkey_counts_as_a_failed_sign_in(self, db):
+        _person(db, "boss", admin=True)
+        failed = text("SELECT count(*) FROM audit_log WHERE event = 'auth.login.failed'")
+        with db.connect() as conn:
+            before = conn.execute(failed).scalar()
+        with TestClient(app) as c:
+            for _ in range(5):
+                flow = c.post("/api/auth/login/begin").json()["flow_id"]
+                r = c.post(
+                    "/api/auth/login/complete",
+                    json={"flow_id": flow, "credential": {"id": "bm9ib2R5", "rawId": "bm9ib2R5"}},
+                )
+                assert r.status_code == 401
+        assert [r.title for r in _messages(db)] == ["Failed sign-in attempts"]
+        with db.connect() as conn:
+            assert conn.execute(failed).scalar() - before == 5
+
+    def test_an_invited_person_is_named_by_their_display_name(self, db):
+        _person(db, "boss", admin=True)
+        alerts.on_audit(
+            "auth.register", None, {"invited": True, "handle": "newcomer", "name": "New Comer"}
+        )
+        assert [r.title for r in _messages(db)] == ["New Comer joined Homesh"]
+
+    def test_removing_a_passkey_that_is_not_yours_tells_nobody(self, db):
+        _person(db, "boss", admin=True)
+        sam = _person(db, "sam")
+        alex = _person(db, "alex")
+        with db.begin() as conn:
+            for who, cid in ((sam, b"s1"), (sam, b"s2"), (alex, b"a1")):
+                conn.execute(
+                    text(
+                        "INSERT INTO credentials (user_id, credential_id, public_key, sign_count) "
+                        "VALUES (:u, :c, :p, 0)"
+                    ),
+                    {"u": str(who.id), "c": cid, "p": b"key"},
+                )
+            alexs = conn.execute(
+                text("SELECT id FROM credentials WHERE credential_id = :c"), {"c": b"a1"}
+            ).scalar_one()
+        with TestClient(app) as c:
+            c.cookies.set(SESSION_COOKIE, _session(db, sam))
+            assert c.delete(f"/api/auth/passkeys/{alexs}").status_code == 404
+        assert _messages(db) == []
+
+
 class TestChanges:
     def _post(self, db, person, path, **body):
         with TestClient(app) as c:
@@ -275,7 +330,12 @@ class TestWatchedTable:
         ("method", "path", "kind"),
         [
             ("POST", "/api/playlists", "playlists"),
-            ("PUT", "/api/library/items/abc/tags", "song and file details"),
+            ("PUT", "/api/items/abc/tags", "song and file details"),
+            ("DELETE", "/api/sources/abc", "folders"),
+            ("POST", "/api/sources/discover", "folders"),
+            ("POST", "/api/items/abc/drive-link", "shared links"),
+            ("DELETE", "/api/items/abc/drive-link", "shared links"),
+            ("PUT", "/api/people/abc/rules", "accounts and access"),
             ("POST", "/api/zones", "rooms"),
             ("DELETE", "/api/zones/abc", "rooms"),
             ("DELETE", "/api/notify/devices/abc", "notification phones"),
@@ -298,3 +358,22 @@ class TestWatchedTable:
     )
     def test_not_watched(self, method, path):
         assert alerts.watched_kind(method, path) is None
+
+    # Kinds whose write routes belong to tasks not built yet: faces (P2), tag
+    # editing, and the assistant's settings (A4).
+    NOT_BUILT = frozenset({"faces", "song and file details", "assistant settings"})
+
+    def test_every_row_for_a_built_feature_matches_a_real_route(self):
+        """A watched path that matches no route is a kind that is never
+        reported -- which is how folders and shared links were silent at first."""
+        # From the schema rather than app.routes, which does not list the
+        # routes of included routers one by one in this FastAPI.
+        writes = [
+            (m.upper(), p.replace("{", "").replace("}", ""))
+            for p, ops in app.openapi()["paths"].items()
+            for m in ops
+        ]
+        assert any(p == "/api/playlists" for _, p in writes)
+        kinds = {kind for _, _, kind in alerts.WATCHED} - self.NOT_BUILT
+        found = {alerts.watched_kind(m, p) for m, p in writes}
+        assert kinds <= found, kinds - found

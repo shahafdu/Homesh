@@ -429,7 +429,8 @@ async def register_complete(body: CompleteBody, request: Request, response: Resp
             conn,
             "auth.register",
             user_id,
-            {"handle": flow.handle, "first": is_first, "invited": bool(flow.invite_code)},
+            {"handle": flow.handle, "name": flow.display_name, "first": is_first,
+             "invited": bool(flow.invite_code)},
             ip,
         )
 
@@ -505,7 +506,11 @@ async def login_complete(body: CompleteBody, request: Request, response: Respons
         ).first()
 
     if row is None:
-        # Deliberately vague: do not confirm whether a credential exists.
+        # A passkey this server has never seen is the nearest thing to "an
+        # unknown user", so it is recorded and counted with the other failures
+        # (alerts.py). Deliberately vague to the caller all the same.
+        with get_engine().begin() as conn:
+            audit(conn, "auth.login.failed", None, {"unknown": True}, ip)
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "authentication failed")
 
     cred_row_id, user_id, public_key, sign_count = row
@@ -832,10 +837,14 @@ async def remove_passkey(
                 "that is your only passkey — add another before removing this one",
             )
 
-        conn.execute(
+        removed = conn.execute(
             text("DELETE FROM credentials WHERE id = :c AND user_id = :u"),
             {"c": str(credential_id), "u": str(user.id)},
-        )
+        ).rowcount
+        if not removed:
+            # Not this account's, or already gone: nothing was removed, so
+            # nothing is recorded and no administrator is told otherwise.
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "no such passkey")
         audit(conn, "auth.passkey.removed", user.id, {"credential": str(credential_id)},
               request.client.host if request.client else None)
 

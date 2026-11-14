@@ -43,8 +43,12 @@ _lock = threading.Lock()
 _last_sent: dict[str, float] = {}
 _failures: deque[float] = deque()
 
-# The doors a rate limit guards, in words. A bucket not listed is still
-# reported, as "a door", so a new limit is never silent.
+# The open doors -- the ones anybody can knock on without signing in -- and
+# what each is called in an alert. Only these are reported. A limit on a
+# signed-in account's own buttons ("send a test", "add a phone") is that
+# person being impatient, not somebody knocking, and an administrator pressing
+# a button twice too often must not be told someone is at the door. A new open
+# door is silent until a row is added here.
 DOORS = {
     "sign-in": "sign-in",
     "challenge": "sign-in",
@@ -63,13 +67,18 @@ DOORS = {
 # added by later tasks are NOT watched until a row is added here: the table is
 # the list, and anything not on it is silent. A convenience for the household,
 # not an audit -- the audit log remains the record.
+#
+# The paths are the routes as mounted, which is not always what design 7.3
+# wrote: the library router's prefix is /api, so folders are /api/sources and
+# a Drive link is /api/items/<id>/drive-link. test_alerts checks every row
+# that names a built feature against the app's real routes.
 WATCHED: list[tuple[re.Pattern[str], frozenset[str] | None, str]] = [
     (re.compile(r"^/api/playlists(/|$)"), None, "playlists"),
-    (re.compile(r"^/api/library/items/[^/]+/tags$"), None, "song and file details"),
+    (re.compile(r"^/api/(library/)?items/[^/]+/tags$"), None, "song and file details"),
     (re.compile(r"^/api/faces/"), None, "faces"),
-    (re.compile(r"^/api/sharing/"), None, "shared links"),
+    (re.compile(r"^/api/items/[^/]+/drive-link$"), None, "shared links"),
     (re.compile(r"^/api/people(/|$)"), None, "accounts and access"),
-    (re.compile(r"^/api/library/sources(/|$)"), None, "folders"),
+    (re.compile(r"^/api/sources(/|$)"), None, "folders"),
     (re.compile(r"^/api/zones/?$"), None, "rooms"),
     (re.compile(r"^/api/zones/[^/]+$"), frozenset({"PUT", "DELETE"}), "rooms"),
     (re.compile(r"^/api/backups(/|$)"), None, "backups"),
@@ -171,10 +180,10 @@ def _on_audit(event: str, user_id: UUID | None, detail: dict) -> None:
     elif event == "auth.device_link.claimed":
         _tell(f"{_name(user_id)} signed in a new device with a code", "", None, SIGNINS)
     elif event == "auth.register" and detail.get("invited"):
-        # The row is not committed yet when this runs, so the name may not be
-        # readable: the handle in the entry is the fallback.
-        _tell(f"{_name(user_id, str(detail.get('handle') or 'Someone'))} joined Homesh",
-              "", None, SIGNINS)
+        # The row is not committed yet when this runs, so the name cannot be
+        # read back: the entry carries it.
+        joined = str(detail.get("name") or detail.get("handle") or "Someone")
+        _tell(f"{joined} joined Homesh", "", None, SIGNINS)
 
 
 def on_pairing_started() -> None:
@@ -196,8 +205,8 @@ def on_throttle(bucket: str, window: timedelta) -> None:
     """A limit was tripped. Called once per caller per window by throttle.hit;
     this narrows it to once per door per window."""
     try:
-        if _due(f"throttle:{bucket}", window.total_seconds()):
-            door = DOORS.get(bucket, "a door")
+        door = DOORS.get(bucket)
+        if door is not None and _due(f"throttle:{bucket}", window.total_seconds()):
             _tell("Too many attempts", f"Somebody is knocking too often at {door}.",
                   f"throttle-{bucket}"[:64], SIGNINS)
     except Exception:  # noqa: BLE001

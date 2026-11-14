@@ -1748,3 +1748,5 @@ a.msg:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 /* Touch targets: these rows are used from a phone above all. */
 .notify-setting button.compact { min-height: 44px; }
 .inbox button.compact { min-height: 44px; }
+.alert-switch { display: flex; align-items: center; gap: 10px; min-height: 44px; }
+.alert-switch input { width: 20px; height: 20px; flex: none; }

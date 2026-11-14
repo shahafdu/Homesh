@@ -115,32 +115,10 @@ export default function Settings(props: {
           </p>
         </div>
 
-        <PhoneNotifications onStandby={!!props.onStandby} />
-
-        {props.isAdmin && (
-          <div className="setting">
-            <h3>Alerts for administrators</h3>
-            <label style={{ display: "block", margin: "8px 0" }}>
-              <input
-                type="checkbox"
-                checked={prefs.alert_signins !== "off"}
-                onChange={(e) => onChange({ alert_signins: e.target.checked ? "on" : "off" })}
-              />{" "}
-              Tell me when someone signs in or a new device appears
-            </label>
-            <label style={{ display: "block", margin: "8px 0" }}>
-              <input
-                type="checkbox"
-                checked={prefs.alert_changes !== "off"}
-                onChange={(e) => onChange({ alert_changes: e.target.checked ? "on" : "off" })}
-              />{" "}
-              Tell me when someone else changes something
-            </label>
-            <p className="muted small">
-              A passkey that may have been copied is always reported.
-            </p>
-          </div>
-        )}
+        <PhoneNotifications
+          onStandby={!!props.onStandby}
+          alerts={props.isAdmin ? { prefs, onChange } : null}
+        />
 
         {props.isAdmin && <Backups />}
 
@@ -521,7 +499,11 @@ function Backups() {
 
 
 /** Phones that get Homesh's messages as notifications. */
-function PhoneNotifications(props: { onStandby: boolean }) {
+// The administrator's two alert switches live in this block (design 7.4), and
+// only for administrators: nobody else is ever sent an alert.
+type AlertSwitches = { prefs: Prefs; onChange: (patch: Partial<Prefs>) => void } | null;
+
+function PhoneNotifications(props: { onStandby: boolean; alerts: AlertSwitches }) {
   const [phones, setPhones] = useState<Phone[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [asking, setAsking] = useState(false);
@@ -678,6 +660,29 @@ function PhoneNotifications(props: { onStandby: boolean }) {
           ? "Phones are changed on the main server. Try again when the PC is on."
           : note ?? "Open this page inside Homesh Connect to turn it on there."}
       </p>
+
+      {props.alerts && (
+        <div>
+          <h4>Alerts for administrators</h4>
+          <label className="alert-switch">
+            <input
+              type="checkbox"
+              checked={props.alerts.prefs.alert_signins !== "off"}
+              onChange={(e) => props.alerts?.onChange({ alert_signins: e.target.checked ? "on" : "off" })}
+            />
+            Tell me when someone signs in or a new device appears
+          </label>
+          <label className="alert-switch">
+            <input
+              type="checkbox"
+              checked={props.alerts.prefs.alert_changes !== "off"}
+              onChange={(e) => props.alerts?.onChange({ alert_changes: e.target.checked ? "on" : "off" })}
+            />
+            Tell me when someone else changes something
+          </label>
+          <p className="muted small">A passkey that may have been copied is always reported.</p>
+        </div>
+      )}
     </div>
   );
 }
