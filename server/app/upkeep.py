@@ -230,6 +230,9 @@ def _state_clear(key: str) -> None:
 
 def _mark_drive_sources(changes: list[dict]) -> int:
     """Flag the Drive sources the changes belong to. Returns how many."""
+    # A change with no file id is about a shared drive itself (a rename, say),
+    # not a file in one; it says nothing about what to scan.
+    changes = [c for c in changes if c.get("fileId")]
     with get_engine().begin() as conn:
         roots = {
             r[0]: r[1]
@@ -238,36 +241,39 @@ def _mark_drive_sources(changes: list[dict]) -> int:
                      "WHERE kind = 'gdrive' AND remote_id IS NOT NULL")
             )
         }
-        if not roots:
+        if not roots or not changes:
             return 0
+        drive_ids = list(roots.values())
+        # One query for the whole batch, led by source_id so the
+        # (source_id, remote_id) index serves it: a query per change by
+        # remote_id alone was a walk of every replica for every change.
+        owners: dict[str, set] = {}
+        for remote_id, source_id in conn.execute(
+            text("SELECT DISTINCT remote_id, source_id FROM replicas "
+                 "WHERE source_id = ANY(:s) AND remote_id = ANY(:f)"),
+            {"s": drive_ids, "f": [c["fileId"] for c in changes]},
+        ):
+            owners.setdefault(remote_id, set()).add(source_id)
         found: set = set()
         everything = False
         for change in changes:
-            file_id = change.get("fileId")
-            ids = {
-                r[0]
-                for r in conn.execute(
-                    text("SELECT DISTINCT source_id FROM replicas WHERE remote_id = :f"),
-                    {"f": file_id},
-                )
-            }
+            file_id = change["fileId"]
+            ids = set(owners.get(file_id, ()))
             if file_id in roots:
                 ids.add(roots[file_id])
             for parent in (change.get("file") or {}).get("parents") or []:
                 if parent in roots:
                     ids.add(roots[parent])
-            if ids:
-                found |= ids
-            else:
+            if not ids:
                 # A new file deep in a sub-folder: nothing here knows whose it is.
                 everything = True
                 break
-        marked = set(roots.values()) if everything else found & set(roots.values())
-        for sid in marked:
-            conn.execute(
-                text("UPDATE sources SET scan_requested_at = now() WHERE id = :i"),
-                {"i": str(sid)},
-            )
+            found |= ids
+        marked = set(drive_ids) if everything else found
+        conn.execute(
+            text("UPDATE sources SET scan_requested_at = now() WHERE id = ANY(:i)"),
+            {"i": list(marked)},
+        )
     return len(marked)
 
 

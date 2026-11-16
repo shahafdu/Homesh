@@ -404,3 +404,48 @@ class TestDriveChanges:
         assert upkeep.drive_changes_once() == 1
         assert [c.url.params["pageToken"] for c in fake.calls] == ["t1", "p2"]
         assert upkeep._state_get("drive.page_token") == "t9"
+
+    def test_a_token_refused_as_bad_request_is_dropped(self, db, drive):
+        import httpx
+
+        upkeep, fake = drive
+        upkeep._state_set("drive.page_token", "old")
+        fake.responses = [httpx.Response(400, text="invalid")]
+        assert upkeep.drive_changes_once() == 0
+        assert upkeep._state_get("drive.page_token") is None
+
+    def test_no_key_file_requests_nothing(self, db, drive, monkeypatch, tmp_path):
+        from app.config import get_settings
+
+        upkeep, fake = drive
+        monkeypatch.setenv("GDRIVE_KEY_FILE", str(tmp_path / "absent.json"))
+        get_settings.cache_clear()
+        assert upkeep.drive_changes_once() == 0
+        assert fake.calls == []
+        assert upkeep._state_get("drive.page_token") is None
+
+    def test_a_change_to_a_shared_drive_itself_marks_nothing(self, db, drive):
+        upkeep, fake = drive
+        self._sources(db)
+        upkeep._state_set("drive.page_token", "t1")
+        fake.responses = [self._ok({
+            "newStartPageToken": "t2",
+            "changes": [{"removed": False}],
+        })]
+        assert upkeep.drive_changes_once() == 0
+        assert self._flagged(db) == set()
+        assert upkeep._state_get("drive.page_token") == "t2"
+
+    def test_known_and_root_changes_together_mark_both(self, db, drive):
+        upkeep, fake = drive
+        (s0, _), (s1, r1) = self._sources(db)
+        upkeep._state_set("drive.page_token", "t1")
+        fake.responses = [self._ok({
+            "newStartPageToken": "t2",
+            "changes": [
+                {"fileId": "file-a", "removed": True},
+                {"fileId": "new", "file": {"parents": [r1]}},
+            ],
+        })]
+        assert upkeep.drive_changes_once() == 2
+        assert self._flagged(db) == {s0, s1}

@@ -347,7 +347,7 @@ every fifteen minutes. A large copy therefore makes one scan, not hundreds. The
 watcher only tells Homesh the *name* of the folder; it gives no path and opens no
 network port. `Start Homesh.cmd` with `-Status` says whether it is running.
 
-**Google Drive** is noticed the same way without walking it: every fifteen minutes the server asks Drive what changed and scans only the folders affected. The daily sweep still runs as a safety net.
+**Google Drive** is noticed the same way without walking it: every fifteen minutes the server asks Drive what changed and scans the folders affected (all of them, when a change is too deep in a folder to tell whose it is). The daily sweep still runs as a safety net.
 
 ---
 
