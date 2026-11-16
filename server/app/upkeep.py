@@ -120,6 +120,63 @@ async def _scan_one(source_id: UUID, name: str) -> None:
         log.exception("scheduled scan of %s failed", name)
 
 
+def _next_requested() -> tuple[UUID, str] | None:
+    """The folder whose change notice has settled and which may be scanned now.
+
+    Two intervals are the debounce: a big copy raises events for minutes and
+    must make one scan, and a folder that changes all day is scanned at most
+    every 15 minutes.
+    """
+    with get_engine().connect() as conn:
+        row = conn.execute(
+            text(
+                """
+                SELECT id, name FROM sources
+                WHERE scan_requested_at IS NOT NULL
+                  AND scan_state IS DISTINCT FROM 'running'
+                  AND scan_requested_at < now() - interval '2 minutes'
+                  AND (scan_ended_at IS NULL
+                       OR scan_ended_at < now() - interval '15 minutes')
+                ORDER BY scan_requested_at
+                LIMIT 1
+                """
+            )
+        ).first()
+    return (row[0], row[1]) if row else None
+
+
+async def scan_requested_once() -> bool:
+    """Scan one requested folder if any is ready. Returns whether it did."""
+    from .standby import is_standby
+
+    if is_standby():
+        return False
+    found = await asyncio.to_thread(_next_requested)
+    if found is None:
+        return False
+    source_id, name = found
+    # Cleared first: a change during the scan asks again and is not lost.
+    with get_engine().begin() as conn:
+        conn.execute(
+            text("UPDATE sources SET scan_requested_at = NULL WHERE id = :i"),
+            {"i": str(source_id)},
+        )
+    await _scan_one(source_id, name)
+    return True
+
+
+async def requested_scans_forever() -> None:
+    """Every minute, scan a folder the PC's watcher reported as changed."""
+    while True:
+        try:
+            await scan_requested_once()
+        except asyncio.CancelledError:
+            raise
+        except Exception:  # noqa: BLE001 - the next minute tries again
+            log.exception("requested scan failed")
+        await asyncio.sleep(60)
+
+
 async def sweep(interval: timedelta) -> int:
     """Scan everything that is due. Returns how many were scanned."""
     # A folder shared with this server since the last sweep is a new source, and

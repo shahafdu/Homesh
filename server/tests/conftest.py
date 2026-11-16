@@ -127,6 +127,7 @@ def db():
         # Costs are summed per month across tests otherwise, and a cap holds
         # for the rest of the run.
         conn.execute(text("DELETE FROM ai_calls"))
+        conn.execute(text("DELETE FROM upkeep_state"))
 
 
 @pytest.fixture

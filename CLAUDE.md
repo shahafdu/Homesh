@@ -151,7 +151,7 @@ to one goes to the other.
 | 8 · Optional transcode | ❌ overtaken | It was never optional for this library — see §3.2.1 of ARCHITECTURE for what actually happened |
 | 9 · Public release | 🔨 | Public since August. Docs current as of 14 September 2026; screenshots outstanding |
 
-**Tests: 863 passing, and the web unit tests (`npm test`). Migrations: 027. Lint: clean. CI green.**
+**Tests: 876 passing, and the web unit tests (`npm test`). Migrations: 028. Lint: clean. CI green.**
 
 ### AI design decisions — agreed, not yet built
 
@@ -205,8 +205,8 @@ do not stop.
 
 - [ ] ReplayGain (M2). Gapless playback is done in the browser player (M1); the television and rooms driven by the receiver still play one track at a time
 - [ ] AcoustID tag repair (phase 5's second half)
-- [ ] Automatic rescan on file change — sweeps are scheduled, but a change is noticed
-      at the next sweep rather than when it happens
+- [ ] Automatic rescan on file change — done for folders on the PC (`tools/watch-folders.ps1`
+      -> `app.scanrequest`); Drive changes are still noticed at the next sweep (L2)
 - [ ] Go agent + WireGuard (Mode B split; only needed when the core moves off the PC)
 - [ ] **The standby on Oracle** (phase 0.5, as redesigned) — `docs/STANDBY.md`.
       Built: hourly backups, the standby's safe refresh, changes on the standby
@@ -310,7 +310,7 @@ Full reasoning in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md). The load-beari
 
 ```
 server/app/       config, db, main, auth, security, people, access, prefs, library,
-                  scanner, metadata, dedup, signing, stream, transcode, documents,
+                  scanner, scanrequest, metadata, dedup, signing, stream, transcode, documents,
                   thumbs, sharing, playlists, zones, denon, renderers, discovery,
                   occupancy, lanaddr, upkeep, backups, crypt, offsite, standby,
                   thumbsync, signin_code, throttle, audiocache, ai, ai_api,
@@ -318,7 +318,7 @@ server/app/       config, db, main, auth, security, people, access, prefs, libra
                   webguard (headers, cross-origin writes, log redaction),
                   childenv (the environment child programs get),
                   sources/{base,local,gdrive}
-server/migrations 027 of them, plain SQL, tracked in `schema_migrations` and applied at
+server/migrations 028 of them, plain SQL, tracked in `schema_migrations` and applied at
                   startup. `ls server/migrations` is the list
 server/tests/     one module per surface
 web/src/          App, Browser, Viewer, Player, Slideshow, Zones, Playlists, People,

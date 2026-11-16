@@ -120,6 +120,11 @@ async def lifespan(app: FastAPI):
     # rather than leaving a scan writing into a closing connection pool.
     upkeep = asyncio.create_task(scan_forever())
 
+    # Scans a folder the PC's watcher reported as changed, after it settles.
+    from .upkeep import requested_scans_forever
+
+    requested = asyncio.create_task(requested_scans_forever())
+
     # The traffic with the other machine, through the bucket: on the PC,
     # carrying out changes made on the standby; on the standby, sending them
     # and taking the PC's newest backup.
@@ -148,7 +153,7 @@ async def lifespan(app: FastAPI):
 
     yield
 
-    for task in (upkeep, finder, watcher, address, syncing, mailbox):
+    for task in (upkeep, finder, watcher, address, syncing, mailbox, requested):
         task.cancel()
         with suppress(asyncio.CancelledError):
             await task

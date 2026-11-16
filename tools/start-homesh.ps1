@@ -266,6 +266,37 @@ function Install-Watcher {
     }
 }
 
+function Install-FolderWatcher {
+    <#
+        Register the task that notices changed folders and tells the server.
+
+        Started at sign-in and left running; it holds a mutex, so a second
+        copy exits at once. Idempotent, like the other tasks.
+    #>
+    $name = 'Homesh - watch folders'
+    if (Get-ScheduledTask -TaskName $name -ErrorAction SilentlyContinue) { return }
+
+    $shim = Join-Path $PSScriptRoot 'watch-folders.vbs'
+    $action = New-ScheduledTaskAction -Execute 'wscript.exe' `
+        -Argument ('"{0}"' -f $shim) `
+        -WorkingDirectory (Get-HomeshRepo)
+    $trigger = New-ScheduledTaskTrigger -AtLogOn -User "$env:USERDOMAIN\$env:USERNAME"
+    $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries `
+        -DontStopIfGoingOnBatteries -StartWhenAvailable -Hidden `
+        -ExecutionTimeLimit ([TimeSpan]::Zero)
+
+    try {
+        Register-ScheduledTask -TaskName $name -Action $action -Trigger $trigger `
+            -Settings $settings `
+            -Description ('Notices changes in the folders granted to Homesh and asks ' +
+            'it to rescan them. Installed by Start Homesh.') | Out-Null
+        Start-ScheduledTask -TaskName $name -ErrorAction SilentlyContinue
+        Write-Host '  installed the watcher that notices changed folders' -ForegroundColor DarkGray
+    } catch {
+        Write-Host "  could not install the folder watcher: $($_.Exception.Message)" -ForegroundColor Yellow
+    }
+}
+
 function Install-StartAtSignin {
     <#
         Register the task that starts Homesh when you sign in.
@@ -402,6 +433,14 @@ if ($Status) {
         Write-Host 'Folders Homesh can read, and nothing else on this PC:' -ForegroundColor Cyan
         foreach ($g in $grants) { Write-Host ("  {0,-16} {1}" -f $g.Name, $g.Dir) }
     }
+    $held = $false
+    try {
+        $probe = [System.Threading.Mutex]::OpenExisting('Local\HomeshWatchFolders')
+        $probe.Dispose(); $held = $true
+    } catch { }
+    Write-Host ''
+    if ($held) { Write-Host 'Folder watcher: running' -ForegroundColor DarkGray }
+    else { Write-Host 'Folder watcher: not running (it starts at sign-in)' -ForegroundColor Yellow }
     return
 }
 
@@ -429,6 +468,7 @@ Update-LanAddress
 # that disk. Setting it aside costs the files on that drive and keeps the rest.
 Sync-HomeshGrants | Out-Null
 Install-Watcher
+Install-FolderWatcher
 Install-StartAtSignin
 
 Write-Host 'Starting Homesh...' -ForegroundColor Cyan

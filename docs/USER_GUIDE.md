@@ -340,7 +340,14 @@ so the library lists it once and plays whichever copy is reachable. Drive states
 checksum for free; a local file has to be read, so only files that look like a duplicate
 of something elsewhere are read at all, a couple of thousand at a time.
 
-**Not yet:** noticing a change the moment it happens, rather than at the next sweep.
+**Changes on the PC are noticed as they happen.** A small hidden program that Start
+Homesh installs watches each folder you have granted. When files in one change and
+then stay quiet for five minutes, Homesh rescans that folder, never more than once
+every fifteen minutes. A large copy therefore makes one scan, not hundreds. The
+watcher only tells Homesh the *name* of the folder; it gives no path and opens no
+network port. `Start Homesh.cmd` with `-Status` says whether it is running.
+
+**Not yet:** the same for Google Drive, which is still noticed at the next sweep.
 
 ---
 
