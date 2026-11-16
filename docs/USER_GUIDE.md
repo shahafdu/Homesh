@@ -517,7 +517,7 @@ half a backup.
 - **AI search and tagging.** Designed and agreed — see §7 of the architecture document —
   and deliberately behind backups, which are what make it safe to let a model write to
   the catalog.
-- **Gapless playback and ReplayGain.** The player works; it is not gapless.
+- **ReplayGain.** Tracks from one album now play into the next without a gap in the browser player; the television and rooms played by the receiver still play one track at a time.
 - **Google Photos.** Its API was closed to third-party apps in March 2025, so the copy on
   your own storage is the source. Nothing to do here but say so.
 - **Noticing file changes as they happen**, rather than at the next sweep.

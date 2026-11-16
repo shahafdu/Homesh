@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, ApiError } from "./api";
+import { canHandOver, shouldPreload } from "./gapless";
 import type { FileEntry } from "./library";
 
 export interface Track {
@@ -89,7 +90,7 @@ export function usePlayer() {
   // Play in a shuffled order. Kept beside the queue rather than shuffling the
   // queue itself, so turning it off restores the album order rather than
   // leaving a permanently jumbled list.
-  const [shuffle, setShuffle] = useState(false);
+  const [shuffle, setShuffleState] = useState(false);
   // Read inside callbacks that were created before the setting changed.
   const shuffleRef = useRef(shuffle);
   shuffleRef.current = shuffle;
@@ -103,7 +104,13 @@ export function usePlayer() {
   const remember = useCallback((index: number) => {
     if (index >= 0) historyRef.current = [...historyRef.current, index].slice(-HISTORY);
   }, []);
+  // Two elements: the one playing, and the one holding the next track so the
+  // hand-over at the end of a song has nothing left to fetch. They swap roles.
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const nextRef = useRef<HTMLAudioElement | null>(null);
+  /** What the spare element is loading or holding, if anything. */
+  const preloaded = useRef<{ index: number; from: number; id: string; token: number } | null>(null);
+  const preloadToken = useRef(0);
 
   // Kept in a ref as well as state so the media element's event handlers, which
   // close over their first render, can still see the current queue.
@@ -111,12 +118,34 @@ export function usePlayer() {
   stateRef.current = state;
 
   if (audioRef.current === null && typeof Audio !== "undefined") {
-    audioRef.current = new Audio();
-    audioRef.current.preload = "metadata";
-    // Needed for the element to be allowed to play at all on iOS, and for the
-    // lock-screen controls to attach to it.
-    audioRef.current.setAttribute("playsinline", "");
+    for (const ref of [audioRef, nextRef]) {
+      const el = new Audio();
+      el.preload = "metadata";
+      // Needed for the element to be allowed to play at all on iOS, and for the
+      // lock-screen controls to attach to it.
+      el.setAttribute("playsinline", "");
+      ref.current = el;
+    }
   }
+
+  /** Forget the preloaded track, so a stale one can never play. Called by
+   *  everything that changes what is due: a load, shuffle, stop. */
+  const clearNext = useCallback(() => {
+    preloadToken.current += 1;
+    preloaded.current = null;
+    const spare = nextRef.current;
+    if (spare && spare.getAttribute("src") !== null) {
+      spare.removeAttribute("src");
+      spare.load();
+    }
+  }, []);
+
+  // Turning shuffle on or off changes which track is due, so the preload is
+  // stale. Offered to callers under the same name as before.
+  const setShuffle = useCallback((on: boolean | ((was: boolean) => boolean)) => {
+    clearNext();
+    setShuffleState(on);
+  }, [clearNext]);
 
   // Phones only let an <audio> element play if a gesture started it, and they
   // judge that by whether play() was called *synchronously* inside the handler.
@@ -130,16 +159,18 @@ export function usePlayer() {
   const unlocked = useRef(false);
   useEffect(() => {
     const unlock = () => {
-      const audio = audioRef.current;
-      if (!audio || unlocked.current) return;
+      if (unlocked.current) return;
       unlocked.current = true;
-      audio.play().then(
-        () => audio.pause(),
-        () => {
-          // Refused before anything was loaded, which is expected and harmless;
-          // the element is activated either way.
-        },
-      );
+      // Both: the spare one is started later without a gesture of its own.
+      for (const audio of [audioRef.current, nextRef.current]) {
+        audio?.play().then(
+          () => audio.pause(),
+          () => {
+            // Refused before anything was loaded, which is expected and harmless;
+            // the element is activated either way.
+          },
+        );
+      }
     };
 
     // Once, on the first touch anywhere. Capture, so a handler that stops
@@ -195,6 +226,7 @@ export function usePlayer() {
     // "not playing" over a track that had just started.
     generation.current += 1;
     const mine = generation.current;
+    clearNext();
 
     // Move the cursor first. Setting it only on success made the UI lie about
     // which track was selected whenever loading failed.
@@ -239,21 +271,25 @@ export function usePlayer() {
         setState((s) => ({ ...s, error: `Could not play ${track.filename}` }));
       }
     }
-  }, []);
+  }, [clearNext]);
 
   // A failure that has been overtaken by success is noise. The message stayed
   // on screen over a playing track, which reads as the app not knowing what it
   // is doing — and on a phone the first attempt fails often enough for that to
   // be the normal case rather than the exception.
   useEffect(() => {
-    const audio = audioRef.current;
-    if (!audio) return;
-    const clear = () => {
+    const audios = [audioRef.current, nextRef.current].filter(
+      (a): a is HTMLAudioElement => a !== null,
+    );
+    const clear = (e: Event) => {
+      if (e.target !== audioRef.current) return;
       failures.current = 0;
       setState((s) => (s.error ? { ...s, error: null } : s));
     };
-    audio.addEventListener("playing", clear);
-    return () => audio.removeEventListener("playing", clear);
+    for (const a of audios) a.addEventListener("playing", clear);
+    return () => {
+      for (const a of audios) a.removeEventListener("playing", clear);
+    };
   }, []);
 
   const play = useCallback(
@@ -339,8 +375,9 @@ export function usePlayer() {
   }, []);
 
   const setVolume = useCallback((v: number) => {
-    const audio = audioRef.current;
-    if (audio) audio.volume = v;
+    // Both, or the track after a hand-over would start at full volume.
+    if (audioRef.current) audioRef.current.volume = v;
+    if (nextRef.current) nextRef.current.volume = v;
     setState((s) => ({ ...s, volume: v }));
   }, []);
 
@@ -351,16 +388,105 @@ export function usePlayer() {
       audio.removeAttribute("src");
       audio.load();
     }
+    clearNext();
     setState(INITIAL);
-  }, []);
+  }, [clearNext]);
 
   useEffect(() => {
-    const audio = audioRef.current;
-    if (!audio) return;
+    const audios = [audioRef.current, nextRef.current].filter(
+      (a): a is HTMLAudioElement => a !== null,
+    );
+    if (audios.length === 0) return;
 
-    const onTime = () => setState((s) => ({ ...s, position: audio.currentTime }));
-    const onMeta = () => setState((s) => ({ ...s, duration: audio.duration || 0 }));
-    const onEnd = () => {
+    /** Which track follows the current one: shuffle's pick, or the next in line;
+     *  -1 at the end of the list. */
+    const chooseNext = (index: number, length: number) => {
+      if (shuffleRef.current) return elsewhere(index, length);
+      return index + 1 < length ? index + 1 : -1;
+    };
+
+    // Start loading the following track into the spare element.
+    const preload = (audio: HTMLAudioElement) => {
+      // Already chosen for this track: do not draw another shuffle pick.
+      if (preloaded.current) return;
+      const { index, queue } = stateRef.current;
+      const due = index >= 0 ? chooseNext(index, queue.length) : -1;
+      const track = due >= 0 ? queue[due] : null;
+      if (!shouldPreload(audio.currentTime, audio.duration, track)) return;
+      const spare = nextRef.current;
+      if (!spare || !track) return;
+      const token = ++preloadToken.current;
+      // Marked before the fetch, so a second timeupdate does not start another.
+      preloaded.current = { index: due, from: index, id: track.item_id, token };
+      void signedUrl(track.item_id).then(
+        (url) => {
+          if (preloadToken.current !== token) return;
+          spare.src = url;
+          spare.preload = "auto";
+          spare.load();
+        },
+        () => {
+          // A drive that is off, or a failed fetch. The mark stays, so it is not
+          // retried on every timeupdate; the spare never becomes ready, and the
+          // ordinary path at the end of the track applies.
+        },
+      );
+    };
+
+    /** True when the spare element took over, so the ordinary path is skipped. */
+    const handOver = (): boolean => {
+      const held = preloaded.current;
+      const spare = nextRef.current;
+      const finished = audioRef.current;
+      const { index, queue } = stateRef.current;
+      if (!held || !spare || !finished || held.from !== index) return false;
+      const track = queue[held.index];
+      if (!track || !canHandOver(spare.readyState, track.item_id, held.id)) return false;
+
+      // Called synchronously from the ended event, which is what keeps it
+      // gapless on a phone: nothing is awaited first.
+      const started = spare.play();
+      generation.current += 1;
+      const mine = generation.current;
+      if (shuffleRef.current) remember(index);
+      audioRef.current = spare;
+      nextRef.current = finished;
+      preloaded.current = null;
+      preloadToken.current += 1;
+      finished.removeAttribute("src");
+      finished.load();
+      renewedFor.current = null;
+      setState((s) => ({
+        ...s,
+        index: held.index,
+        position: 0,
+        duration: isFinite(spare.duration) && spare.duration > 0
+          ? spare.duration : (track.duration_ms ?? 0) / 1000,
+        playing: true,
+        error: null,
+      }));
+      stateRef.current = { ...stateRef.current, index: held.index };
+      started.catch(() => {
+        // Refused after all: do it the long way, which has its own retry.
+        if (generation.current === mine) void loadTrack(held.index);
+      });
+      return true;
+    };
+
+    const onTime = (e: Event) => {
+      const audio = e.target as HTMLAudioElement;
+      if (audio !== audioRef.current) return;
+      setState((s) => ({ ...s, position: audio.currentTime }));
+      preload(audio);
+    };
+    const onMeta = (e: Event) => {
+      const audio = e.target as HTMLAudioElement;
+      if (audio !== audioRef.current) return;
+      setState((s) => ({ ...s, duration: audio.duration || 0 }));
+    };
+    const onEnd = (e: Event) => {
+      if (e.target !== audioRef.current) return;
+      if (handOver()) return;
       const { index, queue } = stateRef.current;
       // Shuffle belongs to the queue, not to the next button. A track ending
       // went to the one below it however the setting was set, so shuffle
@@ -379,7 +505,11 @@ export function usePlayer() {
       else setState((s) => ({ ...s, playing: false, position: 0 }));
     };
 
-    const onError = async () => {
+    const onError = async (e: Event) => {
+      const audio = e.target as HTMLAudioElement;
+      // The spare failing is only a failed preload; the end of the track will
+      // take the ordinary path.
+      if (audio !== audioRef.current) return;
       const { index, queue, position } = stateRef.current;
       if (index < 0 || !queue[index]) return;
       const track = queue[index];
@@ -399,10 +529,10 @@ export function usePlayer() {
           audio.currentTime = position;
           await audio.play();
           return;
-        } catch (e) {
-          if (offline(e)) {
+        } catch (err) {
+          if (offline(err)) {
             // The drive went off mid-track. Nothing after it will play either.
-            setState((s) => ({ ...s, playing: false, error: `Stopped: ${e.message}` }));
+            setState((s) => ({ ...s, playing: false, error: `Stopped: ${err.message}` }));
             return;
           }
           /* otherwise fall through to skipping */
@@ -431,15 +561,21 @@ export function usePlayer() {
       }
     };
 
-    audio.addEventListener("timeupdate", onTime);
-    audio.addEventListener("loadedmetadata", onMeta);
-    audio.addEventListener("ended", onEnd);
-    audio.addEventListener("error", onError);
+    // On both elements, for good: after a swap the roles change, the listeners
+    // do not, and each handler ignores the element that is not current.
+    for (const a of audios) {
+      a.addEventListener("timeupdate", onTime);
+      a.addEventListener("loadedmetadata", onMeta);
+      a.addEventListener("ended", onEnd);
+      a.addEventListener("error", onError);
+    }
     return () => {
-      audio.removeEventListener("timeupdate", onTime);
-      audio.removeEventListener("loadedmetadata", onMeta);
-      audio.removeEventListener("ended", onEnd);
-      audio.removeEventListener("error", onError);
+      for (const a of audios) {
+        a.removeEventListener("timeupdate", onTime);
+        a.removeEventListener("loadedmetadata", onMeta);
+        a.removeEventListener("ended", onEnd);
+        a.removeEventListener("error", onError);
+      }
     };
   }, [loadTrack, remember]);
 

@@ -203,7 +203,7 @@ do not stop.
 
 ### Outstanding tasks
 
-- [ ] Gapless audio playback and ReplayGain (the player is functional, not yet gapless)
+- [ ] ReplayGain (M2). Gapless playback is done in the browser player (M1); the television and rooms driven by the receiver still play one track at a time
 - [ ] AcoustID tag repair (phase 5's second half)
 - [ ] Automatic rescan on file change — sweeps are scheduled, but a change is noticed
       at the next sweep rather than when it happens
