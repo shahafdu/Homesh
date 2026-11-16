@@ -349,6 +349,33 @@ network port. `Start Homesh.cmd` with `-Status` says whether it is running.
 
 **Google Drive** is noticed the same way without walking it: every fifteen minutes the server asks Drive what changed and scans the folders affected (all of them, when a change is too deep in a folder to tell whose it is). The daily sweep still runs as a safety net.
 
+### Keeping photos reachable when the PC is off
+
+Photos on a drive that is switched off cannot be opened. Homesh itself never
+writes to your library and its Drive account owns no storage, so it cannot make
+the copy. Something else on the PC copies the photo folder to Drive, and Homesh
+does the rest: it finds the Drive copy of each photo, joins it to the original as
+one entry with two copies, and plays whichever one is reachable.
+
+Choose one way, once:
+
+| Way | Cost | Notes |
+|---|---|---|
+| **Google Drive for desktop**, set to mirror the photo folder | none | Maintained by Google. Recommended |
+| **rclone** on a schedule, signed in with your own Google account | a scheduled task and a sign-in to keep alive | More control over what is copied |
+
+Either way:
+
+1. Set up the copy so the photos land in one folder on your Drive.
+2. Share that folder with the Homesh account as **Editor**, like any other Drive
+   folder (see *From Google Drive* in section 7), and press **Look for new
+   folders** in **Sources**.
+3. After the next scan the folder appears in Homesh. Photos that exist in both
+   places show once, with two copies behind them.
+
+Nothing here needs the copy to be quick: Homesh notices new files on Drive within
+about a quarter of an hour of their arriving.
+
 ---
 
 ## 10. Troubleshooting
