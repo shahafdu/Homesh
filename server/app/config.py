@@ -148,6 +148,15 @@ class Settings(BaseSettings):
     # refusing rather than the code promising.
     ai_monthly_cap_micros: int = 0
 
+    # Gemini is offered only when its Google project has no billing account,
+    # which is what makes it incapable of charging. The operator states that
+    # here once checked; "false" keeps Gemini out of every list.
+    gemini_api_key: str = ""
+    gemini_no_billing: bool = False
+
+    # The night worker's internal address (never published outside Docker).
+    worker_url: str = "http://worker:8090"
+
     # Receiver address, used when SSDP discovery cannot run.
     #
     # Docker's bridge network does not forward multicast to the LAN, so a

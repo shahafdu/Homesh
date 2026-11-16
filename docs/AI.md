@@ -32,6 +32,20 @@ endpoint, never logged, and never written to a table — `/api/ai/status` says
 whether a key is present, never what it is. The commit and push guards refuse
 anything shaped like one, so it cannot reach the repository by accident.
 
+## Several models, in order
+
+An administrator may give each kind of work (answering, background tagging,
+translating a search) an ordered list of models. The first that is free to use
+answers; one that is busy, over its limit or gone is skipped for a while and the
+next answers. With no list, the model in `AI_MODEL` is used, as before. The list
+of what each provider offers is refreshed daily into `ai_models`; it holds
+public information and no key.
+
+**Gemini** is offered only when `GEMINI_API_KEY` is set *and*
+`GEMINI_NO_BILLING=true` -- the owner's statement that the key's Google project
+has no billing account. Such a project cannot be charged, which is the rule every
+provider here is held to. With the statement missing, Gemini is never called.
+
 ## Spending is refused by the platform, not avoided by the code
 
 Software that calls a paid API on a schedule is software that can bill on its own

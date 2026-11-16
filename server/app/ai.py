@@ -120,6 +120,7 @@ def _table_exists(conn) -> bool:
 
 def _record(
     *, user_id: UUID | None, purpose: str, model: str, outcome: str,
+    provider: str = "none", task: str | None = None, fallback: bool = False,
     detail: str | None = None, prompt_tokens: int = 0, completion_tokens: int = 0,
     cost_micros: int = 0, duration_ms: int = 0,
 ) -> None:
@@ -128,15 +129,16 @@ def _record(
             text(
                 """
                 INSERT INTO ai_calls (user_id, purpose, provider, model, outcome, detail,
-                                      prompt_tokens, completion_tokens, cost_micros, duration_ms)
+                                      prompt_tokens, completion_tokens, cost_micros, duration_ms,
+                                      task, fallback)
                 VALUES (:u, :purpose, :provider, :model, :outcome, :detail,
-                        :pt, :ct, :cost, :ms)
+                        :pt, :ct, :cost, :ms, :task, :fb)
                 """
             ),
             {
                 "u": str(user_id) if user_id else None,
                 "purpose": purpose[:80],
-                "provider": get_settings().ai_provider.strip()[:40] or "none",
+                "provider": provider[:40] or "none",
                 "model": model[:120],
                 "outcome": outcome,
                 "detail": detail[:400] if detail else None,
@@ -144,6 +146,8 @@ def _record(
                 "ct": completion_tokens,
                 "cost": cost_micros,
                 "ms": duration_ms,
+                "task": task,
+                "fb": fallback,
             },
         )
 
@@ -165,35 +169,251 @@ def _may_spend(user_id: UUID | None) -> bool:
         )
 
 
+def _gate(model: str, free: bool, user_id: UUID | None) -> None:
+    """The spend rules for one model. Raises Refused saying why not."""
+    if free:
+        return
+    settings = get_settings()
+    cap = max(0, settings.ai_monthly_cap_micros)
+    if cap <= 0:
+        raise Refused(
+            f"{model} is a paid model and no monthly limit is set, so it cannot be used. "
+            "Set AI_MONTHLY_CAP_MICROS, or choose a free model."
+        )
+    if not _may_spend(user_id):
+        raise Refused("this account may use the free model only")
+    with get_engine().connect() as conn:
+        spent = spent_this_month(conn)
+    if spent >= cap:
+        raise Refused(
+            "this month's AI allowance is spent. It resets at the start of next month, "
+            "or the limit can be raised."
+        )
+
+
 def check(purpose: str, user_id: UUID | None) -> str:
     """The model this request may use, or a refusal saying why it may not.
 
     Separate from asking, so that a caller can find out whether a question is
     possible before composing one -- and so the reasons live in one place.
     """
-    settings = get_settings()
-    model = settings.ai_model.strip()
-
+    model = get_settings().ai_model.strip()
     if not configured():
         raise Refused("no AI provider is set up on this server")
-
-    if not free_model(model):
-        cap = max(0, settings.ai_monthly_cap_micros)
-        if cap <= 0:
-            raise Refused(
-                f"{model} is a paid model and no monthly limit is set, so it cannot be used. "
-                "Set AI_MONTHLY_CAP_MICROS, or choose a free model."
-            )
-        if not _may_spend(user_id):
-            raise Refused("this account may use the free model only")
-        with get_engine().connect() as conn:
-            spent = spent_this_month(conn)
-        if spent >= cap:
-            raise Refused(
-                "this month's AI allowance is spent. It resets at the start of next month, "
-                "or the limit can be raised."
-            )
+    _gate(model, free_model(model), user_id)
     return model
+
+
+@dataclass(frozen=True)
+class ToolCall:
+    id: str
+    name: str
+    arguments: str  # JSON text exactly as the model sent it
+
+
+@dataclass(frozen=True)
+class Reply:
+    text: str
+    tool_calls: tuple[ToolCall, ...]
+    model_id: str  # "<provider>:<model>"
+    prompt_tokens: int
+    completion_tokens: int
+    cost_micros: int
+    fallback: bool  # True when the first choice was not what answered
+
+
+class ProviderBusy(AiError):
+    """The provider will not answer for a while: try the next model."""
+
+    def __init__(self, message: str, cool_for: int) -> None:
+        super().__init__(message)
+        self.cool_for = cool_for
+
+
+GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta/openai"
+COOL_MIN, COOL_MAX, COOL_DEFAULT = 60, 3600, 600
+
+
+def _retry_after(value: str | None) -> int:
+    try:
+        seconds = int(float(value)) if value else COOL_DEFAULT
+    except ValueError:
+        seconds = COOL_DEFAULT
+    return max(COOL_MIN, min(COOL_MAX, seconds))
+
+
+def _candidate_rows(ids: list[str]) -> dict[str, dict]:
+    if not ids:
+        return {}
+    with get_engine().connect() as conn:
+        rows = conn.execute(
+            text(
+                "SELECT id, free, tools, gone_at IS NOT NULL AS gone, "
+                "COALESCE(cooling_until > now(), FALSE) AS cooling "
+                "FROM ai_models WHERE id = ANY(:ids)"
+            ),
+            {"ids": ids},
+        ).mappings().all()
+    return {r["id"]: dict(r) for r in rows}
+
+
+def provider_usable(provider: str) -> bool:
+    """Whether a provider has a key and may be used at all."""
+    settings = get_settings()
+    if provider == "openrouter":
+        return configured()
+    if provider == "gemini":
+        # Never offered unless the project is stated to have no billing account.
+        return bool(settings.gemini_api_key.strip()) and settings.gemini_no_billing
+    return False
+
+
+def chat_available() -> bool:
+    """Whether at least one chat candidate would be tried (not the spend gate)."""
+    from . import aisettings
+
+    settings = get_settings()
+    listed = aisettings.task_ids("chat") or [f"openrouter:{settings.ai_model.strip()}"]
+    rows = _candidate_rows(listed)
+    for model_id in listed:
+        provider = model_id.partition(":")[0]
+        row = rows.get(model_id)
+        if not provider_usable(provider) or (row is None and provider != "openrouter"):
+            continue
+        if row is not None and (row["gone"] or row["cooling"] or not row["tools"]):
+            continue
+        return True
+    return False
+
+
+def _note(model_id: str, *, ok: bool, error: str | None = None, cool_for: int = 0) -> None:
+    with get_engine().begin() as conn:
+        if ok:
+            conn.execute(
+                text("UPDATE ai_models SET last_ok_at = now(), cooling_until = NULL "
+                     "WHERE id = :i"), {"i": model_id})
+        else:
+            conn.execute(
+                text(
+                    "UPDATE ai_models SET last_error = :e, last_error_at = now(), "
+                    "cooling_until = CASE WHEN CAST(:c AS int) > 0 "
+                    "THEN now() + make_interval(secs => CAST(:c AS int)) "
+                    "ELSE cooling_until END WHERE id = :i"
+                ),
+                {"i": model_id, "e": (error or "")[:400], "c": cool_for},
+            )
+
+
+async def chat(
+    *, task: str, purpose: str, messages: list[dict], user_id: UUID | None = None,
+    tools: list[dict] | None = None, max_tokens: int = 1024, only: str | None = None,
+) -> Reply:
+    """Ask the best model that is available and permitted. Raises Refused or AiError.
+
+    `only` names one model and skips the configured list (and its cooling), for
+    the page's Test button -- but never the spend gate.
+
+    Never logged: the messages, the tools, the reply, a key.
+    """
+    from . import aisettings
+
+    settings = get_settings()
+    if only:
+        listed = [only]
+    else:
+        listed = aisettings.task_ids(task) or [f"openrouter:{settings.ai_model.strip()}"]
+    rows = _candidate_rows(listed)
+
+    refusal: str | None = None
+    skipped_busy = False
+    last_failure: Exception | None = None
+    first = listed[0]
+
+    for model_id in listed:
+        provider, _, model = model_id.partition(":")
+        row = rows.get(model_id)
+        if not provider_usable(provider):
+            continue
+        if row is None and provider != "openrouter":
+            continue
+        if row is not None and row["gone"] and not only:
+            continue
+        if row is not None and row["cooling"] and not only:
+            skipped_busy = True
+            continue
+        if tools and row is not None and not row["tools"]:
+            continue
+        free = row["free"] if row is not None else free_model(model)
+        try:
+            _gate(model, free, user_id)
+        except Refused as why:
+            refusal = refusal or str(why)
+            continue
+
+        fallback = model_id != first
+        started = time.monotonic()
+        try:
+            reply = await _call(provider, model, messages, tools, max_tokens)
+        except ProviderBusy as exc:
+            last_failure = exc
+            _record(user_id=user_id, purpose=purpose, model=model, outcome="error",
+                    provider=provider, task=task, fallback=fallback, detail=str(exc),
+                    duration_ms=int((time.monotonic() - started) * 1000))
+            _note(model_id, ok=False, error=str(exc), cool_for=exc.cool_for)
+            log.info("model %s busy (%s, task %s)", model_id, exc.cool_for, task)
+            continue
+        except Exception as exc:  # noqa: BLE001 - reported to the caller and recorded
+            _record(user_id=user_id, purpose=purpose, model=model, outcome="error",
+                    provider=provider, task=task, fallback=fallback,
+                    detail=f"{type(exc).__name__}: {exc}",
+                    duration_ms=int((time.monotonic() - started) * 1000))
+            _note(model_id, ok=False, error=type(exc).__name__)
+            raise AiError(f"the model could not be reached: {exc}") from exc
+
+        answered = reply.model_id.partition(":")[2] or model
+        _record(user_id=user_id, purpose=purpose, model=answered, outcome="ok",
+                provider=provider, task=task, fallback=fallback,
+                prompt_tokens=reply.prompt_tokens, completion_tokens=reply.completion_tokens,
+                cost_micros=reply.cost_micros,
+                duration_ms=int((time.monotonic() - started) * 1000))
+        _note(model_id, ok=True)
+        return Reply(text=reply.text, tool_calls=reply.tool_calls,
+                     model_id=f"{provider}:{answered}",
+                     prompt_tokens=reply.prompt_tokens,
+                     completion_tokens=reply.completion_tokens,
+                     cost_micros=reply.cost_micros, fallback=fallback)
+
+    if last_failure is not None:
+        # Every failed attempt was recorded as it happened.
+        raise AiError(f"the model could not be reached: {last_failure}")
+    if refusal:
+        message = refusal
+    elif skipped_busy:
+        message = "every model in the list is busy right now. Try again in a few minutes."
+    else:
+        message = "no AI provider is set up on this server"
+    _record(user_id=user_id, purpose=purpose, model=first.partition(":")[2] or "none",
+            outcome="refused", provider=first.partition(":")[0], task=task, detail=message)
+    raise Refused(message)
+
+
+async def _call(provider: str, model: str, messages: list[dict],
+                tools: list[dict] | None, max_tokens: int) -> Reply:
+    settings = get_settings()
+    if provider == "gemini":
+        return await _chat_completions(
+            GEMINI_BASE, settings.gemini_api_key.strip(), "gemini", model, messages, tools,
+            max_tokens, ask_for_cost=False)
+    if tools is None:
+        # The plain path keeps its original shape: text in, text out.
+        answer = await _openrouter(model, messages, max_tokens)
+        return Reply(text=answer.text, tool_calls=(), model_id=f"openrouter:{answer.model}",
+                     prompt_tokens=answer.prompt_tokens,
+                     completion_tokens=answer.completion_tokens,
+                     cost_micros=answer.cost_micros, fallback=False)
+    return await _chat_completions(
+        settings.ai_base_url.strip(), settings.ai_api_key.strip(), "openrouter", model,
+        messages, tools, max_tokens, ask_for_cost=True)
 
 
 async def ask(
@@ -208,87 +428,100 @@ async def ask(
 
     Every outcome is recorded, refusals included: the record is the point.
     """
-    settings = get_settings()
-    try:
-        model = check(purpose, user_id)
-    except Refused as refusal:
-        _record(user_id=user_id, purpose=purpose, model=settings.ai_model.strip() or "none",
-                outcome="refused", detail=str(refusal))
-        raise
-
     messages = ([{"role": "system", "content": system}] if system else []) + [
         {"role": "user", "content": prompt}
     ]
-
-    started = time.monotonic()
-    try:
-        answer = await _openrouter(model, messages, max_tokens)
-    except Exception as exc:  # noqa: BLE001 - reported to the caller and recorded
-        _record(user_id=user_id, purpose=purpose, model=model, outcome="error",
-                detail=f"{type(exc).__name__}: {exc}",
-                duration_ms=int((time.monotonic() - started) * 1000))
-        raise AiError(f"the model could not be reached: {exc}") from exc
-
-    _record(
-        user_id=user_id, purpose=purpose, model=answer.model, outcome="ok",
-        prompt_tokens=answer.prompt_tokens, completion_tokens=answer.completion_tokens,
-        cost_micros=answer.cost_micros,
-        duration_ms=int((time.monotonic() - started) * 1000),
-    )
-    return answer
+    reply = await chat(task="bulk", purpose=purpose, messages=messages, user_id=user_id,
+                       max_tokens=max_tokens)
+    return Answer(text=reply.text, model=reply.model_id.partition(":")[2],
+                  prompt_tokens=reply.prompt_tokens,
+                  completion_tokens=reply.completion_tokens, cost_micros=reply.cost_micros)
 
 
 async def _openrouter(model: str, messages: list[dict], max_tokens: int) -> Answer:
-    """One call, and what it cost.
+    """One plain call to OpenRouter, and what it cost."""
+    settings = get_settings()
+    reply = await _chat_completions(
+        settings.ai_base_url.strip(), settings.ai_api_key.strip(), "openrouter", model,
+        messages, None, max_tokens, ask_for_cost=True)
+    return Answer(text=reply.text, model=reply.model_id.partition(":")[2] or model,
+                  prompt_tokens=reply.prompt_tokens,
+                  completion_tokens=reply.completion_tokens, cost_micros=reply.cost_micros)
+
+
+async def _chat_completions(
+    base_url: str, key: str, provider: str, model: str, messages: list[dict],
+    tools: list[dict] | None, max_tokens: int, ask_for_cost: bool,
+) -> Reply:
+    """One chat-completions call; both providers speak this format.
 
     The cost comes from the provider rather than a price table kept here: asking
     for it (`usage.include`) means the cap is arithmetic on what was actually
-    charged, and a price change upstream cannot quietly make the cap wrong.
+    charged, and a price change upstream cannot quietly make the cap wrong. The
+    key goes in a header, never a URL.
     """
-    settings = get_settings()
-    body = {
-        "model": model,
-        "messages": messages,
-        "max_tokens": max_tokens,
-        "usage": {"include": True},
-    }
+    body: dict = {"model": model, "messages": messages, "max_tokens": max_tokens}
+    if tools:
+        body["tools"] = tools
+    if ask_for_cost:
+        body["usage"] = {"include": True}
     headers = {
-        "Authorization": f"Bearer {settings.ai_api_key.strip()}",
+        "Authorization": f"Bearer {key}",
         "Content-Type": "application/json",
-        # OpenRouter asks callers to identify themselves. A name, not an address:
-        # nothing about this house goes with the request.
+        # A name, not an address: nothing about this house goes with the request.
         "X-Title": "Homesh",
     }
-    url = settings.ai_base_url.strip().rstrip("/") + "/chat/completions"
+    url = base_url.rstrip("/") + "/chat/completions"
 
-    async with httpx.AsyncClient(timeout=TIMEOUT) as http:
-        response = await http.post(url, json=body, headers=headers)
+    try:
+        async with httpx.AsyncClient(timeout=TIMEOUT, transport=_transport()) as http:
+            response = await http.post(url, json=body, headers=headers)
+    except httpx.TimeoutException as exc:
+        raise ProviderBusy("the provider did not answer in time", COOL_DEFAULT) from exc
 
-    if response.status_code == 401:
-        raise AiError("the provider refused the key (401). Check AI_API_KEY.")
-    if response.status_code == 402:
-        raise AiError("the provider says there is no credit for this model (402).")
-    if response.status_code == 429:
-        raise AiError("the provider is rate-limiting this key (429). Try again shortly.")
-    if response.status_code != 200:
-        raise AiError(f"the provider answered {response.status_code}: {response.text[:200]}")
+    code = response.status_code
+    if code in (401, 402):
+        raise ProviderBusy(
+            "the provider refused the key (401). Check the key in .env." if code == 401
+            else "the provider says there is no credit for this model (402).", 3600)
+    if code == 429 or code >= 500:
+        raise ProviderBusy(
+            "the provider is rate-limiting this key (429). Try again shortly." if code == 429
+            else f"the provider answered {code}",
+            _retry_after(response.headers.get("retry-after")))
+    if code != 200:
+        raise AiError(f"the provider answered {code}: {response.text[:200]}")
 
     data = response.json()
     choices = data.get("choices") or []
     if not choices:
         raise AiError("the provider returned no answer")
-    said = (choices[0].get("message") or {}).get("content") or ""
-
+    message = choices[0].get("message") or {}
+    calls = tuple(
+        ToolCall(
+            id=str(c.get("id") or ""),
+            name=str((c.get("function") or {}).get("name") or ""),
+            arguments=str((c.get("function") or {}).get("arguments") or ""),
+        )
+        for c in (message.get("tool_calls") or [])
+    )
     usage = data.get("usage") or {}
     # `cost` is in credits, one credit being one unit of currency.
-    cost = usage.get("cost") or 0
-    return Answer(
-        text=said.strip(),
-        model=data.get("model") or model,
+    cost = (usage.get("cost") or 0) if ask_for_cost else 0
+    return Reply(
+        text=(message.get("content") or "").strip(),
+        tool_calls=calls,
+        model_id=f"{provider}:{data.get('model') or model}",
         prompt_tokens=int(usage.get("prompt_tokens") or 0),
         completion_tokens=int(usage.get("completion_tokens") or 0),
         cost_micros=int(round(float(cost) * 1_000_000)),
+        fallback=False,
     )
+
+
+# Tests replace this to answer without a network.
+def _transport() -> httpx.AsyncBaseTransport | None:
+    return None
 
 
 def history(limit: int = 50) -> list[dict]:

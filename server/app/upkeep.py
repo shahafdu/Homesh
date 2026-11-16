@@ -412,6 +412,13 @@ async def run_forever() -> None:
         except Exception:  # noqa: BLE001
             log.exception("scheduled backup failed")
 
+        try:
+            await _daily_model_catalogue()
+        except asyncio.CancelledError:
+            raise
+        except Exception:  # noqa: BLE001 - a stale model list is not worth a crash
+            log.warning("could not refresh the AI model list")
+
         # Re-checked at least hourly rather than slept for a whole day: a source
         # added at noon should not wait until tomorrow, and a machine that
         # suspends overnight would otherwise drift a full cycle every time it
@@ -424,6 +431,30 @@ async def run_forever() -> None:
         except Exception:  # noqa: BLE001 - an unreadable shelf still waits
             pause = 3600.0
         await asyncio.sleep(pause)
+
+
+_catalogue_read_at: datetime | None = None
+
+
+async def _daily_model_catalogue() -> None:
+    """Re-read what the AI providers offer, once a day.
+
+    Only where a provider is set up: a house with no AI makes no request. Kept
+    in memory rather than the database -- after a restart one extra refresh is
+    harmless, and the list is public information.
+    """
+    global _catalogue_read_at
+    now = datetime.now(UTC)
+    if _catalogue_read_at and now - _catalogue_read_at < timedelta(hours=23):
+        return
+    settings = get_settings()
+    if not (settings.ai_api_key.strip() or settings.gemini_api_key.strip()):
+        return
+    from .aicatalog import refresh
+
+    _catalogue_read_at = now
+    counts = await refresh()
+    log.info("AI model list refreshed: %s", counts)
 
 
 async def _scheduled_backup() -> None:

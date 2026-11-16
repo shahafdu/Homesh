@@ -127,6 +127,8 @@ def db():
         # Costs are summed per month across tests otherwise, and a cap holds
         # for the rest of the run.
         conn.execute(text("DELETE FROM ai_calls"))
+        conn.execute(text("DELETE FROM ai_models"))
+        conn.execute(text("UPDATE ai_settings SET data = '{}'::jsonb"))
         conn.execute(text("DELETE FROM upkeep_state"))
 
 
