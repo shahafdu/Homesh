@@ -53,8 +53,9 @@ const HIT_LIMIT = 2000;
 /** Statuses whose reason is worth asking the server for. pdf.js reports only
  *  "Unexpected server response (503)", and the server's own sentence -- the
  *  converter is down, try again in a minute -- is the one a person can act on.
- *  Only answers that cost the server nothing to repeat: asking again after a
- *  failed conversion would run the whole conversion a second time. */
+ *  Only answers that cost the server nothing to repeat: a 503 is decided by a
+ *  health check before the document is fetched, and asking again after a
+ *  failed conversion (502) would run the whole conversion a second time. */
 const ASK_WHY = new Set([413, 415, 503]);
 
 async function serverReason(e: unknown, url: string): Promise<string | null> {

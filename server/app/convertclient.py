@@ -16,6 +16,8 @@ from .config import get_settings
 # conversion with room to spare. One that also waited long for its turn can be
 # cut off here; it reads as "try again in a minute", which by then is true.
 TIMEOUT = httpx.Timeout(150.0, connect=5.0)
+# The health check is answered by the event loop alone, even mid-conversion.
+HEALTH_TIMEOUT = httpx.Timeout(5.0)
 
 # Replaced by tests with an httpx.MockTransport.
 _transport: httpx.AsyncBaseTransport | None = None
@@ -29,8 +31,28 @@ class NotConvertible(Exception):
     """The converter tried and this document cannot be rendered."""
 
 
+def _base() -> str:
+    return get_settings().converter_url.rstrip("/")
+
+
+async def ensure_available() -> None:
+    """Raise ConverterUnavailable unless the converter answers its health check.
+
+    Asked before the document is fetched: a Drive document can be 60 MB, and
+    fetching all of it only to learn that nothing is there to convert it costs
+    that much again every time the viewer asks why it failed.
+    """
+    try:
+        async with httpx.AsyncClient(timeout=HEALTH_TIMEOUT, transport=_transport) as http:
+            r = await http.get(_base() + "/health")
+    except httpx.HTTPError as exc:
+        raise ConverterUnavailable(type(exc).__name__) from None
+    if r.status_code != 200:
+        raise ConverterUnavailable(str(r.status_code))
+
+
 async def to_pdf(data: bytes, ext: str) -> bytes:
-    url = get_settings().converter_url.rstrip("/") + "/convert"
+    url = _base() + "/convert"
     try:
         async with httpx.AsyncClient(timeout=TIMEOUT, transport=_transport) as http:
             r = await http.post(

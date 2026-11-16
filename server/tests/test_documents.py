@@ -46,7 +46,11 @@ def a_document(db, tmp_path):
 @pytest.fixture
 def converter(monkeypatch):
     calls: list[tuple[bytes, str]] = []
-    behaviour: dict = {"raise": None}
+    behaviour: dict = {"raise": None, "down": False}
+
+    async def health() -> None:
+        if behaviour["down"]:
+            raise convertclient.ConverterUnavailable("ConnectError")
 
     async def fake(data: bytes, ext: str) -> bytes:
         calls.append((data, ext))
@@ -55,6 +59,7 @@ def converter(monkeypatch):
         return PDF
 
     monkeypatch.setattr(convertclient, "to_pdf", fake)
+    monkeypatch.setattr(convertclient, "ensure_available", health)
     return calls, behaviour
 
 
@@ -80,6 +85,44 @@ def test_an_unreachable_converter_is_a_sentence(client, a_document, converter):
     r = client.get(f"/api/documents/{a_document}")
     assert r.status_code == 503
     assert r.json()["detail"] == "Documents can't be shown right now. Try again in a minute."
+
+
+def test_a_converter_that_is_down_costs_no_fetch(client, a_document, converter, monkeypatch):
+    """Asked first, so a 60 MB Drive document is not fetched only to be dropped.
+
+    The viewer asks again for the reason when it is told 503, which doubled it.
+    """
+    calls, behaviour = converter
+    behaviour["down"] = True
+    fetched = []
+    real = documents.resolve_playable
+
+    def spy(item_id):
+        connector, rel, filename, size, ext = real(item_id)
+
+        class Watched:
+            def open_range(self, path, *a, **kw):
+                fetched.append(path)
+                return connector.open_range(path, *a, **kw)
+
+        return Watched(), rel, filename, size, ext
+
+    monkeypatch.setattr(documents, "resolve_playable", spy)
+    r = client.get(f"/api/documents/{a_document}")
+    assert r.status_code == 503
+    assert r.json()["detail"] == documents.UNAVAILABLE
+    assert fetched == [] and calls == []
+
+    behaviour["down"] = False
+    assert client.get(f"/api/documents/{a_document}").status_code == 200
+    assert len(fetched) == 1, "the spy never saw the fetch, so the first half proves nothing"
+
+
+def test_the_server_refuses_before_the_converter_would():
+    """A document the converter would refuse is told 'download it', not 'it failed'."""
+    from app import converter
+
+    assert documents.MAX_SOURCE_BYTES <= converter.MAX_INPUT
 
 
 def test_a_document_that_cannot_be_rendered(client, a_document, converter):
@@ -153,3 +196,24 @@ async def test_an_unreachable_converter_is_unavailable(answering):
     answering(handler)
     with pytest.raises(convertclient.ConverterUnavailable):
         await convertclient.to_pdf(b"doc", "docx")
+
+
+async def test_the_health_check_passes_when_the_converter_answers(answering):
+    answering(lambda request: httpx.Response(200, json={"ok": True}))
+    await convertclient.ensure_available()
+
+
+@pytest.mark.parametrize("code", [500, 503])
+async def test_the_health_check_fails_on_a_bad_answer(answering, code):
+    answering(lambda request: httpx.Response(code))
+    with pytest.raises(convertclient.ConverterUnavailable):
+        await convertclient.ensure_available()
+
+
+async def test_the_health_check_fails_when_unreachable(answering):
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("no route", request=request)
+
+    answering(handler)
+    with pytest.raises(convertclient.ConverterUnavailable):
+        await convertclient.ensure_available()

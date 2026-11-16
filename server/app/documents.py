@@ -108,7 +108,7 @@ async def document_pdf(
                             f".{ext} is not a document this can render")
 
     if size and size > MAX_SOURCE_BYTES:
-        raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, TOO_LARGE)
+        raise HTTPException(status.HTTP_413_CONTENT_TOO_LARGE, TOO_LARGE)
 
     cached = _cache_path(item_id, size or 0, ext or "")
     if cached.is_file():
@@ -120,6 +120,12 @@ async def document_pdf(
         if cached.is_file():
             return FileResponse(cached, media_type="application/pdf", filename=f"{filename}.pdf")
 
+        try:
+            await convertclient.ensure_available()
+        except convertclient.ConverterUnavailable as exc:
+            log.warning("the converter is unavailable (%s)", exc)
+            raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, UNAVAILABLE) from None
+
         # Through the connector, so this works for a Drive file exactly as it
         # does for a local one -- and on a thread, because for a Drive file that
         # is a whole document fetched over the network, which on the event loop
@@ -130,7 +136,7 @@ async def document_pdf(
                 for chunk in chunks:
                     data += chunk
                     if len(data) > MAX_SOURCE_BYTES:
-                        raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                        raise HTTPException(status.HTTP_413_CONTENT_TOO_LARGE,
                                             TOO_LARGE)
             return bytes(data)
 
