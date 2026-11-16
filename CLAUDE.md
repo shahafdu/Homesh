@@ -151,7 +151,7 @@ to one goes to the other.
 | 8 · Optional transcode | ❌ overtaken | It was never optional for this library — see §3.2.1 of ARCHITECTURE for what actually happened |
 | 9 · Public release | 🔨 | Public since August. Docs current as of 14 September 2026; screenshots outstanding |
 
-**Tests: 879 passing, and the web unit tests (`npm test`). Migrations: 028. Lint: clean. CI green.**
+**Tests: 886 passing, and the web unit tests (`npm test`). Migrations: 028. Lint: clean. CI green.**
 
 ### AI design decisions — agreed, not yet built
 
@@ -205,8 +205,9 @@ do not stop.
 
 - [ ] ReplayGain (M2). Gapless playback is done in the browser player (M1); the television and rooms driven by the receiver still play one track at a time
 - [ ] AcoustID tag repair (phase 5's second half)
-- [ ] Automatic rescan on file change — done for folders on the PC (`tools/watch-folders.ps1`
-      -> `app.scanrequest`); Drive changes are still noticed at the next sweep (L2)
+- [x] Automatic rescan on file change — folders on the PC (`tools/watch-folders.ps1`
+      -> `app.scanrequest`) and Drive (`upkeep.drive_changes_forever`, every 15 minutes
+      from Drive's change feed); the daily sweep remains as a safety net
 - [ ] Go agent + WireGuard (Mode B split; only needed when the core moves off the PC)
 - [ ] **The standby on Oracle** (phase 0.5, as redesigned) — `docs/STANDBY.md`.
       Built: hourly backups, the standby's safe refresh, changes on the standby

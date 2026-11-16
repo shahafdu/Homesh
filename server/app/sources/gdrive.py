@@ -237,6 +237,59 @@ def shared_folders(key_path: Path) -> list[tuple[str, str]]:
     return out
 
 
+class TokenRejected(DriveError):
+    """Drive no longer honours the change token (too old, or never valid)."""
+
+
+def start_token(key_path: Path) -> str:
+    """The token that means "from now on", for ``changes_since``."""
+    with _client(_Credentials(key_path)) as client:
+        r = client.get(f"{API}/changes/startPageToken",
+                       params={"supportsAllDrives": "true"})
+    if r.status_code != 200:
+        raise DriveError(f"could not get a change token: {r.status_code}")
+    token = r.json().get("startPageToken")
+    if not token:
+        raise DriveError("Drive returned no change token")
+    return str(token)
+
+
+def changes_since(key_path: Path, token: str) -> tuple[list[dict], str]:
+    """Everything that changed since the token, and the token to use next.
+
+    Follows ``nextPageToken`` to the last page, which is the one that carries
+    ``newStartPageToken``.
+    """
+    out: list[dict] = []
+    page = token
+    with _client(_Credentials(key_path)) as client:
+        while True:
+            r = client.get(
+                f"{API}/changes",
+                params={
+                    "pageToken": page,
+                    "pageSize": 500,
+                    "fields": "nextPageToken,newStartPageToken,"
+                              "changes(fileId,removed,file(parents,trashed))",
+                    "includeItemsFromAllDrives": "true",
+                    "supportsAllDrives": "true",
+                },
+            )
+            if r.status_code in (400, 410):
+                raise TokenRejected(f"change token refused: {r.status_code}")
+            if r.status_code != 200:
+                raise DriveError(f"listing changes failed: {r.status_code}")
+            body = r.json()
+            out.extend(body.get("changes", []))
+            if body.get("nextPageToken"):
+                page = body["nextPageToken"]
+                continue
+            new = body.get("newStartPageToken")
+            if not new:
+                raise DriveError("Drive returned no new change token")
+            return out, str(new)
+
+
 class GoogleDriveConnector:
     """One shared folder, presented as a source.
 

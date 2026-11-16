@@ -250,3 +250,157 @@ class TestAReadThatBreaksOffIsResumed:
         with pytest.raises(httpx.ReadError):
             b"".join(drive.open_range("book.pdf"))
         assert len(client.ranges) == RESUMES + 1
+
+
+# -- Change polling (docs/design/06, L2) -----------------------------------------
+
+
+class TestDriveChanges:
+    @pytest.fixture
+    def drive(self, db, monkeypatch, tmp_path):
+        import httpx
+
+        from app import upkeep
+        from app.config import get_settings
+        from app.sources import gdrive
+
+        key = tmp_path / "key.json"
+        key.write_text("{}")
+        monkeypatch.setenv("GDRIVE_KEY_FILE", str(key))
+        get_settings.cache_clear()
+
+        class Fake:
+            calls: list = []
+            responses: list = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            Fake.calls.append(request)
+            return Fake.responses.pop(0)
+
+        Fake.calls, Fake.responses = [], []
+        monkeypatch.setattr(
+            gdrive, "_client",
+            lambda creds: httpx.Client(transport=httpx.MockTransport(handler)),
+        )
+        yield upkeep, Fake
+        get_settings.cache_clear()
+
+    @staticmethod
+    def _sources(db, count=2):
+        from sqlalchemy import text
+
+        out = []
+        with db.begin() as conn:
+            for n in range(count):
+                out.append(
+                    conn.execute(
+                        text(
+                            "INSERT INTO sources (kind, name, mount_prefix, audience, "
+                            "remote_id) VALUES ('gdrive', :n, :p, 'everyone', :r) "
+                            "RETURNING id, remote_id"
+                        ),
+                        {"n": f"Cloud {n}", "p": f"/cloud/c{n}", "r": f"root{n}"},
+                    ).one()
+                )
+            item = conn.execute(
+                text("INSERT INTO items (kind, size_bytes) VALUES ('audio', 1) RETURNING id")
+            ).scalar_one()
+            conn.execute(
+                text(
+                    "INSERT INTO replicas (item_id, source_id, dir_path, filename, ext, "
+                    "available, remote_id) VALUES (:i, :s, '', 'a.mp3', 'mp3', TRUE, 'file-a')"
+                ),
+                {"i": str(item), "s": str(out[0][0])},
+            )
+        return out
+
+    @staticmethod
+    def _flagged(db):
+        from sqlalchemy import text
+
+        with db.connect() as conn:
+            return {
+                r[0]
+                for r in conn.execute(
+                    text("SELECT id FROM sources WHERE scan_requested_at IS NOT NULL")
+                )
+            }
+
+    @staticmethod
+    def _ok(json):
+        import httpx
+
+        return httpx.Response(200, json=json)
+
+    def test_first_run_stores_a_token_and_asks_for_no_changes(self, db, drive):
+        upkeep, fake = drive
+        fake.responses = [self._ok({"startPageToken": "t1"})]
+        assert upkeep.drive_changes_once() == 0
+        assert upkeep._state_get("drive.page_token") == "t1"
+        assert len(fake.calls) == 1
+        assert fake.calls[0].url.path.endswith("/changes/startPageToken")
+
+    def test_a_known_file_marks_its_source_only(self, db, drive):
+        upkeep, fake = drive
+        (s0, _), (s1, _) = self._sources(db)
+        upkeep._state_set("drive.page_token", "t1")
+        fake.responses = [self._ok({
+            "newStartPageToken": "t2",
+            "changes": [{"fileId": "file-a", "file": {"parents": ["x"]}}],
+        })]
+        assert upkeep.drive_changes_once() == 1
+        assert self._flagged(db) == {s0}
+        assert upkeep._state_get("drive.page_token") == "t2"
+
+    def test_an_unmappable_change_marks_every_drive_source(self, db, drive):
+        upkeep, fake = drive
+        (s0, _), (s1, _) = self._sources(db)
+        upkeep._state_set("drive.page_token", "t1")
+        fake.responses = [self._ok({
+            "newStartPageToken": "t2",
+            "changes": [{"fileId": "unknown", "file": {"parents": ["deep"]}}],
+        })]
+        upkeep.drive_changes_once()
+        assert self._flagged(db) == {s0, s1}
+
+    def test_a_new_file_directly_in_a_root_marks_that_root(self, db, drive):
+        upkeep, fake = drive
+        (s0, _), (s1, r1) = self._sources(db)
+        upkeep._state_set("drive.page_token", "t1")
+        fake.responses = [self._ok({
+            "newStartPageToken": "t2",
+            "changes": [{"fileId": "new", "file": {"parents": [r1]}}],
+        })]
+        upkeep.drive_changes_once()
+        assert self._flagged(db) == {s1}
+
+    def test_a_failed_request_keeps_the_token(self, db, drive):
+        import httpx
+
+        upkeep, fake = drive
+        upkeep._state_set("drive.page_token", "t1")
+        fake.responses = [httpx.Response(500, text="boom")]
+        with pytest.raises(Exception, match="listing changes failed"):
+            upkeep.drive_changes_once()
+        assert upkeep._state_get("drive.page_token") == "t1"
+
+    def test_a_rejected_token_is_dropped(self, db, drive):
+        import httpx
+
+        upkeep, fake = drive
+        upkeep._state_set("drive.page_token", "old")
+        fake.responses = [httpx.Response(410, text="gone")]
+        assert upkeep.drive_changes_once() == 0
+        assert upkeep._state_get("drive.page_token") is None
+
+    def test_paging_follows_next_page_token(self, db, drive):
+        upkeep, fake = drive
+        self._sources(db)
+        upkeep._state_set("drive.page_token", "t1")
+        fake.responses = [
+            self._ok({"nextPageToken": "p2", "changes": [{"fileId": "file-a"}]}),
+            self._ok({"newStartPageToken": "t9", "changes": []}),
+        ]
+        assert upkeep.drive_changes_once() == 1
+        assert [c.url.params["pageToken"] for c in fake.calls] == ["t1", "p2"]
+        assert upkeep._state_get("drive.page_token") == "t9"

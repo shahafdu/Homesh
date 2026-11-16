@@ -15,6 +15,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from uuid import UUID
 
 from sqlalchemy import text
@@ -196,6 +197,121 @@ async def requested_scans_forever() -> None:
         except Exception:  # noqa: BLE001 - the next minute tries again
             log.exception("requested scan failed")
         await asyncio.sleep(60)
+
+
+# -- Drive changes ---------------------------------------------------------------
+
+DRIVE_CHANGES_EVERY = timedelta(minutes=15)
+_TOKEN_KEY = "drive.page_token"
+
+
+def _state_get(key: str) -> str | None:
+    with get_engine().connect() as conn:
+        return conn.execute(
+            text("SELECT value FROM upkeep_state WHERE key = :k"), {"k": key}
+        ).scalar()
+
+
+def _state_set(key: str, value: str) -> None:
+    with get_engine().begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO upkeep_state (key, value) VALUES (:k, :v) "
+                "ON CONFLICT (key) DO UPDATE SET value = :v, updated_at = now()"
+            ),
+            {"k": key, "v": value},
+        )
+
+
+def _state_clear(key: str) -> None:
+    with get_engine().begin() as conn:
+        conn.execute(text("DELETE FROM upkeep_state WHERE key = :k"), {"k": key})
+
+
+def _mark_drive_sources(changes: list[dict]) -> int:
+    """Flag the Drive sources the changes belong to. Returns how many."""
+    with get_engine().begin() as conn:
+        roots = {
+            r[0]: r[1]
+            for r in conn.execute(
+                text("SELECT remote_id, id FROM sources "
+                     "WHERE kind = 'gdrive' AND remote_id IS NOT NULL")
+            )
+        }
+        if not roots:
+            return 0
+        found: set = set()
+        everything = False
+        for change in changes:
+            file_id = change.get("fileId")
+            ids = {
+                r[0]
+                for r in conn.execute(
+                    text("SELECT DISTINCT source_id FROM replicas WHERE remote_id = :f"),
+                    {"f": file_id},
+                )
+            }
+            if file_id in roots:
+                ids.add(roots[file_id])
+            for parent in (change.get("file") or {}).get("parents") or []:
+                if parent in roots:
+                    ids.add(roots[parent])
+            if ids:
+                found |= ids
+            else:
+                # A new file deep in a sub-folder: nothing here knows whose it is.
+                everything = True
+                break
+        marked = set(roots.values()) if everything else found & set(roots.values())
+        for sid in marked:
+            conn.execute(
+                text("UPDATE sources SET scan_requested_at = now() WHERE id = :i"),
+                {"i": str(sid)},
+            )
+    return len(marked)
+
+
+def drive_changes_once() -> int:
+    """One look at what Drive says changed. Returns how many sources it flagged."""
+    from .sources import gdrive
+
+    key = Path(get_settings().gdrive_key_file)
+    if not key.is_file():
+        return 0
+    token = _state_get(_TOKEN_KEY)
+    try:
+        if token is None:
+            # The daily sweep covers everything before now.
+            _state_set(_TOKEN_KEY, gdrive.start_token(key))
+            return 0
+        changes, new_token = gdrive.changes_since(key, token)
+    except gdrive.TokenRejected:
+        _state_clear(_TOKEN_KEY)
+        log.info("drive change token was refused; starting afresh next time")
+        return 0
+    marked = _mark_drive_sources(changes) if changes else 0
+    # After the marking, so a failure above repeats these changes next time.
+    _state_set(_TOKEN_KEY, new_token)
+    return marked
+
+
+async def drive_changes_forever() -> None:
+    """Every 15 minutes, ask Drive what changed and flag the folders affected."""
+    from .standby import is_standby
+
+    if is_standby():
+        return
+    await asyncio.sleep(FIRST_SWEEP_DELAY.total_seconds())
+    while True:
+        try:
+            marked = await asyncio.to_thread(drive_changes_once)
+            if marked:
+                log.info("drive changes: %d folder(s) flagged for a scan", marked)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # noqa: BLE001 - the old token stays; try again
+            log.warning("could not read Drive changes: %s", exc)
+        await asyncio.sleep(DRIVE_CHANGES_EVERY.total_seconds())
 
 
 async def sweep(interval: timedelta) -> int:

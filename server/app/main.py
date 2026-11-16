@@ -125,6 +125,11 @@ async def lifespan(app: FastAPI):
 
     requested = asyncio.create_task(requested_scans_forever())
 
+    # Drive says what changed, so most changes there appear within a quarter hour.
+    from .upkeep import drive_changes_forever
+
+    drive_changes = asyncio.create_task(drive_changes_forever())
+
     # The traffic with the other machine, through the bucket: on the PC,
     # carrying out changes made on the standby; on the standby, sending them
     # and taking the PC's newest backup.
@@ -153,7 +158,7 @@ async def lifespan(app: FastAPI):
 
     yield
 
-    for task in (upkeep, finder, watcher, address, syncing, mailbox, requested):
+    for task in (upkeep, finder, watcher, address, syncing, mailbox, requested, drive_changes):
         task.cancel()
         with suppress(asyncio.CancelledError):
             await task
