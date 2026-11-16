@@ -429,8 +429,12 @@ Video plays two ways and the app chooses:
 
 **Documents** are drawn page by page in the app rather than handed to the browser,
 which is what makes them work on a phone. Word, Excel and PowerPoint files are
-converted to PDF by the server first. Long books load the pages you are reading rather
-than the whole file, so a 140 MB rulebook opens in seconds.
+converted to PDF first, by a separate converter that runs walled off from everything
+else on the server, so a booby-trapped document cannot reach your files or keys.
+Long books load the pages you are reading rather than the whole file, so a 140 MB
+rulebook opens in seconds. Documents over 60 MB are not converted; download them
+instead. If a document says "Documents can't be shown right now", the converter is
+not running -- start Homesh again on the PC (`Start Homesh.cmd`) and it comes back.
 
 **Anything unopenable** — a `.MSWMM`, a file with no extension — can still be shown as
 text or as hex, whichever answers the question.

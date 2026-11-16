@@ -407,6 +407,14 @@ which is exactly how Drive content keeps playing when the RAID is down, transpar
 
 ### 5.5 Documents
 - In-browser preview: PDF, EPUB, DOCX/XLSX/PPTX, Markdown, plaintext, code
+- Office formats are rendered to PDF by LibreOffice in a **container of its own**
+  (`converter` in `docker-compose.yml`, `server/app/converter.py`): no secrets, no
+  library, no database, a read-only filesystem, and only an internal network that
+  reaches nothing. LibreOffice has a long record of documents that read local files
+  or run code, and anyone with edit rights on a shared Drive folder can put one in
+  the library; in there, the most such a document can do is spoil its own PDF. There
+  is no fallback to converting inside the server, and the server's image has no
+  LibreOffice in it
 - Full-text search across document bodies
 - AI summarization and Q&A over a document or a folder
 

@@ -9,6 +9,11 @@ keeps the file at home. Handing the document to Microsoft's or Google's online
 viewer would mean uploading a private contract or a payslip to a third party in
 order to read it, which is the opposite of why this server exists.
 
+The rendering itself happens in the converter container (converter.py), never
+in this process: LibreOffice is a large parser fed documents that anyone with
+edit rights on a shared folder can supply, and this process holds every key the
+house has. Here the document is only fetched, sent, and the PDF cached.
+
 Conversions are cached on disk and keyed by content, so the second look is
 instant and a file that never changes is converted exactly once.
 """
@@ -16,20 +21,21 @@ instant and a file that never changes is converted exactly once.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import hashlib
 import logging
-import shutil
+import os
 import tempfile
-from contextlib import closing
 from pathlib import Path
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import FileResponse
 
+from . import convertclient
 from .access import may_access_item
-from .childenv import child_env
 from .config import get_settings
+from .docformats import convertible
 from .security import CurrentUser, optional_user
 from .signing import TokenError, verify
 from .stream import resolve_playable
@@ -38,33 +44,17 @@ log = logging.getLogger("homesh.documents")
 router = APIRouter(prefix="/api", tags=["documents"])
 
 
-# What LibreOffice can render faithfully. Deliberately explicit rather than
-# "anything it will accept": a format that converts badly is worse than one that
-# honestly says it has no preview.
-CONVERTIBLE = {
-    # Word processing
-    "doc", "docx", "odt", "rtf", "dot", "dotx", "wpd",
-    # Spreadsheets
-    "xls", "xlsx", "ods", "csv", "xlsm", "xlt", "xltx",
-    # Presentations
-    "ppt", "pptx", "odp", "pps", "ppsx", "pot", "potx",
-    # Other office-ish things it handles well
-    "abw", "sxw", "fodt", "fods",
-}
-
-# A conversion is one process; several at once on a low-power CPU would
-# make the whole server unresponsive for whoever is watching something.
+# A conversion holds the whole document in memory, here and in the converter,
+# which takes one at a time anyway; two waiting is plenty.
 _slot = asyncio.Semaphore(2)
 
-CONVERT_TIMEOUT = 120.0
+# The converter refuses anything larger (MAX_INPUT in converter.py). Checked
+# here too so that a person is told to download it, rather than that it failed.
+MAX_SOURCE_BYTES = 60 * 1024 * 1024
 
-# Bounded because the file is copied to disk before conversion, and because a
-# 300 MB spreadsheet is not something anybody is about to read on a phone.
-MAX_SOURCE_BYTES = 100 * 1024 * 1024
-
-
-def convertible(ext: str | None) -> bool:
-    return (ext or "").lower().lstrip(".") in CONVERTIBLE
+UNAVAILABLE = "Documents can't be shown right now. Try again in a minute."
+FAILED = "that document could not be converted"
+TOO_LARGE = "that document is too large to render — download it instead"
 
 
 def _cache_dir() -> Path:
@@ -78,47 +68,6 @@ def _cache_path(item_id: UUID, size: int, ext: str) -> Path:
     # contents — is not served from a stale rendering of the old one.
     key = hashlib.sha256(f"{item_id}:{size}:{ext}".encode()).hexdigest()[:32]
     return _cache_dir() / f"{key}.pdf"
-
-
-async def _run_soffice(source: Path, out_dir: Path) -> Path:
-    """Convert one file, in its own profile directory.
-
-    LibreOffice keeps a per-user profile and refuses to run two instances that
-    share one. A throwaway profile per conversion is the documented way to run it
-    as a service, and it means a crashed conversion cannot poison the next.
-    """
-    with tempfile.TemporaryDirectory(prefix="homesh-lo-") as profile:
-        proc = await asyncio.create_subprocess_exec(
-            "soffice",
-            f"-env:UserInstallation=file://{profile}",
-            "--headless",
-            "--norestore",
-            "--invisible",
-            "--convert-to",
-            "pdf",
-            "--outdir",
-            str(out_dir),
-            str(source),
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            env=child_env(HOME=profile),
-        )
-        try:
-            _out, err = await asyncio.wait_for(proc.communicate(), timeout=CONVERT_TIMEOUT)
-        except TimeoutError as exc:
-            proc.kill()
-            raise HTTPException(
-                status.HTTP_504_GATEWAY_TIMEOUT, "that document took too long to convert"
-            ) from exc
-
-    if proc.returncode != 0:
-        log.warning("soffice failed: %s", err.decode(errors="replace")[:400])
-        raise HTTPException(status.HTTP_502_BAD_GATEWAY, "that document could not be converted")
-
-    produced = list(out_dir.glob("*.pdf"))
-    if not produced:
-        raise HTTPException(status.HTTP_502_BAD_GATEWAY, "the converter produced nothing")
-    return produced[0]
 
 
 @router.get("/documents/{item_id}")
@@ -159,8 +108,7 @@ async def document_pdf(
                             f".{ext} is not a document this can render")
 
     if size and size > MAX_SOURCE_BYTES:
-        raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-                            "that document is too large to render — download it instead")
+        raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, TOO_LARGE)
 
     cached = _cache_path(item_id, size or 0, ext or "")
     if cached.is_file():
@@ -172,32 +120,42 @@ async def document_pdf(
         if cached.is_file():
             return FileResponse(cached, media_type="application/pdf", filename=f"{filename}.pdf")
 
-        with tempfile.TemporaryDirectory(prefix="homesh-doc-") as work:
-            work_dir = Path(work)
-            # Suffix matters: LibreOffice picks its import filter from it.
-            source = work_dir / f"input.{(ext or 'bin').lower()}"
+        # Through the connector, so this works for a Drive file exactly as it
+        # does for a local one -- and on a thread, because for a Drive file that
+        # is a whole document fetched over the network, which on the event loop
+        # would stop the server answering anything else.
+        def fetch() -> bytes:
+            data = bytearray()
+            with contextlib.closing(connector.open_range(rel_path)) as chunks:
+                for chunk in chunks:
+                    data += chunk
+                    if len(data) > MAX_SOURCE_BYTES:
+                        raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                                            TOO_LARGE)
+            return bytes(data)
 
-            # Through the connector, so this works for a Drive file exactly as
-            # it does for a local one — and on a thread, because for a Drive file
-            # that is a whole document fetched over the network, which on the
-            # event loop would stop the server answering anything else.
-            def fetch() -> None:
-                with (
-                    source.open("wb") as fh,
-                    closing(connector.open_range(rel_path)) as chunks,
-                ):
-                    for chunk in chunks:
-                        fh.write(chunk)
+        data = await asyncio.to_thread(fetch)
 
-            await asyncio.to_thread(fetch)
+        try:
+            pdf = await convertclient.to_pdf(data, (ext or "").lower())
+        except convertclient.ConverterUnavailable as exc:
+            log.warning("the converter is unavailable (%s)", exc)
+            raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, UNAVAILABLE) from None
+        except convertclient.NotConvertible as exc:
+            log.info("the converter could not render a .%s (%s)", ext, exc)
+            raise HTTPException(status.HTTP_502_BAD_GATEWAY, FAILED) from None
 
-            out_dir = work_dir / "out"
-            out_dir.mkdir()
-            produced = await _run_soffice(source, out_dir)
-
-            # Move into place only once it is complete, so a crash mid-write
-            # cannot leave a truncated PDF cached forever.
-            shutil.move(str(produced), str(cached))
+        # Written beside the cache and moved into place only once complete, so
+        # a crash mid-write cannot leave a truncated PDF cached forever.
+        fd, partial = tempfile.mkstemp(dir=cached.parent, suffix=".part")
+        try:
+            with os.fdopen(fd, "wb") as fh:
+                fh.write(pdf)
+            os.replace(partial, cached)
+        except BaseException:
+            with contextlib.suppress(FileNotFoundError):
+                os.unlink(partial)
+            raise
 
     log.info("converted %s to PDF", filename)
     return FileResponse(cached, media_type="application/pdf", filename=f"{filename}.pdf")

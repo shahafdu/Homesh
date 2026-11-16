@@ -185,8 +185,14 @@ $ErrorActionPreference = 'Continue'
 # cannot find the path specified" -- so the suite became unrunnable
 # because a drive holding no test data was switched off. The tests build their
 # own library in a temporary directory and want none of those mounts.
+# The two compose files are mounted for test_converter.py, which checks that
+# the converter service is still given nothing; the rest of the repository
+# is not.
 docker compose -f "${repo}/docker-compose.yml" run --rm `
     --volume "${repo}/server:/app" `
+    --volume "${repo}/docker-compose.yml:/repo/docker-compose.yml:ro" `
+    --volume "${repo}/docker-compose.standby.yml:/repo/docker-compose.standby.yml:ro" `
+    --env "HOMESH_REPO=/repo" `
     --env "DATABASE_URL=postgresql+psycopg://homesh:$pw@db:5432/$testDb" `
     --env "MEDIA_ROOTS=" `
     --env "OFFSITE_PROVIDER=" `

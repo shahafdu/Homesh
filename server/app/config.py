@@ -112,6 +112,11 @@ class Settings(BaseSettings):
     # be a hardcoded absolute path.
     cache_dir: str = "/var/lib/homesh/cache"
 
+    # The converter container that turns office documents into PDFs
+    # (app/converter.py). Its own container, so LibreOffice never runs beside
+    # the keys this one holds.
+    converter_url: str = "http://converter:8091"
+
     # How much disk to spend keeping tracks fetched from Drive, in megabytes.
     # Drive charges about 1.4 s before the first byte of every read, which for
     # music is the wait before it starts; a cached track has none. Zero switches

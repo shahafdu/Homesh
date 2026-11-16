@@ -14,29 +14,18 @@ COPY web/ ./
 RUN npm run build
 
 
-# ── Stage 2: API ────────────────────────────────────────────────────────────
-FROM python:3.12-slim
+# ── Stage 2: base ───────────────────────────────────────────────────────────
+# What the server and the converter share: Python, ffmpeg, the pinned
+# dependencies and the code. No LibreOffice -- that is only in the converter.
+FROM python:3.12-slim AS base
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1
 
 # ffmpeg is used for remux and thumbnails — not transcoding (ARCHITECTURE.md §3.2).
-#
-# LibreOffice renders the office formats no browser can display — doc, docx, xls,
-# xlsx, ppt, pptx and the rest — to PDF, which every browser can. It is a heavy
-# dependency for a media server and it is still the right one: the alternatives
-# are a different JavaScript library per format with worse fidelity, or handing
-# the file to Microsoft's or Google's online viewer, which means uploading a
-# private document to a third party in order to read it. Conversions are cached.
 RUN apt-get update \
- && apt-get install -y --no-install-recommends \
-      ffmpeg \
-      libreoffice-writer-nogui \
-      libreoffice-calc-nogui \
-      libreoffice-impress-nogui \
-      fonts-dejavu \
-      fonts-liberation \
+ && apt-get install -y --no-install-recommends ffmpeg \
  && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -55,18 +44,23 @@ COPY server/app ./app
 COPY server/migrations ./migrations
 RUN pip install --no-deps .
 
+# Never run as root, in either image.
+RUN useradd --create-home --uid 10001 homesh
+
+
+# ── Stage 3: server (the api service) ───────────────────────────────────────
+FROM base AS server
+
 # Serving the client from the API keeps everything same-origin, which is what
 # makes session cookies and the WebAuthn RP ID straightforward.
 COPY --from=web /web/dist ./static
 
-# Never run as root.
 # Both directories exist in the image, and that is load-bearing rather than
 # tidy: Docker initialises an empty named volume from whatever is at the mount
 # point, ownership included. Without the backups directory here, the volume is
 # created owned by root and the server -- which does not run as root -- cannot
 # write a backup into it. Found by taking one.
-RUN useradd --create-home --uid 10001 homesh \
- && mkdir -p /var/lib/homesh/cache /var/lib/homesh/backups \
+RUN mkdir -p /var/lib/homesh/cache /var/lib/homesh/backups \
  && chown -R homesh:homesh /app /var/lib/homesh
 USER homesh
 
@@ -78,3 +72,30 @@ ENV HOMESH_BUILD=${HOMESH_BUILD}
 
 EXPOSE 8080
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080"]
+
+
+# ── Stage 4: converter ──────────────────────────────────────────────────────
+# LibreOffice renders the office formats no browser can display — doc, docx, xls,
+# xlsx, ppt, pptx and the rest — to PDF, which every browser can. It is a heavy
+# dependency for a media server and it is still the right one: the alternatives
+# are a different JavaScript library per format with worse fidelity, or handing
+# the file to Microsoft's or Google's online viewer, which means uploading a
+# private document to a third party in order to read it.
+#
+# Its own image and its own container, because LibreOffice has a long history
+# of documents that read local files or run code. This one has no keys, no
+# library, no database and no network out (docker-compose.yml, app/converter.py).
+FROM base AS converter
+
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+      libreoffice-writer-nogui \
+      libreoffice-calc-nogui \
+      libreoffice-impress-nogui \
+      fonts-dejavu \
+      fonts-liberation \
+ && rm -rf /var/lib/apt/lists/*
+
+USER homesh
+EXPOSE 8091
+CMD ["python", "-m", "app.converter"]

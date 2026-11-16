@@ -27,11 +27,14 @@ services:
       # Root context: the image bundles both the API and the built web client.
       context: .
       dockerfile: server/Dockerfile
+      target: server
       args:
         # The commit date and short id, set by the start and deploy scripts.
         HOMESH_BUILD: ${HOMESH_BUILD:-}
     restart: unless-stopped
     env_file: .env
+    # default for the database and the house; convert for the converter.
+    networks: [default, convert]
     depends_on:
       db:
         condition: service_healthy
@@ -78,6 +81,44 @@ services:
       timeout: 5s
       retries: 10
       start_period: 20s
+
+  # Renders office documents as PDFs, for the api service alone (app/converter.py).
+  #
+  # LibreOffice has a long history of documents that read local files or run
+  # code, so it runs here rather than beside the server's keys -- in a container
+  # with nothing worth stealing. That is the whole point of this service, and
+  # server/tests/test_converter.py fails if any of it is added back:
+  # no env_file, no environment, no volumes, no published ports, and only the
+  # internal network, which reaches neither the database nor the internet.
+  converter:
+    build:
+      context: .
+      dockerfile: server/Dockerfile
+      target: converter
+    restart: unless-stopped
+    environment: {}
+    networks: [convert]
+    expose: ["8091"]
+    read_only: true
+    tmpfs:
+      - /tmp:size=1g
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    pids_limit: 128
+    mem_limit: 1g
+    cpus: 1.0
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8091/health').status==200 else 1)\""]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+networks:
+  # Internal: no route out of it. Only the api service and the converter are on
+  # it, so the converter can be reached by nothing else and can reach nothing.
+  convert:
+    internal: true
 
 volumes:
   db-backups:

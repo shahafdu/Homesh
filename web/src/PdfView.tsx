@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
+import { ApiError, api } from "./api";
 import DocSearch, { pattern, type SearchState } from "./DocSearch";
 
 /** A PDF drawn into the page, rather than handed to the browser.
@@ -48,6 +49,24 @@ type Hit = { page: number; start: number; end: number };
 /** Matches kept for one search. Enough for any real question; a one-letter
  *  search of a rulebook would otherwise mark every page solid. */
 const HIT_LIMIT = 2000;
+
+/** Statuses whose reason is worth asking the server for. pdf.js reports only
+ *  "Unexpected server response (503)", and the server's own sentence -- the
+ *  converter is down, try again in a minute -- is the one a person can act on.
+ *  Only answers that cost the server nothing to repeat: asking again after a
+ *  failed conversion would run the whole conversion a second time. */
+const ASK_WHY = new Set([413, 415, 503]);
+
+async function serverReason(e: unknown, url: string): Promise<string | null> {
+  const code = (e as { status?: unknown } | null)?.status;
+  if (typeof code !== "number" || !ASK_WHY.has(code)) return null;
+  try {
+    await api.get(url);
+  } catch (err) {
+    if (err instanceof ApiError && err.status === code && err.message) return err.message;
+  }
+  return null;
+}
 
 /** `bar` is where the page number and search go: a place in the viewer's own
  *  control row, so they cost no height of their own. Absent on a television,
@@ -314,10 +333,13 @@ export default function PdfView(props: { url: string; title: string; bar?: HTMLE
           return;
         }
         const said = e instanceof Error ? e.message : String(e);
+        const reason = await serverReason(e, props.url);
+        if (cancelled) return;
         setError(
-          /fetch|network/i.test(said)
-            ? "the connection dropped while it was being read."
-            : said,
+          reason ??
+            (/fetch|network/i.test(said)
+              ? "the connection dropped while it was being read."
+              : said),
         );
       }
     })();
