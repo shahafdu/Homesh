@@ -361,20 +361,31 @@ Choose one way, once:
 
 | Way | Cost | Notes |
 |---|---|---|
-| **Google Drive for desktop**, set to mirror the photo folder | none | Maintained by Google. Recommended |
-| **rclone** on a schedule, signed in with your own Google account | a scheduled task and a sign-in to keep alive | More control over what is copied |
+| **Google Drive for desktop**, with the photo folder added under *Folders from your computer* and set to *Sync with Google Drive* | none | Maintained by Google. Recommended. Do not choose *Back up to Google Photos*: Homesh cannot see Google Photos |
+| **rclone** on a schedule, signed in with your own Google account | a scheduled task and a sign-in to keep alive | More control over what is copied. Use `rclone copy`, not `rclone sync`, so a drive that is off or empty when the task runs can never empty the Drive copy |
 
 Either way:
 
-1. Set up the copy so the photos land in one folder on your Drive.
+1. Set up the copy so the photos land in one folder on your Drive, **keeping
+   their file names**. Homesh recognises two copies as one photo only when the
+   name, the size and the checksum all match, so a tool that renames or
+   re-compresses on the way breaks the join. (Drive for desktop puts the folder
+   under *Computers* in Drive rather than *My Drive*; it can be shared from
+   there like any other.)
 2. Share that folder with the Homesh account as **Editor**, like any other Drive
-   folder (see *From Google Drive* in section 7), and press **Look for new
-   folders** in **Sources**.
-3. After the next scan the folder appears in Homesh. Photos that exist in both
-   places show once, with two copies behind them.
+   folder (see *From Google Drive* in section 7). Homesh looks for newly shared
+   folders every hour; an administrator can press **Look for new folders** in
+   **Sources** to have it now.
+3. A new folder arrives **visible to administrators only**. Decide who else
+   sees it in **People** (it is marked *needs a decision*), or the rest of the
+   household will not see the Drive copies.
+4. Once the folder is scanned it appears in Homesh. Joining the two copies of
+   each photo happens in the regular sweep, a couple of thousand photos at a
+   time, so a large collection is joined over several days rather than at once.
+   Until a photo is joined it shows twice, once from each place.
 
 Nothing here needs the copy to be quick: Homesh notices new files on Drive within
-about a quarter of an hour of their arriving.
+about a quarter of an hour of their arriving, and joins them in a later sweep.
 
 ---
 
