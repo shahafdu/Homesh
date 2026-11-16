@@ -8,8 +8,8 @@
     be that origin's host.
 
     That binding is the whole reason this script exists. Moving to a real
-    hostname invalidates every passkey registered against the old one — not a
-    bug, the point of the mechanism — so this prints the recovery route before it
+    hostname invalidates every passkey registered against the old one -- not a
+    bug, the point of the mechanism -- so this prints the recovery route before it
     changes anything, and switching back restores the old passkeys exactly.
 
 .EXAMPLE
@@ -33,7 +33,7 @@ $envFile = Join-Path $repo '.env'
 if (-not (Test-Path $envFile)) { throw "No .env at $envFile" }
 
 if ($Revert) { $Origin = 'http://localhost:8080' }
-if (-not $Origin) { throw "Give -Origin https://… or -Revert" }
+if (-not $Origin) { throw "Give -Origin https://... or -Revert" }
 
 try { $uri = [System.Uri]$Origin } catch { throw "That is not a URL: $Origin" }
 if ($uri.Scheme -notin @('http', 'https')) { throw "Origin must be http or https" }

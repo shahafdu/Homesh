@@ -47,6 +47,22 @@ jobs:
           if [ "$fail" = "0" ]; then echo "clean"; fi
           exit $fail
 
+      - name: Windows scripts are ASCII
+        run: |
+          # PowerShell 5.1 reads a .ps1 with no byte-order mark as ANSI, so a
+          # UTF-8 dash becomes three characters and can end a string early.
+          # A file starting with a BOM is read as UTF-8 and is let through.
+          # tools/run-tests.ps1 runs the same rule.
+          fail=0
+          while IFS= read -r f; do
+            if tail -c +"$( [ "$(head -c3 "$f" | od -An -tx1 | tr -d ' ')" = "efbbbf" ] && echo 4 || echo 1 )" "$f" \
+                | LC_ALL=C grep -qP '[^\x00-\x7F]'; then
+              echo "::error file=$f::not pure ASCII"
+              fail=1
+            fi
+          done < <(git ls-files -- '*.ps1' '*.vbs' '*.cmd' '*.env.example')
+          exit $fail
+
   server:
     name: Server — lint & schema
     runs-on: ubuntu-latest

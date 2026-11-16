@@ -93,8 +93,16 @@ def _due(interval: timedelta) -> list[tuple[UUID, str]]:
     return [(r[0], r[1]) for r in rows]
 
 
+# One scheduled scan at a time. The daily sweep and the loop that answers the
+# PC's change notices both scan, and without this the sweep -- which picks its
+# list at the start and then works through it for minutes -- could reach a
+# folder the other loop was still scanning, and run a second scan of it beside
+# the first.
+_SCAN_LOCK = asyncio.Lock()
+
+
 async def _scan_one(source_id: UUID, name: str) -> None:
-    """Run one source's scan off the event loop.
+    """Run one source's scan off the event loop. Callers hold ``_SCAN_LOCK``.
 
     The scanner is synchronous and network-bound; on a thread it cannot block
     playback, which is the one thing on this server nobody will forgive.
@@ -120,6 +128,19 @@ async def _scan_one(source_id: UUID, name: str) -> None:
         log.exception("scheduled scan of %s failed", name)
 
 
+_READY = """
+    SELECT id, name FROM sources
+    WHERE scan_requested_at IS NOT NULL
+      AND scan_state IS DISTINCT FROM 'running'
+      AND scan_requested_at < now() - interval '2 minutes'
+      AND (scan_ended_at IS NULL
+           OR scan_ended_at < now() - interval '15 minutes')
+    ORDER BY scan_requested_at
+    LIMIT 1
+    FOR UPDATE SKIP LOCKED
+"""
+
+
 def _next_requested() -> tuple[UUID, str] | None:
     """The folder whose change notice has settled and which may be scanned now.
 
@@ -128,21 +149,25 @@ def _next_requested() -> tuple[UUID, str] | None:
     every 15 minutes.
     """
     with get_engine().connect() as conn:
-        row = conn.execute(
-            text(
-                """
-                SELECT id, name FROM sources
-                WHERE scan_requested_at IS NOT NULL
-                  AND scan_state IS DISTINCT FROM 'running'
-                  AND scan_requested_at < now() - interval '2 minutes'
-                  AND (scan_ended_at IS NULL
-                       OR scan_ended_at < now() - interval '15 minutes')
-                ORDER BY scan_requested_at
-                LIMIT 1
-                """
-            )
-        ).first()
+        row = conn.execute(text(_READY)).first()
     return (row[0], row[1]) if row else None
+
+
+def _claim_requested() -> tuple[UUID, str] | None:
+    """Take the next settled request, clearing it in the same transaction.
+
+    Cleared before the scan rather than after: a change made while the scan
+    runs asks again and is not lost.
+    """
+    with get_engine().begin() as conn:
+        row = conn.execute(text(_READY)).first()
+        if row is None:
+            return None
+        conn.execute(
+            text("UPDATE sources SET scan_requested_at = NULL WHERE id = :i"),
+            {"i": str(row[0])},
+        )
+    return (row[0], row[1])
 
 
 async def scan_requested_once() -> bool:
@@ -151,17 +176,13 @@ async def scan_requested_once() -> bool:
 
     if is_standby():
         return False
-    found = await asyncio.to_thread(_next_requested)
-    if found is None:
-        return False
-    source_id, name = found
-    # Cleared first: a change during the scan asks again and is not lost.
-    with get_engine().begin() as conn:
-        conn.execute(
-            text("UPDATE sources SET scan_requested_at = NULL WHERE id = :i"),
-            {"i": str(source_id)},
-        )
-    await _scan_one(source_id, name)
+    async with _SCAN_LOCK:
+        # Looked for under the lock, so a folder the sweep has just scanned is
+        # seen as just scanned and waits out its fifteen minutes.
+        found = await asyncio.to_thread(_claim_requested)
+        if found is None:
+            return False
+        await _scan_one(*found)
     return True
 
 
@@ -196,7 +217,12 @@ async def sweep(interval: timedelta) -> int:
     for index, (source_id, name) in enumerate(due):
         if index:
             await asyncio.sleep(BETWEEN_SOURCES.total_seconds())
-        await _scan_one(source_id, name)
+        async with _SCAN_LOCK:
+            # The list was made minutes ago; a change notice may have had this
+            # folder scanned since, and scanning it again at once is waste.
+            if source_id not in {sid for sid, _ in _due(interval)}:
+                continue
+            await _scan_one(source_id, name)
 
     await _join_duplicates()
     return len(due)

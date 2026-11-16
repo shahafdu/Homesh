@@ -87,6 +87,26 @@ if ($leaks.Count -gt 0 -or $ids.Count -gt 0 -or $keys.Count -gt 0) {
     Write-Host "  Use an RFC 5737 documentation address (192.0.2.x, 198.51.100.x)." -ForegroundColor Red
     exit 1
 }
+# Pure ASCII in what Windows opens as a file. PowerShell 5.1 reads a .ps1 with
+# no byte-order mark as ANSI, so a UTF-8 dash becomes three characters and one
+# of them can end a string early. A file that starts with a BOM is read as
+# UTF-8 and is let through; CI runs the same rule.
+Write-Host "Checking that Windows scripts are ASCII..." -ForegroundColor Cyan
+$notAscii = @()
+foreach ($f in @(git ls-files -- '*.ps1' '*.vbs' '*.cmd' '*.env.example' 2>$null)) {
+    $bytes = [System.IO.File]::ReadAllBytes((Join-Path $PSScriptRoot "..\$f"))
+    $start = 0
+    if ($bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF) { $start = 3 }
+    for ($i = $start; $i -lt $bytes.Length; $i++) {
+        if ($bytes[$i] -gt 0x7F) { $notAscii += $f; break }
+    }
+}
+if ($notAscii.Count -gt 0) {
+    Write-Host "  These must be pure ASCII (or start with a UTF-8 byte-order mark):" -ForegroundColor Red
+    $notAscii | ForEach-Object { Write-Host "    $_" -ForegroundColor Red }
+    exit 1
+}
+
 # Names that are this household's own business -- the other apps it runs, say --
 # listed one per line in .local/private-words.txt, which is not tracked: a list
 # committed here would publish what it guards. Checked in every tracked file and

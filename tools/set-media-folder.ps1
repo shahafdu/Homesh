@@ -30,7 +30,7 @@ if (-not (Test-Path -LiteralPath $Folder -PathType Container)) {
     exit 1
 }
 if (-not (Test-Path -LiteralPath $envFile)) {
-    Write-Host "No .env at $envFile — is this the right repository?" -ForegroundColor Red
+    Write-Host "No .env at $envFile -- is this the right repository?" -ForegroundColor Red
     exit 1
 }
 
@@ -64,5 +64,5 @@ $ErrorActionPreference = 'Continue'   # compose writes progress to stderr
 docker compose --project-directory $repo up -d --force-recreate api
 
 Write-Host ""
-Write-Host "Done. Open Settings — the folders inside $full are listed there," -ForegroundColor Green
+Write-Host "Done. Open Settings -- the folders inside $full are listed there," -ForegroundColor Green
 Write-Host "and each can be added and scanned." -ForegroundColor Green
