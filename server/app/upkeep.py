@@ -202,7 +202,7 @@ async def requested_scans_forever() -> None:
 # -- Drive changes ---------------------------------------------------------------
 
 DRIVE_CHANGES_EVERY = timedelta(minutes=15)
-_TOKEN_KEY = "drive.page_token"
+_STATE_KEY = "drive.page_token"
 
 
 def _state_get(key: str) -> str | None:
@@ -278,20 +278,20 @@ def drive_changes_once() -> int:
     key = Path(get_settings().gdrive_key_file)
     if not key.is_file():
         return 0
-    token = _state_get(_TOKEN_KEY)
+    token = _state_get(_STATE_KEY)
     try:
         if token is None:
             # The daily sweep covers everything before now.
-            _state_set(_TOKEN_KEY, gdrive.start_token(key))
+            _state_set(_STATE_KEY, gdrive.start_token(key))
             return 0
         changes, new_token = gdrive.changes_since(key, token)
     except gdrive.TokenRejected:
-        _state_clear(_TOKEN_KEY)
+        _state_clear(_STATE_KEY)
         log.info("drive change token was refused; starting afresh next time")
         return 0
     marked = _mark_drive_sources(changes) if changes else 0
     # After the marking, so a failure above repeats these changes next time.
-    _state_set(_TOKEN_KEY, new_token)
+    _state_set(_STATE_KEY, new_token)
     return marked
 
 
