@@ -13,15 +13,15 @@ const HAVE_FUTURE_DATA = 3;
  *
  *  `nextTrack` is whatever is due next, or null when there is nothing (end of
  *  the queue, or nothing playable). A duration the element has not reported yet
- *  is NaN or 0 and never counts: guessing would preload at the first second. */
+ *  is NaN or 0 and never counts: guessing would preload at the first second.
+ *  Once per track is the caller's job (usePlayer marks the preload before it
+ *  fetches), because under shuffle asking again would draw a different pick. */
 export function shouldPreload(
   position: number,
   duration: number,
   nextTrack: { item_id: string } | null,
-  alreadyFor: string | null = null,
 ): boolean {
   if (!nextTrack) return false;
-  if (alreadyFor === nextTrack.item_id) return false;
   if (!isFinite(duration) || duration <= 0) return false;
   return duration - position < PRELOAD_SECONDS;
 }

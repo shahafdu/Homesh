@@ -467,8 +467,18 @@ export function usePlayer() {
       }));
       stateRef.current = { ...stateRef.current, index: held.index };
       started.catch(() => {
-        // Refused after all: do it the long way, which has its own retry.
-        if (generation.current === mine) void loadTrack(held.index);
+        // Refused after all: do it the long way, which has its own retry -- on
+        // the element that was playing a moment ago. A phone with the screen
+        // locked may refuse to start a second element while still letting the
+        // first one change source, which is all the old path ever asked of it,
+        // so retrying on the refused one could stop music that used to play on.
+        if (generation.current !== mine) return;
+        spare.pause();
+        spare.removeAttribute("src");
+        spare.load();
+        audioRef.current = finished;
+        nextRef.current = spare;
+        void loadTrack(held.index);
       });
       return true;
     };

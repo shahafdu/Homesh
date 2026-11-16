@@ -398,6 +398,10 @@ an album. The player bar stays put as you browse elsewhere: play/pause, previous
 shuffle, seeking and volume. If a file turns out to be corrupt the player says so and
 moves on rather than stalling.
 
+In the browser, tracks play one into the next without a gap: the next one is fetched in
+the last twenty seconds of the one before, so a live album or a continuous mix is not
+broken up by silence. It costs at most one track of extra download.
+
 With **shuffle** on, *next* picks at random and *previous* takes you back to what was
 actually playing — not to the track above it in a list you are not listening in.
 
@@ -517,7 +521,9 @@ half a backup.
 - **AI search and tagging.** Designed and agreed — see §7 of the architecture document —
   and deliberately behind backups, which are what make it safe to let a model write to
   the catalog.
-- **ReplayGain.** Tracks from one album now play into the next without a gap in the browser player; the television and rooms played by the receiver still play one track at a time.
+- **ReplayGain**, so quiet and loud recordings play at the same level.
+- **Gapless playback on the television and in rooms.** The browser player has it; a
+  television or the receiver still starts each track on its own.
 - **Google Photos.** Its API was closed to third-party apps in March 2025, so the copy on
   your own storage is the source. Nothing to do here but say so.
 - **Noticing file changes as they happen**, rather than at the next sweep.
