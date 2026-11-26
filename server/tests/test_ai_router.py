@@ -312,6 +312,14 @@ class TestTheSettingsRoutes:
     def test_a_good_change_is_saved_and_audited(self, client, db, monkeypatch):
         _env(monkeypatch)
         _model(db, FREE_A)
+
+        def audited():
+            # audit_log is not emptied between tests: count from a baseline.
+            with db.connect() as conn:
+                return conn.execute(text(
+                    "SELECT count(*) FROM audit_log WHERE event = 'ai.settings'")).scalar_one()
+
+        before = audited()
         r = self._put(client, {"night": {"start": "02:00", "end": "06:30"},
                                "timezone": "Europe/Paris", "tasks": {"chat": [FREE_A]}})
         assert r.status_code == 200
@@ -319,10 +327,7 @@ class TestTheSettingsRoutes:
         assert body["night"] == {"start": "02:00", "end": "06:30"}
         assert body["tasks"]["chat"] == [FREE_A] and body["tasks"]["bulk"] == []
         assert client.get("/api/ai/settings").json()["timezone"] == "Europe/Paris"
-        with db.connect() as conn:
-            n = conn.execute(text(
-                "SELECT count(*) FROM audit_log WHERE event = 'ai.settings'")).scalar_one()
-        assert n == 1
+        assert audited() == before + 1
 
     @pytest.mark.parametrize("body", [
         {"surprise": 1},
@@ -425,3 +430,77 @@ class TestTheSettingsRoutes:
         assert client.post("/api/ai/models/refresh").status_code == 403
         assert client.post("/api/ai/models/test", json={"id": FREE_A}).status_code == 403
         assert client.get("/api/ai/usage").status_code == 403
+
+
+class TestWhatTheReviewFound:
+    async def test_an_unreachable_provider_hands_over_to_the_next(self, db, user, monkeypatch):
+        _env(monkeypatch, GEMINI_API_KEY=GKEY, GEMINI_NO_BILLING="true")
+        _model(db, FREE_A)
+        _model(db, GEM)
+        _tasks(db, chat=[FREE_A, GEM])
+
+        def handler(request):
+            if "generativelanguage" not in request.url.host:
+                raise httpx.ConnectError("name resolution failed", request=request)
+            return _ok("models/gemini-flash")
+
+        _serve(monkeypatch, handler)
+        reply = await ai.chat(task="chat", purpose="t", messages=MSGS, user_id=user.id)
+        # The prefix Gemini may send back is not part of the stored id.
+        assert reply.model_id == GEM and reply.fallback is True
+        assert [(m, o) for m, o, _, _ in _calls(db)] == [
+            ("vendor/alpha:free", "error"), ("gemini-flash", "ok")]
+        with db.connect() as conn:
+            assert conn.execute(
+                text("SELECT cooling_until > now() FROM ai_models WHERE id = :i"),
+                {"i": FREE_A}).scalar_one()
+
+    @pytest.mark.parametrize("value", ["inf", "nan", "Wed, 21 Oct 2026 07:28:00 GMT"])
+    def test_a_strange_retry_after_falls_back_to_the_default(self, value):
+        assert ai._retry_after(value) == ai.COOL_DEFAULT
+
+    async def test_a_key_echoed_by_the_provider_is_cut_out(self, db, user, monkeypatch):
+        _env(monkeypatch)
+        _serve(monkeypatch, lambda r: httpx.Response(400, text=f"bad key {KEY} given"))
+        with pytest.raises(ai.AiError) as caught:
+            await ai.chat(task="chat", purpose="t", messages=MSGS, user_id=user.id)
+        assert KEY not in str(caught.value) and "[key]" in str(caught.value)
+        with db.connect() as conn:
+            details = conn.execute(text("SELECT detail FROM ai_calls")).scalars().all()
+        assert details and all(KEY not in d for d in details)
+
+    def test_the_test_button_takes_only_a_catalogued_model(self, client, db, monkeypatch):
+        _env(monkeypatch)
+        seen = _serve(monkeypatch, lambda r: _ok())
+        # Free by its name alone, but nothing has said what it costs.
+        r = client.post("/api/ai/models/test", json={"id": "openrouter:vendor/new:free"})
+        assert r.json() == {"ok": False, "why": "that model is not in the list this server knows"}
+        assert not seen
+
+    def test_unusable_providers_are_left_out_of_the_model_list(self, client, db, monkeypatch):
+        _env(monkeypatch, GEMINI_API_KEY=GKEY, GEMINI_NO_BILLING="false")
+        _model(db, FREE_A)
+        _model(db, GEM)
+        assert [m["id"] for m in client.get("/api/ai/models").json()] == [FREE_A]
+        _env(monkeypatch, GEMINI_API_KEY=GKEY, GEMINI_NO_BILLING="true")
+        assert {m["id"] for m in client.get("/api/ai/models").json()} == {FREE_A, GEM}
+
+    def test_the_refresh_route_answers_counts_and_no_key(self, client, db, monkeypatch):
+        _env(monkeypatch, GEMINI_API_KEY=GKEY, GEMINI_NO_BILLING="true")
+
+        def handler(request):
+            if "generativelanguage" in request.url.host:
+                return httpx.Response(200, json=GEMINI_SAMPLE)
+            return httpx.Response(200, json=OPENROUTER_SAMPLE)
+
+        real = httpx.AsyncClient
+
+        class Client(real):
+            def __init__(self, *a, **kw):
+                super().__init__(*a, transport=httpx.MockTransport(handler), **kw)
+
+        monkeypatch.setattr(aicatalog.httpx, "AsyncClient", Client)
+        r = client.post("/api/ai/models/refresh")
+        assert r.status_code == 200
+        assert r.json() == {"openrouter": 3, "gemini": 1, "gone": 0, "now_paid": 0}
+        assert KEY not in r.text and GKEY not in r.text

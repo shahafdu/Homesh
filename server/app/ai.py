@@ -237,7 +237,8 @@ COOL_MIN, COOL_MAX, COOL_DEFAULT = 60, 3600, 600
 def _retry_after(value: str | None) -> int:
     try:
         seconds = int(float(value)) if value else COOL_DEFAULT
-    except ValueError:
+    except (ValueError, OverflowError):
+        # An HTTP date, "inf" or "nan": not worth parsing, the default is safe.
         seconds = COOL_DEFAULT
     return max(COOL_MIN, min(COOL_MAX, seconds))
 
@@ -284,6 +285,20 @@ def chat_available() -> bool:
             continue
         return True
     return False
+
+
+def _scrub(message: str) -> str:
+    """The message with any configured key cut out.
+
+    A provider's error body is quoted back to the administrator and kept in
+    `ai_calls.detail`; nothing promises that body never repeats the key it was
+    sent, so it is removed here rather than trusted.
+    """
+    settings = get_settings()
+    for key in (settings.ai_api_key.strip(), settings.gemini_api_key.strip()):
+        if key:
+            message = message.replace(key, "[key]")
+    return message
 
 
 def _note(model_id: str, *, ok: bool, error: str | None = None, cool_for: int = 0) -> None:
@@ -357,20 +372,22 @@ async def chat(
         except ProviderBusy as exc:
             last_failure = exc
             _record(user_id=user_id, purpose=purpose, model=model, outcome="error",
-                    provider=provider, task=task, fallback=fallback, detail=str(exc),
+                    provider=provider, task=task, fallback=fallback, detail=_scrub(str(exc)),
                     duration_ms=int((time.monotonic() - started) * 1000))
             _note(model_id, ok=False, error=str(exc), cool_for=exc.cool_for)
             log.info("model %s busy (%s, task %s)", model_id, exc.cool_for, task)
             continue
         except Exception as exc:  # noqa: BLE001 - reported to the caller and recorded
+            said = _scrub(str(exc))
             _record(user_id=user_id, purpose=purpose, model=model, outcome="error",
                     provider=provider, task=task, fallback=fallback,
-                    detail=f"{type(exc).__name__}: {exc}",
+                    detail=f"{type(exc).__name__}: {said}",
                     duration_ms=int((time.monotonic() - started) * 1000))
             _note(model_id, ok=False, error=type(exc).__name__)
-            raise AiError(f"the model could not be reached: {exc}") from exc
+            raise AiError(f"the model could not be reached: {said}") from exc
 
-        answered = reply.model_id.partition(":")[2] or model
+        # Gemini's compatible endpoint may name the model with its "models/" prefix.
+        answered = reply.model_id.partition(":")[2].removeprefix("models/") or model
         _record(user_id=user_id, purpose=purpose, model=answered, outcome="ok",
                 provider=provider, task=task, fallback=fallback,
                 prompt_tokens=reply.prompt_tokens, completion_tokens=reply.completion_tokens,
@@ -385,7 +402,7 @@ async def chat(
 
     if last_failure is not None:
         # Every failed attempt was recorded as it happened.
-        raise AiError(f"the model could not be reached: {last_failure}")
+        raise AiError(f"the model could not be reached: {_scrub(str(last_failure))}")
     if refusal:
         message = refusal
     elif skipped_busy:
@@ -478,6 +495,13 @@ async def _chat_completions(
             response = await http.post(url, json=body, headers=headers)
     except httpx.TimeoutException as exc:
         raise ProviderBusy("the provider did not answer in time", COOL_DEFAULT) from exc
+    except httpx.TransportError as exc:
+        # Unreachable (DNS, refused, reset) is the case a second provider exists
+        # for; stopping the list here would make the fallback useless when it
+        # matters most.
+        raise ProviderBusy(
+            f"the provider could not be reached ({type(exc).__name__})", COOL_DEFAULT
+        ) from exc
 
     code = response.status_code
     if code in (401, 402):

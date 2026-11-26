@@ -136,6 +136,7 @@ async def list_models(
 ) -> list[dict]:
     _admin(user)
     cap = max(0, get_settings().ai_monthly_cap_micros)
+    usable = [p for p in ("openrouter", "gemini") if ai.provider_usable(p)]
     needle = q.strip().replace("%", "").replace("_", "")
     with get_engine().connect() as conn:
         rows = conn.execute(
@@ -145,6 +146,7 @@ async def list_models(
                        cooling_until, last_ok_at, last_error
                 FROM ai_models
                 WHERE gone_at IS NULL
+                  AND provider = ANY(:usable)
                   AND (CAST(:free AS boolean) IS NULL OR free = :free)
                   AND (CAST(:tools AS boolean) IS NULL OR tools = :tools)
                   AND (:cap > 0 OR free)
@@ -153,14 +155,14 @@ async def list_models(
                 LIMIT 500
                 """
             ),
-            {"free": free, "tools": tools, "cap": cap, "q": needle,
+            {"free": free, "tools": tools, "cap": cap, "q": needle, "usable": usable,
              "like": "%" + needle + "%"},
         ).mappings().all()
     return [
         {**dict(r),
          "cooling_until": r["cooling_until"].isoformat() if r["cooling_until"] else None,
          "last_ok_at": r["last_ok_at"].isoformat() if r["last_ok_at"] else None}
-        for r in rows if ai.provider_usable(r["provider"])
+        for r in rows
     ]
 
 
@@ -179,6 +181,14 @@ class TestRequest(BaseModel):
 async def test_model(body: TestRequest, user: CurrentUser = Depends(require_user)) -> dict:
     _admin(user)
     hit("ai-test", str(user.id), Limit(10, timedelta(minutes=5)))
+    # Only a model from the catalogue: its stored price is what the spend gate
+    # reads. An id typed by hand would fall back to judging "free" by its name.
+    with get_engine().connect() as conn:
+        known = conn.execute(
+            text("SELECT 1 FROM ai_models WHERE id = :i"), {"i": body.id}
+        ).scalar_one_or_none()
+    if known is None:
+        return {"ok": False, "why": "that model is not in the list this server knows"}
     started = time.monotonic()
     try:
         await ai.chat(
