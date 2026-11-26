@@ -631,9 +631,11 @@ public final class PhoneActivity extends Activity {
             return;
         }
 
-        if (wakeUntil != 0 && reachedAt != null) {
+        if (wakeUntil != 0) {
             // The watch above is already looking, and says what it finds. A
-            // second check would talk over "It did not wake".
+            // second check would talk over "Waking" and "It did not wake" --
+            // with no standby, by saying the server cannot be reached while
+            // the button still reads "Waking". Open Homesh still checks.
             autoOpen = false;
             showActions(true);
             openHomesh.setVisibility(View.VISIBLE);

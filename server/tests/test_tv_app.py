@@ -253,6 +253,11 @@ class TestWhereThePhoneFallsBack:
     def test_nothing_about_waking_when_it_is_not_set(self, anon_client, monkeypatch):
         assert "wake" not in self._address(anon_client, monkeypatch, WAKE_MAC="")
 
+    def test_the_standby_never_says_how_to_wake_the_pc(self, anon_client, monkeypatch):
+        body = self._address(anon_client, monkeypatch, HOMESH_ROLE="standby", WAKE_MAC=MAC)
+        assert body["role"] == "standby"
+        assert "wake" not in body
+
 
 class TestThePhoneAppIsKnownByItsNotificationToken:
     """Homesh is signed into in the browser's tab, whose cookies the app cannot

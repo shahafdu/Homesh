@@ -376,7 +376,9 @@ def tv_address(request: Request) -> Response:
         "origin": get_settings().public_origin.rstrip("/") or None,
         # What a phone on the house network sends a wake-on-LAN packet to.
         # Left out when unset, and only the PC is ever given the setting.
-        **({"wake": {"mac": wake_mac}} if wake_mac else {}),
+        # Only the primary says, like the standby and the apps: a WAKE_MAC
+        # copied to the standby's environment by mistake stays unsaid there.
+        **({"wake": {"mac": wake_mac}} if wake_mac and role() == "primary" else {}),
     }
     # Left out, not emptied, for a caller nobody knows: a phone app that
     # replaces its list with whatever arrives would otherwise lose the apps it
