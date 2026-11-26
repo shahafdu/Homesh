@@ -31,7 +31,7 @@ administrator controls both.
 
 ## 2. A1 - the spike's output
 
-Not built from this document (see README section 1). The spike writes
+A1 is a team task (model: opus), described in section 2.1. It writes
 `docs/design/SPIKE_RESULTS.md` with these sections, and later tasks read them:
 
 ```
@@ -59,6 +59,54 @@ name, runtime, files, compute_type, seconds_per_second_of_audio
 
 The designs below are written against an interface, so they do not change
 whichever models are chosen.
+
+### 2.1 How the spike runs
+
+The candidates and what to measure are in `docs/AI_PLAN.md` section 9.
+
+**The sample.** The owner approves which folders it may sample from: the
+list is in `.local/build/spike-folders.txt` (untracked), one source per line.
+The session picks a sample from those folders and from nowhere else:
+
+- about 500 photos spread across the years;
+- 50 short clips;
+- a few minutes of speech, taken from clips that have talking.
+
+It reads them through the server's own connectors, from inside the api
+container, so a folder the server was not granted cannot be reached. Copies go
+to `.local/spike-sample/` (untracked) and are **deleted when the spike ends**,
+whatever the outcome.
+
+**Where the models run.** In a throwaway container:
+
+- a `python:3.12-slim` image, not the api image;
+- the sample mounted read-only;
+- model files cached in a named volume, `homesh-spike-models`;
+- CPU limits of 4 cores and 6 GB, so the PC stays usable.
+
+Nothing is installed into the server's image or `requirements`.
+
+**Judging.** Search quality is judged by writing questions in each household
+language and looking at the top hits. Faces are judged by building contact
+sheets of the faces each model groups together, which the session looks at
+itself. It checks that the same person is grouped across ages and that
+different people are not. Speech is judged by reading the transcripts against
+the audio. Contact sheets and transcripts stay in `.local/spike-sample/` until
+the end of the session, and are deleted with the sample.
+
+**What may be written down.** `SPIKE_RESULTS.md` is in the public repository.
+It holds model names, versions, file URLs and checksums, dimensions, thresholds
+and timings. It never holds:
+
+- file names, folder names, people or places;
+- counts of the library;
+- anything quoted from a transcript.
+
+Reasoning that needs examples goes to `.local/build/review/A1-notes.md`
+(untracked).
+
+**Stop and ask** (README 2.7) if a model needs an account, a licence acceptance
+or a token, rather than picking a different model to avoid it.
 
 ---
 

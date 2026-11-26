@@ -2,10 +2,14 @@
   "comment": "The work in docs/design, in the order the runner tries it. 'model' is who builds it; every task is then reviewed by 'reviewer'. 'needs' are tasks that must be done first. 'inputs' are things only the owner can supply (see inputs below); a task waits until all of its inputs are there. 'afterwards' is what the owner does to start using it. 'track' groups tasks; run one track alone with -Track <name>. The notifications track stands apart from the rest: nothing in it needs, or is needed by, any other track.",
   "reviewer": "opus",
   "inputs": {
+    "spike-folders-ok": {
+      "check": "tick",
+      "ask": "Look at .local\\build\\spike-folders.txt: the folders the model trial (A1) may take a sample of photos, clips and speech from. Remove any you do not want used, then tell Claude it is fine, or run .\\tools\\run-build.ps1 -Tick spike-folders-ok."
+    },
     "spike": {
       "check": "file",
       "path": "docs/design/SPIKE_RESULTS.md",
-      "ask": "Run the model trial (task A1) in an ordinary Claude session with Opus: 'do task A1 from docs/design'. It needs a few hundred of your photos, some clips and a few voice recordings in a folder of your choice, and it writes docs/design/SPIKE_RESULTS.md."
+      "ask": "Written by task A1 (the model trial). Nothing to do here except approve its folders (spike-folders-ok)."
     },
     "mockup-ai-page": {
       "check": "tick",
@@ -37,6 +41,7 @@
     {"id": "M1", "model": "sonnet", "doc": "05-music.md", "title": "Gapless playback", "needs": [], "inputs": [], "track": "music"},
     {"id": "L1", "model": "sonnet", "doc": "06-library-upkeep.md", "title": "Notice changed folders on the PC", "needs": [], "inputs": [], "afterwards": "Run Start Homesh once so the folder watcher is registered and the server is rebuilt.", "track": "upkeep"},
     {"id": "L2", "model": "sonnet", "doc": "06-library-upkeep.md", "title": "Drive changes without walking Drive", "needs": ["L1"], "inputs": [], "track": "upkeep"},
+    {"id": "A1", "model": "opus", "doc": "01-ai-foundations.md", "title": "The model trial: choose the embedding, face and speech models (section 2)", "needs": [], "inputs": ["spike-folders-ok"], "track": "ai"},
     {"id": "A5", "model": "opus", "doc": "06-library-upkeep.md", "title": "The converter sandbox", "needs": [], "inputs": [], "afterwards": "Rebuild with tools\\start-homesh.ps1 -Rebuild and open one Word or Excel file to see that documents still open. The standby needs deploying again too.", "track": "upkeep"},
     {"id": "L3", "model": "sonnet", "doc": "06-library-upkeep.md", "title": "User guide: copying photos to Drive", "needs": [], "inputs": [], "track": "upkeep"},
     {"id": "A4a", "model": "sonnet", "doc": "01-ai-foundations.md", "title": "Model router and catalogue (server only: sections 4.1 to 4.7)", "needs": [], "inputs": [], "afterwards": "To use Gemini, put GEMINI_API_KEY in .env, and GEMINI_NO_BILLING=true once you have checked its Google project has no billing account.", "track": "ai"},

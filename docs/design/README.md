@@ -65,15 +65,15 @@ M1, L1, L2, L4, L5 and S1 need nothing from the AI tracks and can be done at any
 point. **C1 must be finished before C2**: nothing that changes data is given to
 a model before the record of what it did exists.
 
-### A1 is not for a weaker model
+### A1 runs on Opus
 
 The spike compares models on the owner's own photos and recordings and decides
-three things every later task depends on. It needs judgement and it needs the
-owner. Its output is one file, `docs/design/SPIKE_RESULTS.md`, with exactly the
-fields listed in section 2 of `01-ai-foundations.md`. Every later task reads its
-model names, dimensions and file checksums from that file. **If that file does
-not exist, stop: do not pick a model yourself.**
-
+three things every later task depends on, so it needs judgement: it runs on
+Opus, from a sample of folders the owner has approved (section 2.1 of
+`01-ai-foundations.md`). Its output is one file, `docs/design/SPIKE_RESULTS.md`,
+with exactly the fields listed in section 2 of `01-ai-foundations.md`. Every
+later task reads its model names, dimensions and file checksums from that
+file. **If that file does not exist, stop: do not pick a model yourself.**
 ---
 
 ## 2. Rules for the implementer
