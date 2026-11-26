@@ -212,9 +212,14 @@ both ways in general terms (no account, folder name or path from this house).
 
 ### 4.1 What it does
 
-When the main server is off and the standby is answering, a person on the
-house Wi-Fi can press "Wake the main server". The phone sends a wake-on-LAN
-packet; a minute later the app is talking to the PC again.
+When the main server is not answering, a person on the house Wi-Fi can press
+"Wake the main server" on Homesh Connect's front page. The phone sends a
+wake-on-LAN packet; a minute or so later the app says the PC is back, and
+"Open Homesh" goes to it. Nothing reloads by itself.
+
+The button is on the app's own page and nowhere in the web interface. Homesh
+opens in a Custom Tab, which can have no JavaScript bridge, and the app behind
+the tab may not open anything over it.
 
 It works only from inside the house network (the packet is a local
 broadcast), and only if wake-on-LAN is enabled in the PC's firmware and
@@ -225,59 +230,63 @@ network adapter -- the owner's part, described in the user guide.
 `.env` on the PC: `WAKE_MAC=` the PC's network adapter address. It identifies
 the machine, so it lives only in `.env` (README rule 5); `.env.example` gets
 the empty variable and one ASCII comment. `config.py`: `wake_mac: str = ""`,
-validated as six hex pairs when not empty.
+refused at start-up unless it is empty or six hex pairs separated by `:` or
+`-`, and kept in the colon form.
 
-`/tv.address` in `main.py` already returns the apps list, the standby and the
-outside address **only to a signed-in caller**. Add `"wake": {"mac": "..."}`
-under exactly the same condition, omitted when unset. The standby must have
-it to offer the button, so `tools/deploy-standby.ps1` copies `WAKE_MAC` into
-the standby's environment the same way it carries the other values it needs.
+`/tv.address` in `main.py` returns the apps list, the standby and the outside
+address **only to a caller it knows**, and `"wake": {"mac": "..."}` goes under
+exactly the same condition, omitted when unset. It knows two: a signed-in
+session, and **a phone's notification token** (`notify_api.knows_phone`). The
+token is the one credential Homesh Connect holds -- the session is in the
+browser behind the Custom Tab, where the app cannot read it -- so without it
+the phone learned nothing but the house address. An unknown token is answered
+like a stranger and counts against the inbox's allowance. A phone with
+notifications off learns only the house address.
+
+The standby is **not** given `WAKE_MAC`: the phone ignores everything the
+standby says at `/tv.address`.
 
 ### 4.3 Android (Homesh Connect)
 
-Read `docs/PHONE_APP.md`, `Reach.java` (which address answers) and the
-activity that hosts the page and its bridge.
-
-- When the app learns the address (it already stores what `/tv.address`
-  returns), store the MAC with the other remembered values, the same way.
-- New class `Wake.java`: `static void send(String mac)` builds the 102-byte
-  packet (six `0xFF` bytes, then the six address bytes sixteen times) and
-  sends it by UDP to `255.255.255.255` port 9 and to the Wi-Fi network's
-  directed broadcast address, three times, 100 ms apart, on a background
-  thread, with `setBroadcast(true)`. A unit test checks the bytes
-  (`android/test/WakeTest.java`, run by `build-tv-apk.sh` like the others).
-- Bridge object `HomeshWake`: `available()` is true when a MAC is stored and
-  the phone is on Wi-Fi; `send()` checks `Origins.same(...)` then calls
-  `Wake.send`. No new permission is needed beyond what the app has for
-  networking; check `ACCESS_WIFI_STATE` is declared if the Wi-Fi check needs
-  it.
-- After `send()`, the app probes the PC's address every 10 seconds for 3
-  minutes (reuse `Reach`), and reloads onto it when it answers.
+- The token goes with the question only to an address already held for the PC,
+  never to the standby (`NotifyRules.mayShowToken`). Turning notifications on
+  asks the question straight away.
+- The MAC is stored with the other remembered values, and replaced with the
+  apps list, so unsetting it on the PC removes it from the phone.
+- `Wake.java`, plain Java so the build machine tests it: the 102-byte packet
+  (six `0xFF` bytes, then the six address bytes sixteen times), sent by UDP to
+  `255.255.255.255` port 9 and to the Wi-Fi network's directed broadcast
+  address, three times, 100 ms apart, on a background thread, with
+  `setBroadcast(true)`.
+- "On Wi-Fi" looks at every network, not the active one, which is the VPN's
+  while Tailscale is connected. No permission beyond `ACCESS_NETWORK_STATE`.
+- The button is on the front page whenever the PC is not answering (the
+  standby answers, or nothing does), the phone is on Wi-Fi and a MAC is stored.
+  While it is, the app does not open the standby by itself: the front page
+  stays, with "Open Homesh" and the wake button. Pressing "Open Homesh" opens
+  the standby as before, and so does a tapped notification.
+- Pressed: the button becomes "Waking... this takes about a minute" (disabled,
+  announced to a screen reader). The app looks for the PC every 10 seconds for
+  3 minutes while its own screen is in front. When the PC answers it says "The
+  main server is back." and "Open Homesh" goes to it; nothing reloads by
+  itself. Otherwise: "It did not wake. It may be unplugged, or this phone may
+  not be on the house Wi-Fi." with the button reading "Try again".
 - Bump `versionCode` and `versionName`; publish the release.
 
 ### 4.4 Web
 
-The standby already shows a banner saying the main server is off (find it by
-searching the web source for the standby banner text). When
-`window.HomeshWake?.available()` is true, add a button in it:
-
-```
-The main server is off. You can browse and play what is in the cloud.
-[ Wake the main server ]
-```
-
-Pressed: the button becomes "Waking... this takes about a minute" (disabled,
-`role="status"`). After 3 minutes without the app switching over: "It did not
-wake. It may be unplugged, or this phone may not be on the house Wi-Fi.
-[Try again]". In a browser, or away from Wi-Fi, the button is absent.
+Nothing. See 4.1.
 
 ### 4.5 Tests
 
-- `/tv.address`: `wake` is present for a signed-in caller when set, absent for
-  a stranger, absent when unset (extend `test_tv_app.py`);
+- `/tv.address`: `wake` is present for a signed-in caller and for a phone's
+  token when set, absent for a stranger, a removed phone and a made-up token,
+  absent when unset (`test_tv_app.py`);
+- made-up tokens run out of attempts, and asking with nothing never does;
 - an invalid `WAKE_MAC` is refused at start-up with a clear message;
 - `WakeTest`: the packet for a known address is byte-for-byte right; a
-  malformed address sends nothing.
+  malformed address sends nothing;
+- `NotifyRulesTest`: where the token may and may not go.
 
 ---
 
@@ -502,6 +511,6 @@ nothing it starts survives to see the next document.
 | The change notice is used to make the server read somewhere new | it is not a network route; it takes the name of an already-granted folder and nothing else; it only sets a flag |
 | A flood of file events keeps the PC scanning | two-minute settle time, one scan per folder per 15 minutes, one scan at a time |
 | The watcher's log leaks file names | it logs folder labels and exit codes only, in `.local/` |
-| The PC's network address ends up in the repository | `WAKE_MAC` is read from `.env`, returned only to signed-in callers, never in a tracked file |
+| The PC's network address ends up in the repository | `WAKE_MAC` is read from `.env`, returned only to callers it knows (signed in, or a phone's token), never in a tracked file |
 | A Takeout side file is hostile | size limit, strict parsing into a fixed set of typed fields, ranges checked, stored as text and rendered as text |
 | A hostile document | section 6 |

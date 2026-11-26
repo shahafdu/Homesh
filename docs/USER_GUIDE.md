@@ -87,6 +87,33 @@ and re-attaches the drive when one is empty that should not be.
 It also waits for the server's own healthcheck instead of guessing. Migrations run
 at startup, so how long that takes depends on what changed.
 
+### Waking the PC from your phone
+
+If the PC is asleep, Homesh Connect can wake it. When the PC is not answering and
+your phone is on the house Wi-Fi, the app shows **Wake the main server**. Press
+it and wait about a minute: the app says when the PC is back, and **Open Homesh**
+takes you to it. If it says it did not wake, press **Try again**, and check that
+the PC has power.
+
+Setting it up, once:
+
+1. **In the PC's firmware (BIOS)**, turn on *Wake on LAN*. The name varies:
+   *Power on by network* or *PCI-E wake* are common.
+2. **In Windows**, open Device Manager, then your network adapter's properties.
+   On *Power Management*, allow the device to wake the computer. On *Advanced*,
+   turn on *Wake on Magic Packet* where it is listed.
+3. **Find the adapter's address**: run `ipconfig /all` and copy the *Physical
+   Address* of the adapter the PC uses for your network. Put it in `.env` as
+   `WAKE_MAC=`, and run **Start Homesh** again.
+4. **On the phone**, with the PC on, turn on notifications in Homesh Connect if
+   they are not on already. That is how the app is recognised, and so how it
+   learns what to wake.
+5. **Try it**: put the PC to sleep and press the button.
+
+A network cable is far more reliable for this than Wi-Fi on the PC. Waking from
+sleep is what this is for. A PC that was shut down completely may not wake, and
+if it does, Homesh starts only once somebody has signed in to Windows.
+
 ---
 
 ## 3. Creating your account

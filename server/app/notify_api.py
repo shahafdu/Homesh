@@ -10,6 +10,10 @@ Three callers, three credentials, none interchangeable:
 session. Each is authenticated by a key or a code, rate-limited, and able to do
 exactly one thing; that is the whole of the exception, and nothing else may
 join it.
+
+A device token is good for one thing besides reading the inbox: `/tv.address`,
+which anybody may ask, tells a phone presenting one where else the server can
+be reached, as it tells someone signed in (`knows_phone`).
 """
 
 from __future__ import annotations
@@ -326,6 +330,22 @@ def _phone_for(token: str) -> tuple[UUID, UUID] | None:
             {"id": str(row.id)},
         )
     return row.id, row.user_id
+
+
+def knows_phone(request: Request) -> bool:
+    """Whether the request carries a live device token.
+
+    For `/tv.address`, which a television asks with nothing at all: no token is
+    simply nobody, and is not counted. A token nobody holds counts against the
+    same allowance as at the inbox.
+    """
+    token = _bearer(request)
+    if token is None:
+        return False
+    if _phone_for(token) is not None:
+        return True
+    throttle.hit("notify-token", throttle.caller(request), WRONG_TOKENS)
+    return False
 
 
 @router.get("/inbox", response_model=None)

@@ -72,6 +72,16 @@ final class NotifyRules {
         return null;
     }
 
+    /**
+     * Whether the question "where else can you be reached" may carry the phone's
+     * token to {@code base}. Only to an address held for the PC when the check
+     * began, and not to the standby, whose answer is ignored anyway.
+     */
+    static boolean mayShowToken(String base, String standby, String... held) {
+        if (standby != null && Origins.same(base, standby)) return false;
+        return match(base, held) != null;
+    }
+
     /** A claim code is url-safe base64 of 32 bytes; anything else is not one. */
     static boolean validClaim(String claim) {
         if (claim == null || claim.length() < 16 || claim.length() > 128) return false;

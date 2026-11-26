@@ -44,6 +44,14 @@ public class NotifyRulesTest {
         check(NotifyRules.match(null, house) == null, "no origin");
         check(NotifyRules.match("http://192.0.2.5:8080") == null, "nothing held");
 
+        String spare = "https://standby.example.ts.net";
+        check(NotifyRules.mayShowToken(house, spare, house, outside), "the token goes to the PC");
+        check(NotifyRules.mayShowToken(outside, null, null, outside), "by its outside address too");
+        check(!NotifyRules.mayShowToken(spare, spare, house, outside), "not to the standby");
+        check(!NotifyRules.mayShowToken(spare, spare, spare), "even typed in as the PC's address");
+        check(!NotifyRules.mayShowToken("http://192.0.2.9:8080", spare, house, outside),
+                "not to an address a search has just found");
+
         check(NotifyRules.validClaim("abcDEF012345_-xyzABCDEF0123456789_-abcdefg"), "a claim code");
         check(!NotifyRules.validClaim("short"), "too short to be a claim");
         check(!NotifyRules.validClaim("abcDEF012345_-xyz/ABCDEF0123456789"), "a slash is not url-safe");

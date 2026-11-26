@@ -147,11 +147,11 @@ to one goes to the other.
 | 4 · TV apps | ✅ done | Android TV app in daily use, **with its own video player** for what a WebView cannot decode. No Gradle: aapt2/javac/d8/apksigner, 33 KB, built by CI every commit. A phone launcher app too (`docs/PHONE_APP.md`). webOS dropped; Tizen only if a screen turns out to have no box |
 | 5 · Playlists & music intelligence | 🔨 | Winamp import done, nearly every track matched; sharing and reordering work. AcoustID tag repair not started |
 | 6 · AI | ⬜ | See **AI design decisions** below, and the full plan in `docs/AI_PLAN.md` (October 2026: embeddings, video, faces, model catalogue, night worker, history). Not yet built. Backups landed first, deliberately |
-| 7 · Photo availability | ⬜ | RAID→Drive sync, Wake-on-LAN, Takeout gap-fill |
+| 7 · Photo availability | 🔨 | RAID→Drive copy is a documented setup outside Homesh; Homesh Connect wakes the PC (`WAKE_MAC`, `docs/PHONE_APP.md`). Takeout gap-fill not started |
 | 8 · Optional transcode | ❌ overtaken | It was never optional for this library — see §3.2.1 of ARCHITECTURE for what actually happened |
 | 9 · Public release | 🔨 | Public since August. Docs current as of 14 September 2026; screenshots outstanding |
 
-**Tests: 975 passing, and the web unit tests (`npm test`). Migrations: 029. Lint: clean. CI green.**
+**Tests: 994 passing, and the web unit tests (`npm test`). Migrations: 029. Lint: clean. CI green.**
 
 ### AI design decisions — agreed, not yet built
 

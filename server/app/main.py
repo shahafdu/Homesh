@@ -30,6 +30,7 @@ from .discovery import serve as serve_discovery
 from .documents import router as documents_router
 from .library import register_sources
 from .library import router as library_router
+from .notify_api import knows_phone
 from .notify_api import router as notify_router
 from .occupancy import refresh_loop as watch_receiver
 from .people import router as people_router
@@ -349,9 +350,11 @@ def tv_address(request: Request) -> Response:
 
     The house address is all an unknown caller gets: a television needs it
     before it is paired, and anything that can ask already reached the PC by
-    it. The rest -- the outside address, the standby, and the apps beside
-    Homesh -- is the household's own configuration, so it goes only to someone
-    signed in. The phone app sends the session its own web view holds.
+    it. The rest -- the outside address, the standby, the apps beside Homesh
+    and the address that wakes the PC -- is the household's own configuration,
+    so it goes only to someone known: a signed-in session, or a phone's
+    notification token. The token is what the phone app really has: Homesh is
+    signed into in the browser's tab, whose cookies the app cannot read.
     """
     lan = lanaddr.lan_base() or ""
     configured = (get_settings().lan_base_url or "").strip().rstrip("/")
@@ -359,7 +362,8 @@ def tv_address(request: Request) -> Response:
 
     standby_at = (get_settings().standby_origin or "").strip().rstrip("/")
     token = request.cookies.get(SESSION_COOKIE)
-    known = bool(token) and _lookup_session(token) is not None
+    known = (bool(token) and _lookup_session(token) is not None) or knows_phone(request)
+    wake_mac = get_settings().wake_mac
     private = {
         # Where to go when the PC does not answer. Only the primary says.
         "standby": (standby_at or None) if role() == "primary" else None,
@@ -370,6 +374,9 @@ def tv_address(request: Request) -> Response:
         # different question from the house address and the one a phone away
         # from home needs answered.
         "origin": get_settings().public_origin.rstrip("/") or None,
+        # What a phone on the house network sends a wake-on-LAN packet to.
+        # Left out when unset, and only the PC is ever given the setting.
+        **({"wake": {"mac": wake_mac}} if wake_mac else {}),
     }
     # Left out, not emptied, for a caller nobody knows: a phone app that
     # replaces its list with whatever arrives would otherwise lose the apps it

@@ -6,9 +6,17 @@ import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
 import android.graphics.Color;
+import android.net.ConnectivityManager;
+import android.net.LinkAddress;
+import android.net.LinkProperties;
+import android.net.Network;
+import android.net.NetworkCapabilities;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
+import android.os.SystemClock;
 import android.provider.Settings;
 import android.util.Log;
 import android.view.Gravity;
@@ -24,7 +32,11 @@ import org.json.JSONObject;
 
 import java.io.InputStream;
 import java.net.HttpURLConnection;
+import java.net.InetAddress;
 import java.net.URL;
+import java.net.UnknownHostException;
+import java.util.ArrayList;
+import java.util.List;
 
 import android.app.Activity;
 
@@ -76,6 +88,12 @@ public final class PhoneActivity extends Activity {
     private static final String KEY_APPS = "apps";
     /** The PC's address on the house network, learned or typed. */
     private static final String KEY_LAN = "lan";
+    /** The PC's network adapter address, for waking it. Told by the PC, kept in the vault. */
+    private static final String KEY_WAKE = "wake";
+
+    /** How often, and for how long, the PC is looked for after being woken. */
+    private static final long WAKE_EVERY_MS = 10_000;
+    private static final long WAKE_FOR_MS = 180_000;
 
     /** Tailscale's own package. Declared in <queries> so it can be seen at all. */
     private static final String TAILSCALE = "com.tailscale.ipn";
@@ -97,6 +115,23 @@ public final class PhoneActivity extends Activity {
     private static final String SAVED_SETTINGS = "settingsShown";
     /** One button per app in KEY_APPS, rebuilt whenever the PC lists them again. */
     private LinearLayout apps;
+
+    /**
+     * Waking the PC. The button is there while the PC is not answering, the
+     * phone is on Wi-Fi and the PC has told it which adapter to wake.
+     */
+    private Button wake;
+    private boolean actionsShown;
+    private boolean pcAway;
+    /** When to stop looking, on the since-boot clock; 0 when not waking. */
+    private long wakeUntil;
+    private boolean wakeFailed;
+    /** The house address has answered once since the packet went. */
+    private boolean heardAtHome;
+    private boolean resumed;
+    private final Handler handler = new Handler(Looper.getMainLooper());
+    private final Runnable wakeLook = this::lookForThePc;
+    private static final String SAVED_WAKE_UNTIL = "wakeUntil";
 
     /** Which version this is, and whether a newer one is waiting. */
     private TextView about;
@@ -164,6 +199,8 @@ public final class PhoneActivity extends Activity {
         if (state != null) {
             inApp = state.getBoolean(SAVED_IN_APP, false);
             handedOff = state.getBoolean(SAVED_HANDED_OFF, false);
+            wakeUntil = state.getLong(SAVED_WAKE_UNTIL, 0);
+            pcAway = wakeUntil != 0;
         }
         autoOpen = state == null;
         // Opened by tapping a notification or by Homesh's settings page: the
@@ -191,11 +228,16 @@ public final class PhoneActivity extends Activity {
         message.setTextColor(Color.parseColor("#A79B8D"));
         message.setTextSize(16);
         message.setPadding(0, 0, 0, 28);
+        // Changes here arrive by themselves, so a screen reader is told.
+        message.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
 
         openHomesh = button("Open Homesh", v -> {
             if (reachedAt != null) open(reachedAt);
-            else check(false, true);
+            else check(false, true, true);
         });
+        wake = button("Wake the main server", v -> wakeThePc());
+        wake.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
+        wake.setVisibility(View.GONE);
         openTailscale = button("Open Tailscale", v -> launchTailscale());
         apps = new LinearLayout(this);
         apps.setOrientation(LinearLayout.VERTICAL);
@@ -204,7 +246,7 @@ public final class PhoneActivity extends Activity {
         // opening, or why not -- is shown.
         searchAgain = button("Search on this network", v -> {
             showSettings(false);
-            check(true, true);
+            check(true, true, false);
         });
         changeAddress = button("Change the address", v -> {
             // The setup screen is the television's too, and reads the address
@@ -265,6 +307,7 @@ public final class PhoneActivity extends Activity {
         home.addView(top);
         home.addView(message);
         home.addView(openHomesh);
+        home.addView(wake);
         home.addView(apps);
         home.addView(openTailscale);
 
@@ -469,6 +512,9 @@ public final class PhoneActivity extends Activity {
                 NotifyJob.schedule(this);
                 say("Notifications are on" + (got[2].isEmpty() ? "." : " for " + got[2] + "."));
                 showNotifyRow();
+                // The token is what the PC knows this app by, so now it can be
+                // asked for the rest: the standby, the apps, how to wake it.
+                new Thread(() -> rememberOrigin(address, address)).start();
             });
         }).start();
     }
@@ -488,8 +534,12 @@ public final class PhoneActivity extends Activity {
                 String reachable = Reach.pick(new String[] {lan(), Vault.get(this, KEY_ORIGIN)},
                         standbyList(), Server::reachable, PATIENT_MS, PATIENT_MS);
                 runOnUiThread(() -> {
-                    if (reachable == null) cannotReach();
-                    else openAt(reachable, page);
+                    if (reachable == null) {
+                        cannotReach();
+                        return;
+                    }
+                    if (!reachable.equals(Vault.get(this, KEY_STANDBY))) pcAnswers();
+                    openAt(reachable, page);
                 });
             }).start();
             return;
@@ -552,6 +602,9 @@ public final class PhoneActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
+        resumed = true;
+        // Looked for only while this screen is in front; at once on return.
+        if (wakeUntil != 0) handler.post(wakeLook);
 
         if (Mailbox.on(this)) {
             NotifyJob.schedule(this);
@@ -578,11 +631,27 @@ public final class PhoneActivity extends Activity {
             return;
         }
 
+        if (wakeUntil != 0 && reachedAt != null) {
+            // The watch above is already looking, and says what it finds. A
+            // second check would talk over "It did not wake".
+            autoOpen = false;
+            showActions(true);
+            openHomesh.setVisibility(View.VISIBLE);
+            return;
+        }
+
         // The whole point of the Tailscale button: coming back from it should
         // simply continue, not ask to be told again that it worked.
         boolean go = autoOpen && !hasApps();
         autoOpen = false;
-        check(false, go);
+        check(false, go, false);
+    }
+
+    @Override
+    protected void onPause() {
+        resumed = false;
+        handler.removeCallbacks(wakeLook);
+        super.onPause();
     }
 
     @Override
@@ -591,6 +660,7 @@ public final class PhoneActivity extends Activity {
         out.putBoolean(SAVED_IN_APP, inApp);
         out.putBoolean(SAVED_HANDED_OFF, handedOff);
         out.putBoolean(SAVED_SETTINGS, settingsShown);
+        out.putLong(SAVED_WAKE_UNTIL, wakeUntil);
     }
 
     /** Whether the PC has listed apps beside Homesh, so this screen is a menu. */
@@ -640,6 +710,8 @@ public final class PhoneActivity extends Activity {
     }
 
     private void showActions(boolean show) {
+        actionsShown = show;
+        showWake();
         int visibility = show ? View.VISIBLE : View.GONE;
         openTailscale.setVisibility(
                 show && tailscaleInstalled() ? View.VISIBLE : View.GONE);
@@ -656,8 +728,12 @@ public final class PhoneActivity extends Activity {
      * address is right at home and unreachable anywhere else; the tailnet
      * address is the reverse. Which one applies is a property of where the phone
      * is standing, which the phone can simply find out rather than ask about.
+     *
+     * <p>{@code go}: open what is found. {@code asked}: somebody pressed Open
+     * Homesh, so it opens even where this screen would otherwise stay to offer
+     * waking the PC.
      */
-    private void check(boolean sweep, boolean go) {
+    private void check(boolean sweep, boolean go, boolean asked) {
         if (checking) return;
         checking = true;
 
@@ -696,16 +772,34 @@ public final class PhoneActivity extends Activity {
             if (reachable != null) {
                 // Learned while it is possible to learn it, so the next time the
                 // phone is away from home it already knows where to look.
-                rememberOrigin(reachable);
+                rememberOrigin(reachable, lan, origin);
                 String at = reachable;
                 boolean onStandby = reachable.equals(standby);
                 runOnUiThread(() -> {
-                    if (!go) {
+                    boolean waking = wakeUntil != 0;
+                    if (onStandby) {
+                        pcAway = true;
+                        if (!waking) wakeFailed = false;
+                    } else {
+                        pcAnswers();
+                    }
+                    // With the PC off and a way to wake it, this screen stays:
+                    // a tab opened unasked would cover the button that does it.
+                    boolean offerWake = onStandby && !asked && (waking || canWake());
+                    if (!go || offerWake) {
                         // Found, and left on the screen to open: the menu.
                         reachedAt = at;
-                        say(onStandby
-                                ? "Your PC is not answering, so Homesh will open on the standby."
-                                : "");
+                        if (!onStandby) {
+                            say(waking ? "The main server is back." : "");
+                        } else if (waking) {
+                            say("Waiting for the main server. Homesh can be opened "
+                                    + "on the standby meanwhile.");
+                        } else if (canWake()) {
+                            say("The main server is not answering. Wake it, or open "
+                                    + "Homesh on the standby.");
+                        } else {
+                            say("Your PC is not answering, so Homesh will open on the standby.");
+                        }
                         showActions(true);
                         openHomesh.setVisibility(View.VISIBLE);
                         return;
@@ -736,19 +830,154 @@ public final class PhoneActivity extends Activity {
         return null;
     }
 
-    /** Ask the server where else it can be reached, and keep the answer. */
-    private void rememberOrigin(String base) {
+    // -- Waking the PC -------------------------------------------------------
+
+    private boolean canWake() {
+        return Vault.get(this, KEY_WAKE) != null && houseNetwork() != null;
+    }
+
+    /**
+     * The Wi-Fi network, or null. Every network is looked at, not the active
+     * one: with Tailscale connected the active network is the VPN's.
+     */
+    @SuppressWarnings("deprecation")
+    private Network houseNetwork() {
+        ConnectivityManager manager =
+                (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
+        if (manager == null) return null;
+        for (Network network : manager.getAllNetworks()) {
+            NetworkCapabilities can = manager.getNetworkCapabilities(network);
+            if (can != null && can.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)
+                    && !can.hasTransport(NetworkCapabilities.TRANSPORT_VPN)) {
+                return network;
+            }
+        }
+        return null;
+    }
+
+    /** Everybody on the wire, and everybody on this subnet: routers differ in what they carry. */
+    private List<InetAddress> wakeTargets(Network house) {
+        List<InetAddress> targets = new ArrayList<>();
+        try {
+            targets.add(InetAddress.getByAddress(new byte[] {-1, -1, -1, -1}));
+            ConnectivityManager manager =
+                    (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
+            LinkProperties link = manager == null ? null : manager.getLinkProperties(house);
+            if (link != null) {
+                for (LinkAddress mine : link.getLinkAddresses()) {
+                    byte[] all = Wake.broadcast(
+                            mine.getAddress().getAddress(), mine.getPrefixLength());
+                    if (all != null) targets.add(InetAddress.getByAddress(all));
+                }
+            }
+        } catch (UnknownHostException e) {
+            // Only thrown for an address of the wrong length, which these are not.
+            Log.i(TAG, "no broadcast address");
+        }
+        return targets;
+    }
+
+    private void wakeThePc() {
+        String mac = Vault.get(this, KEY_WAKE);
+        Network house = houseNetwork();
+        if (mac == null || house == null || !Wake.send(mac, wakeTargets(house), Wake.PORT,
+                socket -> {
+                    if (Build.VERSION.SDK_INT >= 22) house.bindSocket(socket);
+                })) {
+            say("This phone is not on the house Wi-Fi.");
+            showWake();
+            return;
+        }
+        wakeUntil = SystemClock.elapsedRealtime() + WAKE_FOR_MS;
+        wakeFailed = false;
+        heardAtHome = false;
+        say("Looking for the main server every few seconds.");
+        showWake();
+        handler.removeCallbacks(wakeLook);
+        handler.postDelayed(wakeLook, WAKE_EVERY_MS);
+    }
+
+    /** One look for the PC, and the next one booked. */
+    private void lookForThePc() {
+        if (wakeUntil == 0) return;
+        handler.removeCallbacks(wakeLook);
+        handler.postDelayed(wakeLook, WAKE_EVERY_MS);
+        new Thread(() -> {
+            String lan = lan();
+            String origin = Vault.get(this, KEY_ORIGIN);
+            String standby = Vault.get(this, KEY_STANDBY);
+            String found = Reach.pick(new String[] {origin, lan}, new String[0],
+                    at -> !at.equals(standby) && Server.reachable(at), 4000, 5000);
+            runOnUiThread(() -> looked(found, lan, origin));
+        }).start();
+    }
+
+    private void looked(String found, String lan, String origin) {
+        if (wakeUntil == 0 || !resumed) return;
+        boolean over = SystemClock.elapsedRealtime() >= wakeUntil;
+        if (found != null) {
+            // The house address can answer before the PC's Tailscale is up, and
+            // a passkey works only on the secure one. One more look for it.
+            if (origin != null && !found.equals(origin) && !heardAtHome && !over) {
+                heardAtHome = true;
+                return;
+            }
+            reachedAt = found;
+            pcAnswers();
+            say("The main server is back.");
+            if (actionsShown) openHomesh.setVisibility(View.VISIBLE);
+            new Thread(() -> rememberOrigin(found, lan, origin)).start();
+        } else if (over) {
+            wakeUntil = 0;
+            wakeFailed = true;
+            handler.removeCallbacks(wakeLook);
+            say("It did not wake. It may be unplugged, or this phone may not be "
+                    + "on the house Wi-Fi.");
+            showWake();
+        }
+    }
+
+    private void pcAnswers() {
+        pcAway = false;
+        wakeUntil = 0;
+        wakeFailed = false;
+        handler.removeCallbacks(wakeLook);
+        showWake();
+    }
+
+    private void showWake() {
+        boolean waking = wakeUntil != 0;
+        boolean show = actionsShown && pcAway && (waking || canWake());
+        wake.setVisibility(show ? View.VISIBLE : View.GONE);
+        wake.setEnabled(!waking);
+        wake.setText(waking ? "Waking… this takes about a minute"
+                : wakeFailed ? "Try again" : "Wake the main server");
+    }
+
+    /**
+     * Ask the server where else it can be reached, and keep the answer.
+     * {@code held}: the addresses this phone already had for the PC.
+     */
+    private void rememberOrigin(String base, String... held) {
         HttpURLConnection conn = null;
         try {
             conn = (HttpURLConnection) new URL(base + "/tv.address").openConnection();
             conn.setConnectTimeout(4000);
             conn.setReadTimeout(4000);
-            // The apps beside Homesh, the standby and the outside address are
-            // told only to someone signed in, so this sends the session the
-            // app's own web view holds for that address. Before the first
-            // sign-in there is none, and the PC says only its house address.
+            // The apps beside Homesh, the standby, the outside address and how
+            // to wake the PC are told only to somebody it knows. This app knows
+            // itself by its notification token: Homesh is signed into in the
+            // browser's tab, whose cookies cannot be read from here. The web
+            // view's own cookie is sent too, where it holds one.
+            String token = Vault.get(this, Mailbox.KEY_TOKEN);
+            if (token != null
+                    && NotifyRules.mayShowToken(base, Vault.get(this, KEY_STANDBY), held)) {
+                conn.setRequestProperty("Authorization", "Bearer " + token);
+            }
             String cookie = android.webkit.CookieManager.getInstance().getCookie(base);
             if (cookie != null && !cookie.isEmpty()) conn.setRequestProperty("Cookie", cookie);
+            // Neither credential follows a redirect somewhere else.
+            conn.setInstanceFollowRedirects(false);
 
             StringBuilder body = new StringBuilder();
             try (InputStream in = conn.getInputStream()) {
@@ -782,7 +1011,15 @@ public final class PhoneActivity extends Activity {
             JSONArray listed = json.optJSONArray("apps");
             if (listed != null) {
                 Vault.put(this, KEY_APPS, listed.toString());
-                runOnUiThread(this::showApps);
+                // Told along with the apps, to a caller the PC knows, so it is
+                // replaced with them: unset on the PC is forgotten here.
+                JSONObject adapter = json.optJSONObject("wake");
+                String mac = adapter == null ? null : adapter.optString("mac", null);
+                Vault.put(this, KEY_WAKE, Wake.address(mac) == null ? null : mac);
+                runOnUiThread(() -> {
+                    showApps();
+                    showWake();
+                });
             }
         } catch (Exception e) {
             // Knowing the other address is a convenience, not a requirement.
@@ -957,6 +1194,7 @@ public final class PhoneActivity extends Activity {
     }
 
     private void cannotReach() {
+        pcAway = true;
         say(
                 tailscaleInstalled()
                         ? "Cannot reach your server.\n\nAway from home, Homesh is reached "

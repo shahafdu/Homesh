@@ -7,6 +7,7 @@ a Raspberry Pi and a free cloud instance (ARCHITECTURE.md §3.4).
 from __future__ import annotations
 
 import base64
+import re
 from functools import lru_cache
 
 from pydantic import Field, field_validator
@@ -93,6 +94,12 @@ class Settings(BaseSettings):
     # in .env for the same reason as the line above: the addresses describe
     # one particular tailnet, and this repository is public.
     phone_apps: str = ""
+
+    # The PC's network adapter address, so Homesh Connect can wake it with a
+    # wake-on-LAN packet while only the standby answers. It identifies the
+    # machine, so it lives only in the PC's .env, and /tv.address tells it to
+    # nobody it does not know. Empty means no wake button.
+    wake_mac: str = ""
 
     # Who may post to the notification mailbox: `Name|key` pairs separated by
     # ';', each name one of the PHONE_APPS. The key is what identifies the
@@ -185,6 +192,20 @@ class Settings(BaseSettings):
     # Deployment facts, so they live in the environment rather than the database —
     # a stored path would silently stop matching the container's mounts.
     media_roots: str = ""
+
+    @field_validator("wake_mac")
+    @classmethod
+    def _validate_wake_mac(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            return v
+        # Windows prints the pairs with dashes, most other things with colons.
+        # One separator throughout, so a half-edited value is refused.
+        if not re.fullmatch(r"[0-9A-Fa-f]{2}([:-])(?:[0-9A-Fa-f]{2}\1){4}[0-9A-Fa-f]{2}", v):
+            raise ValueError(
+                "WAKE_MAC must be six pairs of hex digits separated by ':' or '-', or empty"
+            )
+        return v.lower().replace("-", ":")
 
     @property
     def parsed_media_roots(self) -> list[tuple[str, str]]:

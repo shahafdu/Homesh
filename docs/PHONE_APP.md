@@ -49,6 +49,24 @@ which is deliberately not the server — the app has to be installable when the
 server cannot be reached, which is the situation it exists for. Your own server
 offers the same build at `/phone`.
 
+## Waking the PC
+
+From 1.11.0. When the PC is not answering, the phone is on Wi-Fi and the PC has
+told it which network adapter to wake (`WAKE_MAC`), the front page offers
+**Wake the main server**. While it does, the app does not open the standby by
+itself: it stays on its front page, with both buttons.
+
+Pressing it sends a wake-on-LAN packet, then looks for the PC every 10 seconds
+for 3 minutes while the app is on screen. When the PC answers, the app says so
+and **Open Homesh** goes to it. Nothing reloads by itself. If it never answers,
+the app says it did not wake and offers to try again.
+
+The packet is a broadcast on the local network, so it works only on the house
+Wi-Fi, and nothing replies to it: the PC starting to answer is the only sign it
+arrived. The button is in the app and not in Homesh's page, because a Custom Tab
+gives a page no way to ask the app for anything of the kind. Setting the PC up
+is described in the [user guide](USER_GUIDE.md).
+
 ## Other apps beside Homesh
 
 `PHONE_APPS` in the PC's `.env` lists other web apps to offer as buttons under
@@ -142,6 +160,14 @@ its tailnet name, the standby's, and this list of apps. None of them is in the
 app or in this repository. The phone has to remember them, because the time it
 needs the standby's address is when the PC is off and cannot be asked.
 
+The PC tells its house address to anybody who asks. The rest, which includes
+how to wake it, it tells only to somebody it knows, and it knows the phone app
+by its **notification token** (from 1.11.0). Homesh itself is signed into in the
+browser's tab, whose cookies the app cannot read. So a phone with notifications
+off learns only the house address: turn them on, and the app asks for the rest
+there and then, and again at each check that finds the PC. The token is sent
+only to an address already held for the PC, never to the standby.
+
 They are stored encrypted (from 1.6.0), with AES-GCM under a key made in the
 Android Keystore. The key cannot be read out by the app or by anybody else,
 and on most phones it is held in hardware, so a copy of the app's files holds
@@ -170,7 +196,8 @@ makes a single-use code that lives two minutes and hands it to the app through a
 `homeshconnect://notify` link. The app honours the link only for an address it
 already holds for the PC, and only after you confirm. The code is exchanged for a
 device token, which the phone keeps encrypted by `Vault`, as it keeps the
-addresses. The token reads that one person's messages and nothing else.
+addresses. The token reads that one person's messages, and lets the app ask the
+PC where else it can be reached (above). It opens nothing else.
 
 **Two modes.**
 

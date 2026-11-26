@@ -51,7 +51,7 @@ Three kinds of caller, three kinds of credential, none interchangeable:
 |---|---|---|
 | A person in the web app | the session cookie | see their own messages, manage their own phones |
 | An app beside Homesh | its sending key, from `.env` | post a message; nothing else |
-| A phone | its device token, made when the person turns notifications on | read that person's messages; nothing else |
+| A phone | its device token, made when the person turns notifications on | read that person's messages, and be told at `/tv.address` what someone signed in is told (added by task L4, `06-library-upkeep.md`); nothing else |
 
 **This track adds routes that do not take a session**: `send`, `inbox` and
 `claim`. That is the one deliberate exception to README rule 9, and each of
@@ -563,7 +563,7 @@ invented names.
 | A notification sends the person to a hostile site | a message carries a path, never an address; the path is validated on the server, again on the phone, and again in the web app; the phone opens only an app from its own stored list and checks the final address is under that app's address |
 | A web page tricks the phone app into registering with someone else's server | the claim link is honoured only for an address the app already holds, and only after the person confirms |
 | A stolen phone keeps receiving | the token is stored encrypted on the phone; "Remove" in settings revokes it at once; the phone clears itself on the next 401 |
-| A device token is used to read more than messages | it is accepted by exactly one route and is not a session |
+| A device token is used to read more than messages | it is accepted by exactly two routes, the inbox and `/tv.address` (addresses only), and is not a session |
 | Message text is read from a locked phone | hidden on the lock screen unless the person turns it on |
 | The mailbox is used to flood a phone | per-sender rate limit, lengths capped, messages expire, a channel per app that the person can silence |
 | Sending keys or tokens leak through logs or backups | never logged; keys live in `.env`; tokens are stored only as hashes |

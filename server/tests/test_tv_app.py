@@ -9,9 +9,16 @@ needs a restart before a fresh build appears.
 
 from __future__ import annotations
 
+import hashlib
+import secrets
 from concurrent.futures import ThreadPoolExecutor
 
 import pytest
+from sqlalchemy import text
+
+# From the block RFC 7042 sets aside for documentation.
+MAC = "00:00:5e:00:53:af"
+MAC_AS_WINDOWS_PRINTS_IT = "00-00-5E-00-53-AF"
 
 
 class TestApkDownload:
@@ -234,6 +241,128 @@ class TestWhereThePhoneFallsBack:
 
     def test_no_apps_configured_is_an_empty_list(self, anon_client, monkeypatch):
         assert self._address(anon_client, monkeypatch, PHONE_APPS="")["apps"] == []
+
+    def test_someone_signed_in_is_told_how_to_wake_the_pc(self, anon_client, monkeypatch):
+        body = self._address(anon_client, monkeypatch, WAKE_MAC=MAC_AS_WINDOWS_PRINTS_IT)
+        assert body["wake"] == {"mac": MAC}
+
+    def test_a_stranger_is_not_told_how_to_wake_the_pc(self, anon_client, monkeypatch):
+        anon_client.cookies.clear()
+        assert "wake" not in self._address(anon_client, monkeypatch, WAKE_MAC=MAC)
+
+    def test_nothing_about_waking_when_it_is_not_set(self, anon_client, monkeypatch):
+        assert "wake" not in self._address(anon_client, monkeypatch, WAKE_MAC="")
+
+
+class TestThePhoneAppIsKnownByItsNotificationToken:
+    """Homesh is signed into in the browser's tab, whose cookies the app cannot
+    read, so asking for a session meant the phone learned nothing but the house
+    address. Its notification token is the credential it does hold."""
+
+    ENV = {
+        "STANDBY_ORIGIN": "https://standby.example.ts.net",
+        "PHONE_APPS": "AppOne|https://example.ts.net:9101",
+        "PUBLIC_ORIGIN": "https://example.ts.net",
+        "WAKE_MAC": MAC,
+    }
+    PRIVATE = ("apps", "standby", "origin", "wake")
+
+    @pytest.fixture(autouse=True)
+    def _configured(self, monkeypatch):
+        from app.config import get_settings
+
+        for name, value in self.ENV.items():
+            monkeypatch.setenv(name, value)
+        get_settings.cache_clear()
+        yield
+        get_settings.cache_clear()
+
+    def _phone(self, db, user, *, revoked: bool = False) -> str:
+        token = secrets.token_urlsafe(32)
+        with db.begin() as conn:
+            conn.execute(
+                text(
+                    """
+                    INSERT INTO notify_devices (user_id, label, token_hash, revoked_at)
+                    VALUES (:u, 'phone', :h, CASE WHEN :revoked THEN now() END)
+                    """
+                ),
+                {
+                    "u": str(user.id),
+                    "h": hashlib.sha256(token.encode()).digest(),
+                    "revoked": revoked,
+                },
+            )
+        return token
+
+    def _ask(self, anon_client, token: str):
+        return anon_client.get("/tv.address", headers={"Authorization": f"Bearer {token}"})
+
+    def test_it_is_told_what_someone_signed_in_is(self, db, user, anon_client):
+        body = self._ask(anon_client, self._phone(db, user)).json()
+        assert body["standby"] == "https://standby.example.ts.net"
+        assert body["origin"] == "https://example.ts.net"
+        assert body["apps"] == [
+            {"name": "AppOne", "url": "https://example.ts.net:9101", "standby": None},
+        ]
+        assert body["wake"] == {"mac": MAC}
+
+    def test_a_removed_phone_is_a_stranger(self, db, user, anon_client):
+        body = self._ask(anon_client, self._phone(db, user, revoked=True)).json()
+        assert not any(name in body for name in self.PRIVATE)
+        assert "lan" in body
+
+    def test_a_made_up_token_is_a_stranger(self, db, anon_client):
+        body = self._ask(anon_client, "made-up-" + "x" * 32).json()
+        assert not any(name in body for name in self.PRIVATE)
+        assert "lan" in body
+
+    def test_made_up_tokens_run_out_of_attempts(self, db, user, anon_client):
+        from app.notify_api import WRONG_TOKENS
+
+        for _ in range(WRONG_TOKENS.allowed):
+            assert self._ask(anon_client, "made-up-" + "x" * 32).status_code == 200
+        assert self._ask(anon_client, "made-up-" + "x" * 32).status_code == 429
+        # Neither a television, which sends nothing, nor a real phone is shut out.
+        assert anon_client.get("/tv.address").status_code == 200
+        assert self._ask(anon_client, self._phone(db, user)).status_code == 200
+
+    def test_asking_with_nothing_is_not_counted(self, db, anon_client):
+        from app.notify_api import WRONG_TOKENS
+
+        for _ in range(WRONG_TOKENS.allowed + 1):
+            assert anon_client.get("/tv.address").status_code == 200
+
+
+class TestTheWakeAddress:
+    @pytest.mark.parametrize("typed", [MAC, MAC.upper(), MAC_AS_WINDOWS_PRINTS_IT, f"  {MAC}  "])
+    def test_the_usual_spellings_are_one_address(self, typed):
+        from app.config import Settings
+
+        assert Settings(_env_file=None, wake_mac=typed).wake_mac == MAC
+
+    def test_empty_means_no_waking(self):
+        from app.config import Settings
+
+        assert Settings(_env_file=None, wake_mac="").wake_mac == ""
+
+    @pytest.mark.parametrize(
+        "typed",
+        [
+            "00:00:5e:00:53",
+            "00:00:5e:00:53:af:01",
+            "00005e0053af",
+            "00:00-5e:00:53:af",
+            "00:00:5e:00:53:ag",
+            "192.0.2.10",
+        ],
+    )
+    def test_anything_else_is_refused_at_start_up(self, monkeypatch, typed):
+        from app.config import Settings
+
+        monkeypatch.setenv("WAKE_MAC", typed)
+        with pytest.raises(ValueError, match="WAKE_MAC must be six pairs of hex digits"):
+            Settings(_env_file=None)
 
 
 class TestTheAddressForATelevision:
