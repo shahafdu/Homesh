@@ -299,7 +299,12 @@ def audit(
 
 def export(since: datetime, until: datetime) -> Iterator[str]:
     """Every action from `since` up to but not including `until`, oldest first,
-    as one JSON object per line, with the request each one made."""
+    as one JSON object per line, with the request each one made.
+
+    The rows are read here, before anything is sent: a response streamed from
+    a query that has not run yet has already answered 200 when the query
+    fails, and the administrator keeps a file that silently stops part-way.
+    """
     expire_pending()
     with get_engine().connect() as conn:
         rows = conn.execute(
@@ -316,6 +321,10 @@ def export(since: datetime, until: datetime) -> Iterator[str]:
             ),
             {"since": aware(since), "until": aware(until)},
         ).mappings().all()
+    return _lines(rows)
+
+
+def _lines(rows) -> Iterator[str]:
     for r in rows:
         line = {
             "id": str(r["id"]),

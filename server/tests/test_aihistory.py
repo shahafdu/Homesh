@@ -336,6 +336,19 @@ class TestTheHouseholdsAudit:
 
         assert [json.loads(line)["summary"] for line in got.text.splitlines()] == ["Today"]
 
+    def test_the_export_is_read_before_anything_is_sent(self, db, user, monkeypatch):
+        _did(user, None, "Before")
+        now = datetime.now(UTC)
+        lines = aihistory.export(now - timedelta(days=1), now + timedelta(days=1))
+
+        # Were the query still waiting for the first line, a database that
+        # fails now would fail after the response had already said 200.
+        def gone():
+            raise RuntimeError("database unreachable")
+
+        monkeypatch.setattr(aihistory, "get_engine", gone)
+        assert [json.loads(line)["summary"] for line in lines] == ["Before"]
+
     def test_a_range_over_92_days_is_refused(self, client, db):
         def ask(since: str, until: str) -> int:
             return client.get(
