@@ -113,6 +113,9 @@ def db():
         conn.execute(text("DELETE FROM zones"))
         conn.execute(text("DELETE FROM renderers"))
         conn.execute(text("DELETE FROM sources"))
+        # The household's audit outlives the account and the question it came
+        # from, so nothing below cascades into it.
+        conn.execute(text("DELETE FROM ai_actions"))
         # Items survive their sources by design — a file on a drive that is
         # switched off is still a file — so cascading from `sources` leaves the
         # catalog behind and the next test inherits it. Harmless until something

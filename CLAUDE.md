@@ -146,14 +146,14 @@ to one goes to the other.
 | 3 · Control tower & zones | ✅ done | Denon verified against the real receiver; rooms, sessions, transport, seek, volume, occupancy, the tower UI |
 | 4 · TV apps | ✅ done | Android TV app in daily use, **with its own video player** for what a WebView cannot decode. No Gradle: aapt2/javac/d8/apksigner, 33 KB, built by CI every commit. A phone launcher app too (`docs/PHONE_APP.md`). webOS dropped; Tizen only if a screen turns out to have no box |
 | 5 · Playlists & music intelligence | 🔨 | Winamp import done, nearly every track matched; sharing and reordering work. AcoustID tag repair not started |
-| 6 · AI | ⬜ | See **AI design decisions** below, and the full plan in `docs/AI_PLAN.md` (October 2026: embeddings, video, faces, model catalogue, night worker, history). Not yet built. Backups landed first, deliberately |
+| 6 · AI | ⬜ | See **AI design decisions** below, and the full plan in `docs/AI_PLAN.md` (October 2026: embeddings, video, faces, model catalogue, night worker, history). Built so far, server only: the model router and catalogue, and history and audit. Backups landed first, deliberately |
 | 7 · Photo availability | 🔨 | RAID→Drive copy is a documented setup outside Homesh; Homesh Connect wakes the PC (`WAKE_MAC`, `docs/PHONE_APP.md`). Takeout gap-fill not started |
 | 8 · Optional transcode | ❌ overtaken | It was never optional for this library — see §3.2.1 of ARCHITECTURE for what actually happened |
 | 9 · Public release | 🔨 | Public since August. Docs current as of 14 September 2026; screenshots outstanding |
 
-**Tests: 995 passing, and the web unit tests (`npm test`). Migrations: 029. Lint: clean. CI green.**
+**Tests: 1021 passing, and the web unit tests (`npm test`). Migrations: 030. Lint: clean. CI green.**
 
-### AI design decisions — agreed, not yet built
+### AI design decisions — agreed, mostly not yet built
 
 Settled in conversation and load-bearing for the smart-home work that follows.
 
@@ -317,11 +317,13 @@ server/app/       config, db, main, auth, security, people, access, prefs, libra
                   thumbs, sharing, playlists, zones, denon, renderers, discovery,
                   occupancy, lanaddr, upkeep, backups, crypt, offsite, standby,
                   thumbsync, signin_code, throttle, audiocache, ai, ai_api, aicatalog, aisettings,
+                  aihistory (a person's questions, and the household's audit of what the
+                  assistant changed), assistant_api,
                   notify, notify_api (the mailbox phones read), alerts (what administrators are told),
                   webguard (headers, cross-origin writes, log redaction),
                   childenv (the environment child programs get),
                   sources/{base,local,gdrive}
-server/migrations 029 of them, plain SQL, tracked in `schema_migrations` and applied at
+server/migrations 030 of them, plain SQL, tracked in `schema_migrations` and applied at
                   startup. `ls server/migrations` is the list
 server/tests/     one module per surface
 web/src/          App, Browser, Viewer, Player, Slideshow, Zones, Playlists, People,

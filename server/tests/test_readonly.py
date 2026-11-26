@@ -18,6 +18,8 @@ from app.sources.local import LocalConnector
 # they write catalog rows, accounts, playlists, rooms, backups or the
 # notification mailbox, and the media volume is mounted read-only beneath them.
 ALLOWED_MUTATING_ROUTES = {
+    ("DELETE", "/api/assistant/history"),
+    ("DELETE", "/api/assistant/history/{question_id}"),
     ("DELETE", "/api/auth/passkeys/{credential_id}"),
     ("DELETE", "/api/backups/{name}"),
     ("DELETE", "/api/items/{item_id}/drive-link"),

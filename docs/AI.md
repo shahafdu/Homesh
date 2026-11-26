@@ -73,9 +73,23 @@ many tokens, how much it cost and how long it took.
 copy of the content. `/api/ai/history` reads it back, administrators only,
 because it names who asked for what across the whole household.
 
-**Changing, by agreement (October 2026):** the plan keeps each person's own
-questions as a history they can search, repeat and clear, and adds a searchable
-audit log of every action. See `AI_PLAN.md`, section 6.
+## Your questions, and what was changed
+
+Agreed in October 2026 (`AI_PLAN.md`, section 6), and separate from the record
+above. The server keeps both; nothing asks questions yet and no screen shows
+them.
+
+- **Your history** (`ai_questions`): what you asked and what came of it. Only
+  you read it, not even an administrator, and you can search it and clear it,
+  one entry or all. Removing an account removes its questions.
+- **The audit** (`ai_actions`): what the assistant changed, was refused, or is
+  waiting to be allowed to do. Administrators search it and export it, up to 92
+  days at a time. It outlives both the question and the account, and it never
+  contains the wording of a question.
+
+Search forgives a typo only in ASCII letters, because the database's locale is
+C; other scripts are found by the words as written. Both are in the database, so
+both are in its backups. The assistant is not offered on the standby.
 
 ## The AI holds no privileges of its own
 
@@ -118,6 +132,9 @@ on demand, never bulk.
 - ✅ `/api/ai/status` — whether it is on, which model, and for an administrator
   what has been spent this month.
 - ✅ `/api/ai/history` — what it has been asked to do.
+- ✅ The server side of each person's history and the household's audit
+  (`/api/assistant/history`, `/api/assistant/audit`; `server/app/aihistory.py`,
+  migration 030).
 - ⬜ Everything else is planned in **`AI_PLAN.md`** — embeddings, video, faces,
   the model catalogue, the background worker, history, voice and tagging, with
   the order to build them in.

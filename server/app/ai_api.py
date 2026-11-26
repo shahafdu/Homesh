@@ -18,6 +18,7 @@ from . import ai, aicatalog, aisettings
 from .config import get_settings
 from .db import get_engine
 from .security import CurrentUser, audit, require_user
+from .standby import is_standby
 from .throttle import Limit, hit
 
 router = APIRouter(prefix="/api/ai", tags=["ai"])
@@ -33,7 +34,9 @@ async def ai_status(user: CurrentUser = Depends(require_user)) -> dict:
     """
     answer = ai.status()
     features = {
-        "assistant": ai.chat_available(),
+        # Not offered on the standby: what it did there would be recorded
+        # there, and the next restore from the PC would replace the record.
+        "assistant": not is_standby() and ai.chat_available(),
         # The night worker that these three depend on does not exist yet; they
         # turn on when it does. Absent is the honest answer until then.
         "meaning_search": False,

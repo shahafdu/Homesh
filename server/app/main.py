@@ -19,8 +19,9 @@ from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 
-from . import alerts, lanaddr, webguard
+from . import aihistory, alerts, lanaddr, webguard
 from .ai_api import router as ai_router
+from .assistant_api import router as assistant_router
 from .auth import ensure_bootstrap_code
 from .auth import router as auth_router
 from .backups import router as backups_router
@@ -91,6 +92,10 @@ async def lifespan(app: FastAPI):
             log.info("applied migrations: %s", ", ".join(applied))
         else:
             log.info("schema up to date")
+
+        # A question being answered when the server stopped has nothing working
+        # on it now.
+        aihistory.close_stale()
 
         # The standby's accounts and sources come from the PC's backups. Letting
         # it register folders of its own would write rows the next restore
@@ -207,6 +212,7 @@ from .standby import StandbyGate  # noqa: E402
 app.add_middleware(StandbyGate)
 
 app.include_router(ai_router)
+app.include_router(assistant_router)
 app.include_router(auth_router)
 app.include_router(backups_router)
 app.include_router(documents_router)
