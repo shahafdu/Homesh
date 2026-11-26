@@ -41,7 +41,7 @@ log = logging.getLogger("homesh.sendcopy")
 router = APIRouter(prefix="/api/items", tags=["sharing"])
 
 # Chromium's own list of extensions a page may attach to a share, and so the
-# list of what needs no copy. web/src/sharePlan.ts holds the same one; both are
+# list of what needs no copy. web/src/formats.ts holds the same one; both are
 # checked against server/tests/send_copy_cases.json.
 SHAREABLE = frozenset({
     "avif", "bmp", "css", "csv", "ehtml", "flac", "gif", "htm", "html", "ico",

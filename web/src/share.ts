@@ -207,7 +207,7 @@ function failed(e: unknown): Prepared {
 const tooLarge = (): Prepared => ({
   ok: false,
   reason: "too-large",
-  // Films in this library run past a gigabyte, and a phone cannot hold one in
+  // A feature film runs past a gigabyte, and a phone cannot hold one in
   // memory to hand to a share sheet. A Drive link carries any size.
   detail:
     "Too big to attach — a phone cannot hold it in memory. Send a Drive link " +

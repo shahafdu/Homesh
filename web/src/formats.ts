@@ -50,8 +50,8 @@ export function needsVideoConversion(ext: string | null): boolean {
  * process validates the *extension* strictly. So canShare says yes to an .avi
  * and the share then fails — after the whole file has been fetched.
  *
- * Notably absent, and all present in this library: avi, wmv, mkv, mov, doc,
- * docx, xls, wma, aac, heic. Those need converting to something on this list,
+ * Notably absent, and common in any older collection: avi, wmv, mkv, mov,
+ * doc, docx, xls, wma, aac, heic. Those need converting to something on this list,
  * or a Drive link. The server holds the same list (server/app/sendcopy.py).
  */
 export const SHAREABLE: ReadonlySet<string> = new Set([
