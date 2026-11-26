@@ -16,19 +16,21 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
   });
 
-  if (!res.ok) {
-    // FastAPI puts the reason in `detail`; fall back to the status text.
-    let message = res.statusText;
-    try {
-      const body = await res.json();
-      if (typeof body?.detail === "string") message = body.detail;
-    } catch {
-      /* non-JSON error body */
-    }
-    throw new ApiError(res.status, message);
-  }
+  if (!res.ok) throw await failure(res);
 
   return res.status === 204 ? (undefined as T) : ((await res.json()) as T);
+}
+
+// FastAPI puts the reason in `detail`; fall back to the status text.
+async function failure(res: Response): Promise<ApiError> {
+  let message = res.statusText;
+  try {
+    const body = await res.json();
+    if (typeof body?.detail === "string") message = body.detail;
+  } catch {
+    /* non-JSON error body */
+  }
+  return new ApiError(res.status, message);
 }
 
 export const api = {
@@ -38,6 +40,12 @@ export const api = {
   put: <T>(path: string, body?: unknown) =>
     request<T>(path, { method: "PUT", body: body === undefined ? undefined : JSON.stringify(body) }),
   delete: <T>(path: string) => request<T>(path, { method: "DELETE" }),
+  /** A write that answers with a file rather than JSON. */
+  postFile: async (path: string, signal?: AbortSignal): Promise<Response> => {
+    const res = await fetch(path, { method: "POST", credentials: "same-origin", signal });
+    if (!res.ok) throw await failure(res);
+    return res;
+  },
 };
 
 export interface Health {

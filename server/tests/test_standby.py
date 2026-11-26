@@ -118,6 +118,8 @@ class TestWhatKindOfChangeThisIs:
             ("POST", "/api/backups/homesh-20260101-000000.sql.gz/restore"),
             ("DELETE", f"/api/sources/{uuid.uuid4()}"),
             ("POST", f"/api/items/{uuid.uuid4()}/drive-link"),
+            # Converting a file is the main server's work.
+            ("POST", f"/api/items/{uuid.uuid4()}/send-copy"),
             # Importing reads the files of a folder the standby cannot reach.
             ("POST", f"/api/playlists/import/{uuid.uuid4()}"),
         ],

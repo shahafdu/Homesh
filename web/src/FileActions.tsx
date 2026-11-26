@@ -4,15 +4,17 @@ import { copyText } from "./copy";
 import { printDocument, printImage } from "./print";
 import { AddToPlaylist } from "./Playlists";
 import { downloadUrl, type FileEntry } from "./library";
+import { downloadLabel, route } from "./formats";
 import {
   canShareFiles,
   createDriveLink,
   downloadFile,
   driveLink,
+  fetchCopy,
   handOver,
   prepareShare,
   revokeDriveLink,
-  shareRoute,
+  saveFile,
   type DriveLink,
 } from "./share";
 
@@ -38,7 +40,16 @@ export default function FileActions(props: {
   const [addingToList, setAddingToList] = useState(false);
 
   const sharable = canShareFiles();
-  const plan = shareRoute(file);
+  const plan = route(file);
+
+  // The last refusal was about size or length, which a Drive link gets round.
+  const [tooLarge, setTooLarge] = useState(false);
+  // Where nothing can be shared from here, Download hands over the converted
+  // copy instead, to be attached from the device's files. Once the server has
+  // said it cannot make one, the button goes back to the original.
+  const [noCopy, setNoCopy] = useState(false);
+  const asCopy = !sharable && !noCopy && plan.via === "copy" ? plan.format : null;
+  const offerLink = tooLarge && drive?.supported === true && !drive.url;
 
   // Asked for every file rather than guessed from the path: whether a copy sits
   // in Drive is the server's knowledge, not something to infer from a prefix.
@@ -64,6 +75,9 @@ export default function FileActions(props: {
     const controller = stop.current;
     return () => controller.abort();
   }, []);
+
+  const progress = (step: string, fraction: number | null) =>
+    setBusy(fraction === null ? `${step}…` : `${step}… ${Math.round(fraction * 100)}%`);
 
   const offer = async (f: File) => {
     const result = await handOver(f);
@@ -114,16 +128,13 @@ export default function FileActions(props: {
 
     setBusy("Preparing…");
     setNote(null);
-    const prepared = await prepareShare(
-      file,
-      (step, fraction) =>
-        setBusy(fraction === null ? `${step}…` : `${step}… ${Math.round(fraction * 100)}%`),
-      stop.current.signal,
-    );
+    setTooLarge(false);
+    const prepared = await prepareShare(file, progress, stop.current.signal);
     setBusy(null);
 
     if (!prepared.ok) {
       setNote(prepared.detail);
+      setTooLarge(prepared.reason === "too-large");
       return;
     }
     if (await offer(prepared.file)) return;
@@ -132,6 +143,31 @@ export default function FileActions(props: {
     // button now says so.
     setReady(prepared.file);
     setNote(null);
+  };
+
+  const download = async () => {
+    setBusy("Saving…");
+    setNote(null);
+    setTooLarge(false);
+    try {
+      if (asCopy) {
+        const prepared = await fetchCopy(file, asCopy, progress, stop.current.signal);
+        if (!prepared.ok) {
+          setNote(prepared.detail);
+          setTooLarge(prepared.reason === "too-large");
+          setNoCopy(prepared.reason !== "failed");
+          return;
+        }
+        saveFile(prepared.file);
+      } else {
+        await downloadFile(file.item_id, file.filename);
+      }
+      props.onClose();
+    } catch (e) {
+      setNote(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(null);
+    }
   };
 
   return (
@@ -191,26 +227,15 @@ export default function FileActions(props: {
             </button>
           )}
 
-          <button
-            className="action"
-            disabled={busy !== null}
-            onClick={async () => {
-              setBusy("Saving…");
-              setNote(null);
-              try {
-                await downloadFile(file.item_id, file.filename);
-                props.onClose();
-              } catch (e) {
-                setNote(e instanceof Error ? e.message : String(e));
-              } finally {
-                setBusy(null);
-              }
-            }}
-          >
+          <button className="action" disabled={busy !== null} onClick={download}>
             <span className="action-ic">↓</span>
             <span>
-              Download
-              <span className="muted small">Keep a copy on this device</span>
+              {downloadLabel(asCopy)}
+              <span className="muted small">
+                {asCopy
+                  ? "Converts it first, so you can share it from your files"
+                  : "Keep a copy on this device"}
+              </span>
             </span>
           </button>
 
@@ -227,11 +252,11 @@ export default function FileActions(props: {
                   ? "Ready — tap to choose WhatsApp, mail, anywhere"
                   : !sharable
                     ? "Needs a secure connection; download and share from your files"
-                    : plan === "mp4"
-                      ? "Converts it to MP4 first — phones will not accept the original"
-                      : plan === "pdf"
+                    : plan.via === "copy"
+                      ? `Converts it to ${plan.format.toUpperCase()} first, so it opens on a phone`
+                      : plan.via === "pdf"
                         ? "Sends it as a PDF, which any phone can open"
-                        : plan === "none"
+                        : plan.via === "none"
                           ? "Phones will not accept this kind of file — use a Drive link"
                           : "Sends the file itself — WhatsApp, mail, anywhere"}
               </span>
@@ -296,24 +321,29 @@ export default function FileActions(props: {
                 </p>
               </>
             ) : (
-              <button
-                className="compact"
-                disabled={busy !== null}
-                onClick={async () => {
-                  setBusy("Asking Drive…");
-                  setNote(null);
-                  try {
-                    const { url } = await createDriveLink(file.item_id);
-                    setDrive({ ...drive, url });
-                  } catch (e) {
-                    setNote(e instanceof Error ? e.message : String(e));
-                  } finally {
-                    setBusy(null);
-                  }
-                }}
-              >
-                Create a Drive link
-              </button>
+              <>
+                {offerLink && note && (
+                  <div className="error" role="alert">{note}</div>
+                )}
+                <button
+                  className="compact"
+                  disabled={busy !== null}
+                  onClick={async () => {
+                    setBusy("Asking Drive…");
+                    setNote(null);
+                    try {
+                      const { url } = await createDriveLink(file.item_id);
+                      setDrive({ ...drive, url });
+                    } catch (e) {
+                      setNote(e instanceof Error ? e.message : String(e));
+                    } finally {
+                      setBusy(null);
+                    }
+                  }}
+                >
+                  Create a Drive link
+                </button>
+              </>
             )}
           </div>
         )}
@@ -329,8 +359,9 @@ export default function FileActions(props: {
           to gains access to anything else.
         </p>
 
-        {busy && <div className="muted small">{busy}</div>}
-        {note && <div className="error">{note}</div>}
+        {busy && <div className="muted small" role="status">{busy}</div>}
+        {/* Beside the Drive button instead, when that button is the way out. */}
+        {note && !offerLink && <div className="error" role="alert">{note}</div>}
 
         <button className="compact" style={{ marginTop: 12 }} onClick={props.onClose}>
           Close

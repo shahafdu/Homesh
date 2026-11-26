@@ -119,6 +119,12 @@ jobs:
           print("idempotent")
           PY
 
+      # Sending an old format is tested on real clips, made and read back here.
+      - name: Install ffmpeg
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg
+
       - name: Tests
         working-directory: server
         env:

@@ -151,7 +151,7 @@ to one goes to the other.
 | 8 · Optional transcode | ❌ overtaken | It was never optional for this library — see §3.2.1 of ARCHITECTURE for what actually happened |
 | 9 · Public release | 🔨 | Public since August. Docs current as of 14 September 2026; screenshots outstanding |
 
-**Tests: 1022 passing, and the web unit tests (`npm test`). Migrations: 030. Lint: clean. CI green.**
+**Tests: 1089 passing, and the web unit tests (`npm test`). Migrations: 030. Lint: clean. CI green.**
 
 ### AI design decisions — agreed, mostly not yet built
 
@@ -311,8 +311,9 @@ Full reasoning in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md). The load-beari
 
 ```
 server/app/       config, db, main, auth, security, people, access, prefs, library,
-                  scanner, scanrequest, metadata, dedup, signing, stream, transcode, documents,
-                  docformats, convertclient, converter (runs only in the converter
+                  scanner, scanrequest, metadata, dedup, signing, stream, transcode,
+                  sendcopy (an old format converted as it is sent, and not kept),
+                  documents, docformats, convertclient, converter (runs only in the converter
                   container: LibreOffice walled off from the server's keys),
                   thumbs, sharing, playlists, zones, denon, renderers, discovery,
                   occupancy, lanaddr, upkeep, backups, crypt, offsite, standby,
@@ -328,7 +329,9 @@ server/migrations 030 of them, plain SQL, tracked in `schema_migrations` and app
 server/tests/     one module per surface
 web/src/          App, Browser, Viewer, Player, Slideshow, Zones, Playlists, People,
                   Sources, Settings, Inbox (the bell), notifyApi, notifyLinks (tested by web/test/), PdfView, RawView, FileActions, PlayTo, Audience,
-                  LinkDevice, + api/auth/library/prefs/backups and peopleApi/zonesApi/
+                  LinkDevice, formats (which file types are converted to be shown or
+                  sent; no imports, tested by web/test/),
+                  + api/auth/library/prefs/backups and peopleApi/zonesApi/
                   playlistsApi/usePlayer/slideshowSettings helpers
                   and styles.css. `web/src/tv/` is the television client, a separate
                   entry point (`tv.html`) sharing the same build

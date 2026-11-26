@@ -40,6 +40,8 @@ from .prefs import router as prefs_router
 from .renderers import router as renderers_router
 from .security import SESSION_COOKIE
 from .security import _lookup as _lookup_session
+from .sendcopy import router as sendcopy_router
+from .sendcopy import sweep_forever as sweep_send_copies
 from .sharing import router as sharing_router
 from .stream import router as stream_router
 from .transcode import router as transcode_router
@@ -149,6 +151,9 @@ async def lifespan(app: FastAPI):
 
     mailbox = asyncio.create_task(mailbox_forever())
 
+    # Throws away converted copies whose download never finished.
+    send_copies = asyncio.create_task(sweep_send_copies())
+
     # Answers "where is the server?" on the LAN, so a television never has to be
     # told an address with a remote control.
     finder = asyncio.create_task(serve_discovery())
@@ -164,7 +169,8 @@ async def lifespan(app: FastAPI):
 
     yield
 
-    for task in (upkeep, finder, watcher, address, syncing, mailbox, requested, drive_changes):
+    for task in (upkeep, finder, watcher, address, syncing, mailbox, requested, drive_changes,
+                 send_copies):
         task.cancel()
         with suppress(asyncio.CancelledError):
             await task
@@ -221,6 +227,7 @@ app.include_router(notify_router)
 app.include_router(people_router)
 app.include_router(playlists_router)
 app.include_router(prefs_router)
+app.include_router(sendcopy_router)
 app.include_router(sharing_router)
 app.include_router(renderers_router)
 app.include_router(stream_router)

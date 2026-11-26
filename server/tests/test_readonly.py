@@ -43,6 +43,9 @@ ALLOWED_MUTATING_ROUTES = {
     ("POST", "/api/backups/offsite/{name}"),
     ("POST", "/api/backups/{name}/restore"),
     ("POST", "/api/items/{item_id}/drive-link"),
+    # Converts a file for sending: writes only its own temporary file, which it
+    # deletes once sent. The library is read through the stream endpoint.
+    ("POST", "/api/items/{item_id}/send-copy"),
     ("POST", "/api/notify/devices"),
     ("POST", "/api/notify/devices/claim"),
     ("POST", "/api/notify/messages/read"),

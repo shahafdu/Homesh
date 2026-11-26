@@ -1,4 +1,8 @@
 import { api } from "./api";
+import { needsConversion } from "./formats";
+
+// Re-exported so that screens keep asking the library about files.
+export { needsConversion, needsVideoConversion } from "./formats";
 
 export type Kind = "audio" | "video" | "photo" | "doc" | "other";
 
@@ -121,23 +125,6 @@ export const listSources = () => api.get<Source[]>("/api/sources");
 export async function downloadUrl(itemId: string): Promise<string> {
   const { url } = await api.get<{ url: string }>(`/api/items/${itemId}/url`);
   return `${url}&download=1`;
-}
-
-/** Office formats the server renders to PDF on request.
- *
- * No browser can display these, and no browser ever will — they need a layout
- * engine rather than a parser. The server converts them so the file never has to
- * leave the house to be read.
- */
-const CONVERTIBLE = new Set([
-  "doc", "docx", "odt", "rtf", "dot", "dotx", "wpd",
-  "xls", "xlsx", "ods", "csv", "xlsm", "xlt", "xltx",
-  "ppt", "pptx", "odp", "pps", "ppsx", "pot", "potx",
-  "abw", "sxw", "fodt", "fods",
-]);
-
-export function needsConversion(ext: string | null): boolean {
-  return CONVERTIBLE.has((ext ?? "").toLowerCase());
 }
 
 /** Formats the viewer can show, directly or after conversion. */
@@ -294,38 +281,6 @@ export function hitAsFile(hit: SearchHit): FileEntry {
   };
 }
 
-
-/** Containers whose video no browser can decode.
- *
- * MPEG-2 — a DVD rip, an HDV camcorder tape — has no decoder in any current
- * browser. It is not a setting or a missing plugin; the codec was never shipped.
- * A television box usually decodes it in hardware, which is why sending it to a
- * room works when watching it here does not.
- */
-const UNDECODABLE = new Set([
-  "m2t", "mts", "vob", "mpg", "mpeg", "m1v", "m2v", "mod", "tod", "dv", "mxf",
-  "wmv", "avi", "asf", "divx", "xvid", "rm", "rmvb", "flv",
-  "3gp", "3g2",
-]);
-
-export function needsVideoConversion(ext: string | null): boolean {
-  return UNDECODABLE.has((ext ?? "").toLowerCase());
-}
-
-export interface Conversion {
-  needed: boolean;
-  state: "queued" | "running" | "done" | "failed" | null;
-  progress: number;
-  error?: string | null;
-}
-
-export const conversionStatus = (itemId: string) =>
-  api.get<Conversion>(`/api/videos/${itemId}/conversion`);
-
-export const startConversion = (itemId: string) =>
-  api.post<Conversion>(`/api/videos/${itemId}/conversion`);
-
-export const convertedUrl = (itemId: string) => `/api/videos/${itemId}/converted`;
 
 /** Transcoded as it plays, so watching starts now and nothing is stored.
  *

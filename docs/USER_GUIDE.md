@@ -192,6 +192,37 @@ your phone and TV.
 Photos and video show real thumbnails. Files with no artwork — a track without an
 embedded cover, a document — fall back to an icon for their kind.
 
+### Sending a file to somebody
+
+A file's menu has **Share…**, which hands the file itself to your phone's share
+sheet — WhatsApp, mail, anywhere. Nobody receives a link to your server.
+
+What arrives should open, so some files are changed on the way:
+
+- **Documents** (Word, Excel, PowerPoint and the like) go as PDF.
+- **Old video** (WMV, AVI, MOV, MKV, MPEG and the like) goes as MP4, no taller
+  than 1080 lines.
+- **Old sound** (WMA, AAC, AIFF, AMR and the like) goes as M4A, with its song
+  details.
+
+Video and sound are converted as you send them, and the converted copy is not
+kept. Wait on that screen while it says *Converting for sending*. This is for
+clips and songs: anything longer than ten minutes is refused, and so is a result
+too big to attach. Send a Drive link for those. (The limit is
+`SHARE_CONVERT_MAX_SECONDS` in `.env`.) Only one conversion runs at a time, so
+you may be told the server is busy; try again in a few minutes.
+
+A **Drive link** always shares the original file, never a converted one. MIDI
+files hold notes rather than sound and cannot be converted.
+
+On your home network, where the address starts `http://`, a browser will not
+open the share sheet. There the menu's button reads **Download as MP4** or
+**Download as M4A**, so you can send the copy from your files. To keep the
+original instead, open the file and press **Download** at the top.
+
+Converting waits for the main server: it is not done while the standby is
+answering.
+
 ---
 
 ## 5. Searching

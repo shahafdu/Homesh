@@ -164,6 +164,10 @@ class Settings(BaseSettings):
     # The night worker's internal address (never published outside Docker).
     worker_url: str = "http://worker:8090"
 
+    # The longest file converted when it is sent (app/sendcopy.py). For clips
+    # and songs: a long one is refused, and goes as a Drive link instead.
+    share_convert_max_seconds: int = Field(default=600, ge=1)
+
     # Receiver address, used when SSDP discovery cannot run.
     #
     # Docker's bridge network does not forward multicast to the LAN, so a

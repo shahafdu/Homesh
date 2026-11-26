@@ -1,0 +1,60 @@
+{
+  "shareable": [
+    "avif", "bmp", "css", "csv", "ehtml", "flac", "gif", "htm", "html", "ico",
+    "jfif", "jpeg", "jpg", "m4a", "m4v", "mp3", "mp4", "mpeg", "mpg", "oga",
+    "ogg", "ogm", "ogv", "opus", "pdf", "pjp", "pjpeg", "png", "shtml", "svg",
+    "svgz", "text", "tif", "tiff", "txt", "wav", "weba", "webm", "webp", "xbm"
+  ],
+  "audio": [
+    "aac", "ac3", "aif", "aifc", "aiff", "alac", "amr", "ape", "au", "awb",
+    "caf", "dts", "m4b", "mka", "mp2", "mpc", "ra", "tta", "wma", "wv"
+  ],
+  "video_needs_conversion": [
+    "3g2", "3gp", "asf", "avi", "divx", "dv", "flv", "m1v", "m2t", "m2v", "mod",
+    "mpeg", "mpg", "mts", "mxf", "rm", "rmvb", "tod", "vob", "wmv", "xvid"
+  ],
+  "cases": [
+    ["video", "wmv", "mp4"],
+    ["video", "avi", "mp4"],
+    ["video", "asf", "mp4"],
+    ["video", "mov", "mp4"],
+    ["video", "mkv", "mp4"],
+    ["video", "flv", "mp4"],
+    ["video", "3gp", "mp4"],
+    ["video", "mpg", "mp4"],
+    ["video", "mpeg", "mp4"],
+    ["video", "vob", "mp4"],
+    ["video", "m2ts", "mp4"],
+    ["video", "ts", "mp4"],
+    ["video", "WMV", "mp4"],
+    ["other", "xvid", "mp4"],
+    ["video", "mp4", null],
+    ["video", "m4v", null],
+    ["video", "webm", null],
+    ["video", "ogv", null],
+    ["audio", "wma", "m4a"],
+    ["audio", "aac", "m4a"],
+    ["audio", "ape", "m4a"],
+    ["audio", "aiff", "m4a"],
+    ["audio", "alac", "m4a"],
+    ["audio", "wv", "m4a"],
+    ["other", "ra", "m4a"],
+    ["other", "amr", "m4a"],
+    ["other", "ac3", "m4a"],
+    ["other", "mka", "m4a"],
+    ["audio", "mp3", null],
+    ["audio", "m4a", null],
+    ["audio", "flac", null],
+    ["audio", "wav", null],
+    ["audio", "ogg", null],
+    ["audio", "opus", null],
+    ["other", "mid", null],
+    ["other", "midi", null],
+    ["other", "zip", null],
+    ["other", "", null],
+    ["photo", "jpg", null],
+    ["photo", "heic", null],
+    ["doc", "pdf", null],
+    ["doc", "epub", null]
+  ]
+}

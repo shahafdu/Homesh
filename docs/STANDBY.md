@@ -50,6 +50,7 @@ home.
 | Accounts, invitations, who may see what, rooms, folders, backups | ❌ refused on the standby |
 | Notifications posted by an app beside Homesh | ✅ the standby keeps a mailbox of its own, and phones read it there |
 | Turning notifications on or off for a phone | ❌ done on the PC; the phone list arrives with its backup |
+| Sending an old video or song converted to MP4 or M4A | ❌ converting is the PC's work |
 
 ## How changes made on the standby get back
 
