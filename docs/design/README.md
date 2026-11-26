@@ -19,6 +19,7 @@ halfway through a task.
 | [`05-music.md`](05-music.md) | Gapless playback, loudness, tag repair | M1-M3 |
 | [`06-library-upkeep.md`](06-library-upkeep.md) | Change notices, photo availability, the converter sandbox | L1-L5, A5 |
 | [`07-notifications.md`](07-notifications.md) | A mailbox on the server, notifications in Homesh Connect, alerts to administrators. **A separate track**: built alone with `-Track notifications` | N1-N4 |
+| [`08-sharing.md`](08-sharing.md) | Sending an old-format file converted to one that opens | S1 |
 | [`ORCHESTRATOR.md`](ORCHESTRATOR.md) | For the session that runs the build: the loop, what to ask the owner | - |
 
 `docs/AI.md` (the rules) and `docs/AI_PLAN.md` (what was agreed) stay the
@@ -58,8 +59,9 @@ Do the tasks in this order. A task may start only when every task in its
 | 22 | **L2** Drive change polling | - | S |
 | 23 | **L4** Wake the PC | - | S |
 | 24 | **L5** Takeout import | - | M |
+| 25 | **S1** Convert old formats when sending | - | S |
 
-M1, L1, L2, L4 and L5 need nothing from the AI tracks and can be done at any
+M1, L1, L2, L4, L5 and S1 need nothing from the AI tracks and can be done at any
 point. **C1 must be finished before C2**: nothing that changes data is given to
 a model before the record of what it did exists.
 

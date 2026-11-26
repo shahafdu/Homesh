@@ -43,6 +43,7 @@
     {"id": "C1a", "model": "sonnet", "doc": "04-assistant.md", "title": "History and audit (server only: sections 1.1 to 1.4)", "needs": ["A4a"], "inputs": [], "track": "assistant"},
     {"id": "L4", "model": "sonnet", "doc": "06-library-upkeep.md", "title": "Wake the PC from Homesh Connect", "needs": [], "inputs": [], "afterwards": "Put the PC's network adapter address in .env as WAKE_MAC, enable wake-on-LAN in the PC's firmware, and install the new Homesh Connect.", "track": "upkeep"},
     {"id": "L5", "model": "sonnet", "doc": "06-library-upkeep.md", "title": "Google Takeout import", "needs": [], "inputs": ["takeout-sample"], "track": "upkeep"},
+    {"id": "S1", "model": "sonnet", "doc": "08-sharing.md", "title": "Convert an old-format file when it is sent", "needs": [], "inputs": [], "afterwards": "Rebuild with tools\\start-homesh.ps1 -Rebuild and deploy the standby again with tools\\deploy-standby.ps1.", "track": "sharing"},
     {"id": "A4b", "model": "sonnet", "doc": "01-ai-foundations.md", "title": "The 'Assistant and AI' page (section 5)", "needs": ["A4a"], "inputs": ["mockup-ai-page"], "track": "ai"},
     {"id": "A2", "model": "opus", "doc": "01-ai-foundations.md", "title": "Worker container and job queue (section 3)", "needs": ["A5"], "inputs": ["spike"], "afterwards": "Run tools\\fetch-models.ps1, then tools\\start-homesh.ps1 -Rebuild.", "track": "ai"},
     {"id": "A3", "model": "sonnet", "doc": "02-search.md", "title": "Embeddings table and scope-first query (section 1)", "needs": [], "inputs": ["spike"], "track": "search"},
