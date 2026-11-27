@@ -8,12 +8,16 @@ against SQLite — a passing test on the wrong engine would prove nothing.
 from __future__ import annotations
 
 import os
+import socket
 import tempfile
+import threading
+import time
 import uuid
 from pathlib import Path
 from urllib.parse import urlsplit
 
 import pytest
+import uvicorn
 from fastapi.testclient import TestClient
 from sqlalchemy import text
 
@@ -169,6 +173,24 @@ def client(user) -> TestClient:
 def anon_client() -> TestClient:
     with TestClient(app) as c:
         yield c
+
+
+@pytest.fixture(scope="module")
+def stream_server():
+    """The app on a real port, for ffmpeg to read from."""
+    sock = socket.socket()
+    sock.bind(("127.0.0.1", 0))
+    server = uvicorn.Server(uvicorn.Config(app, lifespan="off", log_level="warning"))
+    thread = threading.Thread(target=server.run, kwargs={"sockets": [sock]}, daemon=True)
+    thread.start()
+    deadline = time.monotonic() + 10
+    while not server.started:
+        assert time.monotonic() < deadline, "the stream server did not start"
+        time.sleep(0.02)
+    yield f"http://127.0.0.1:{sock.getsockname()[1]}"
+    server.should_exit = True
+    thread.join(timeout=10)
+    sock.close()
 
 
 @pytest.fixture

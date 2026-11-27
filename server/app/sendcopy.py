@@ -16,7 +16,6 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import re
 import time
 from datetime import timedelta
 from pathlib import Path
@@ -27,13 +26,12 @@ from fastapi.responses import FileResponse
 from sqlalchemy import text
 from starlette.background import BackgroundTask
 
-from . import transcode
+from . import ffinput, transcode
 from .access import may_access_item
 from .childenv import child_env
 from .config import get_settings
 from .db import get_engine
 from .security import CurrentUser, require_user
-from .signing import mint
 from .stream import _disposition, resolve_playable
 from .throttle import Limit, hit
 
@@ -79,13 +77,6 @@ SEND_LIMIT = Limit(10, timedelta(minutes=10))
 # never were: a dropped connection, or the server stopping half way.
 LEFTOVER_AGE = timedelta(hours=1)
 SWEEP_EVERY = timedelta(minutes=15)
-
-# ffmpeg reads through our own streaming endpoint, as the watching conversion
-# does, so a Drive file works exactly as a local one does.
-SOURCE_BASE = "http://127.0.0.1:8080"
-# The file is somebody's upload to a shared folder, and some formats are really
-# lists of other addresses. Only the protocols the source itself needs.
-_INPUT_GUARD = ("-protocol_whitelist", "http,tcp")
 
 TOO_LONG = "Too long to convert for sending. Share a Drive link instead."
 TOO_BIG = "Too big to attach even after converting. Share a Drive link instead."
@@ -166,11 +157,12 @@ async def _run(args: list[str], timeout: float) -> tuple[int, bytes, str]:
     return proc.returncode or 0, out, err.decode(errors="replace")
 
 
-async def _probe_seconds(source: str, guard: tuple[str, ...] = ()) -> float | None:
+async def _probe_seconds(source: ffinput.Input) -> float | None:
     """The length ffprobe reports, or None when it cannot tell."""
     code, out, _err = await _run(
-        ["ffprobe", "-v", "error", *guard,
-         "-show_entries", "format=duration", "-of", "json", source],
+        ffinput.ffprobe_argv(
+            source, ["-v", "error", "-show_entries", "format=duration", "-of", "json"]
+        ),
         PROBE_TIMEOUT_SECONDS,
     )
     if code != 0:
@@ -182,7 +174,8 @@ async def _probe_seconds(source: str, guard: tuple[str, ...] = ()) -> float | No
     return seconds if seconds > 0 else None
 
 
-def ffmpeg_args(source: str, target: str, output: Path, max_seconds: int) -> list[str]:
+def ffmpeg_args(source: ffinput.Input, target: str, output: Path,
+                max_seconds: int) -> list[str]:
     if target == "mp4":
         streams = [
             # First video and first audio track, neither required, as in the
@@ -204,38 +197,37 @@ def ffmpeg_args(source: str, target: str, output: Path, max_seconds: int) -> lis
             "-c:a", "aac", "-b:a", "192k",
             "-map_metadata", "0",
         ]
-    return [
-        "ffmpeg", "-hide_banner", "-nostdin", "-y", "-loglevel", "error",
-        *_INPUT_GUARD,
-        "-i", source,
-        *streams,
-        "-movflags", "+faststart",
-        # A recorded length can be wrong or missing. Stopping just past the
-        # limit bounds the work, and the result is measured afterwards, so a
-        # long file is refused rather than sent cut short.
-        "-t", str(max_seconds + 2),
-        # ffmpeg stops here and still reports success, so the size is checked
-        # afterwards too.
-        "-fs", str(MAX_BYTES),
-        str(output),
-    ]
+    return ffinput.ffmpeg_argv(
+        source,
+        [
+            *streams,
+            "-movflags", "+faststart",
+            # A recorded length can be wrong or missing. Stopping just past the
+            # limit bounds the work, and the result is measured afterwards, so a
+            # long file is refused rather than sent cut short.
+            "-t", str(max_seconds + 2),
+            # ffmpeg stops here and still reports success, so the size is
+            # checked afterwards too.
+            "-fs", str(MAX_BYTES),
+            str(output),
+        ],
+        before=["-hide_banner", "-nostdin", "-y", "-loglevel", "error"],
+    )
 
 
-async def _convert(source: str, target: str, output: Path, max_seconds: int,
+async def _convert(source: ffinput.Input, target: str, output: Path, max_seconds: int,
                    item_id: UUID) -> float:
     """Write the copy to `output`, or raise. Returns its length in seconds."""
     code, _out, err = await _run(
         ffmpeg_args(source, target, output, max_seconds), CONVERT_TIMEOUT_SECONDS
     )
     if code != 0 or not output.is_file() or output.stat().st_size == 0:
-        # The address ffmpeg was given carries a token that unlocks the file,
-        # and ffmpeg quotes it in its complaints.
-        said = re.sub(r"https?://\S+", "<source>", err).strip()[-400:]
+        said = ffinput.redact(err).strip()[-400:]
         log.warning("send copy of %s failed (exit %d): %s", item_id, code, said)
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, FAILED)
     if output.stat().st_size >= MAX_BYTES:
         raise HTTPException(status.HTTP_413_CONTENT_TOO_LARGE, TOO_BIG)
-    seconds = await _probe_seconds(str(output))
+    seconds = await _probe_seconds(ffinput.file_input(output))
     if seconds is None:
         log.warning("send copy of %s has no readable length", item_id)
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, FAILED)
@@ -272,12 +264,11 @@ async def send_copy(item_id: UUID, user: CurrentUser = Depends(require_user)) ->
 
     max_seconds = get_settings().share_convert_max_seconds
     # Long enough to wait for the slot and then read the whole file.
-    token = mint(item_id, user.id, "stream", ttl=int(CONVERT_TIMEOUT_SECONDS) + 600)
-    source = f"{SOURCE_BASE}/api/stream/{item_id}?t={token}"
+    source = ffinput.stream_input(item_id, user.id, ttl=int(CONVERT_TIMEOUT_SECONDS) + 600)
 
     known = duration_ms / 1000 if duration_ms else None
     if known is None:
-        known = await _probe_seconds(source, _INPUT_GUARD)
+        known = await _probe_seconds(source)
     if known is not None and known > max_seconds:
         raise HTTPException(status.HTTP_413_CONTENT_TOO_LARGE, TOO_LONG)
 

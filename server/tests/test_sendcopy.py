@@ -11,7 +11,6 @@ import asyncio
 import json
 import logging
 import os
-import socket
 import subprocess
 import threading
 import time
@@ -20,10 +19,9 @@ from pathlib import Path
 from urllib.parse import quote
 
 import pytest
-import uvicorn
 from sqlalchemy import text
 
-from app import sendcopy, transcode
+from app import ffinput, sendcopy, transcode
 from app.config import get_settings
 from app.library import forget_connectors
 from app.main import app
@@ -117,27 +115,9 @@ def scanned(db, clips, monkeypatch):
     forget_connectors()
 
 
-@pytest.fixture(scope="module")
-def stream_server():
-    """The app on a real port, for ffmpeg to read from."""
-    sock = socket.socket()
-    sock.bind(("127.0.0.1", 0))
-    server = uvicorn.Server(uvicorn.Config(app, lifespan="off", log_level="warning"))
-    thread = threading.Thread(target=server.run, kwargs={"sockets": [sock]}, daemon=True)
-    thread.start()
-    deadline = time.monotonic() + 10
-    while not server.started:
-        assert time.monotonic() < deadline, "the stream server did not start"
-        time.sleep(0.02)
-    yield f"http://127.0.0.1:{sock.getsockname()[1]}"
-    server.should_exit = True
-    thread.join(timeout=10)
-    sock.close()
-
-
 @pytest.fixture
 def sending(stream_server, scanned, monkeypatch):
-    monkeypatch.setattr(sendcopy, "SOURCE_BASE", stream_server)
+    monkeypatch.setattr(ffinput, "SOURCE_BASE", stream_server)
     # A semaphore belongs to the event loop that first waited on it, and each
     # test client has a loop of its own.
     monkeypatch.setattr(transcode, "_slot", asyncio.Semaphore(1))

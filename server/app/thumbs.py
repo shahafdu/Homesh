@@ -17,6 +17,8 @@ from contextlib import closing
 from pathlib import Path
 from uuid import UUID
 
+from . import ffinput
+from .childenv import child_env
 from .config import get_settings
 
 log = logging.getLogger("homesh.thumbs")
@@ -119,20 +121,24 @@ def _from_video(path: Path, target: int) -> bytes:
 
     Frame zero is very often black or a title card, so seek in before grabbing.
     """
-    cmd = [
-        "ffmpeg", "-v", "error",
-        "-ss", "10",
-        "-i", str(path),
-        "-frames:v", "1",
-        "-vf", f"scale={target}:-1:force_original_aspect_ratio=decrease",
-        "-f", "image2pipe", "-vcodec", "png", "-",
-    ]
-    proc = subprocess.run(cmd, capture_output=True, timeout=30, check=False)  # noqa: S603
+    def grab(seek: str) -> subprocess.CompletedProcess:
+        cmd = ffinput.ffmpeg_argv(
+            ffinput.file_input(path),
+            [
+                "-frames:v", "1",
+                "-vf", f"scale={target}:-1:force_original_aspect_ratio=decrease",
+                "-f", "image2pipe", "-vcodec", "png", "-",
+            ],
+            before=["-v", "error", "-ss", seek],
+        )
+        return subprocess.run(  # noqa: S603
+            cmd, capture_output=True, timeout=30, check=False, env=child_env()
+        )
 
+    proc = grab("10")
     if proc.returncode != 0 or not proc.stdout:
         # Shorter than the seek, or not decodable — retry from the very start.
-        cmd[cmd.index("-ss") + 1] = "0"
-        proc = subprocess.run(cmd, capture_output=True, timeout=30, check=False)  # noqa: S603
+        proc = grab("0")
 
     if proc.returncode != 0 or not proc.stdout:
         raise ThumbError(f"ffmpeg produced no frame: {proc.stderr[:200]!r}")

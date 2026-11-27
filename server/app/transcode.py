@@ -27,12 +27,13 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy import text
 
+from . import ffinput
 from .access import may_access_item
 from .childenv import child_env
 from .config import get_settings
 from .db import get_engine
 from .security import CurrentUser, optional_user, require_user
-from .signing import TokenError, mint, verify
+from .signing import TokenError, verify
 from .stream import resolve_playable
 
 log = logging.getLogger("homesh.transcode")
@@ -107,12 +108,9 @@ async def _run(item_id: UUID, user_id: UUID, ext: str) -> None:
         # path, so a Drive file works exactly as a local one does and nothing has
         # to be downloaded twice. The token is short-lived but generous: this is
         # a long read of a very large file.
-        token = mint(item_id, user_id, "stream", ttl=12 * 3600)
-        source = f"http://127.0.0.1:8080/api/stream/{item_id}?t={token}"
+        source = ffinput.stream_input(item_id, user_id, ttl=12 * 3600)
 
-        args = [
-            "ffmpeg", "-hide_banner", "-nostdin", "-y",
-            "-i", source,
+        output_args = [
             # First video and first audio track, and neither is required: an avi
             # with two language tracks would otherwise carry both, and one with
             # no sound at all would fail for lack of a stream to map.
@@ -136,6 +134,7 @@ async def _run(item_id: UUID, user_id: UUID, ext: str) -> None:
             "-progress", "pipe:1", "-loglevel", "error",
             str(partial),
         ]
+        args = ffinput.ffmpeg_argv(source, output_args, before=["-hide_banner", "-nostdin", "-y"])
 
         proc = await asyncio.create_subprocess_exec(
             *args, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE, env=child_env()
@@ -163,7 +162,10 @@ async def _run(item_id: UUID, user_id: UUID, ext: str) -> None:
             raise
 
         if proc.returncode != 0:
-            err = (await proc.stderr.read()).decode(errors="replace")[-400:] if proc.stderr else ""
+            said = (await proc.stderr.read()).decode(errors="replace") if proc.stderr else ""
+            # Kept in the database and shown to whoever asked, so without the
+            # address it was reading.
+            err = ffinput.redact(said)[-400:]
             log.warning("transcode of %s failed: %s", item_id, err)
             partial.unlink(missing_ok=True)
             _finish(item_id, state="failed", error=err or "conversion failed")
@@ -332,11 +334,10 @@ async def live_stream(
 
     # ffmpeg reads through our own streaming endpoint, so a Drive file works
     # exactly as a local one does.
-    token = mint(item_id, viewer, "stream", ttl=6 * 3600)
-    source = f"http://127.0.0.1:8080/api/stream/{item_id}?t={token}"
+    source = ffinput.stream_input(item_id, viewer, ttl=6 * 3600)
 
-    args = [
-        "ffmpeg", "-hide_banner", "-nostdin", "-loglevel", "error",
+    input_args = [
+        "-hide_banner", "-nostdin", "-loglevel", "error",
         # Measured: ffmpeg spent eleven seconds inspecting a tape before emitting
         # anything, most of it reading far more of a large file over the network
         # than it needed to identify the stream.
@@ -344,7 +345,8 @@ async def live_stream(
         # Before -i, so the seek happens by jumping rather than by decoding and
         # discarding everything up to that point.
         *(["-ss", str(start)] if start else []),
-        "-i", source,
+    ]
+    output_args = [
         # Deinterlace, then down to 720p. HDV is 1440x1080 interlaced; leaving the
         # interlacing produces combing on every pan, and leaving the height at
         # 1080 left no margin over real time on a low-power CPU — a stream
@@ -365,6 +367,7 @@ async def live_stream(
         "-movflags", "frag_keyframe+empty_moov+default_base_moof",
         "-f", "mp4", "pipe:1",
     ]
+    args = ffinput.ffmpeg_argv(source, output_args, before=input_args)
 
     # A seek on a television is a new request for the same file. The encoder
     # it replaces is otherwise only reaped when its listener notices, which can

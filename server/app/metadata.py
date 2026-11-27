@@ -23,6 +23,7 @@ from uuid import UUID
 
 from sqlalchemy import text
 
+from . import ffinput
 from .childenv import child_env
 from .db import get_engine
 from .sources.local import LocalConnector
@@ -146,11 +147,10 @@ def read_video(path: Path) -> tuple[dict[str, str], int | None]:
     ffprobe reads the container header rather than decoding, so this stays cheap
     even for large files.
     """
-    cmd = [
-        "ffprobe", "-v", "error",
-        "-show_entries", "format=duration:stream=width,height",
-        "-of", "json", str(path),
-    ]
+    cmd = ffinput.ffprobe_argv(
+        ffinput.file_input(path),
+        ["-v", "error", "-show_entries", "format=duration:stream=width,height", "-of", "json"],
+    )
     try:
         proc = subprocess.run(  # noqa: S603
             cmd, capture_output=True, timeout=20, check=False, env=child_env()

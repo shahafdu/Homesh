@@ -136,11 +136,23 @@ is served over http.
   `transcode.py`, `sendcopy.py` and any later caller. A test makes sure no
   module calls ffmpeg without it.
 
+Two things settled while building it:
+
+- **Thumbnails and lengths read by path** (`thumbs.py`, `metadata.py`: a file
+  in a granted folder, or a temporary copy of part of a remote one), as does the
+  check of a finished send copy. They cannot read over http, so for them the
+  helper permits `file` and nothing else, which leaves no way to reach any
+  address. The format list is the same one.
+- **The format list is what stops a manifest.** Following one needs only the
+  http the source itself uses. The ffmpeg in the image already declines an HLS
+  playlist whose name does not end like one, but it follows a DASH manifest
+  named `.mp4`, so the tests use both.
+
 ### 2.2 Tests (`test_ffinput.py`)
 
-- an `.mp4` whose bytes are an HLS playlist naming another address: the
-  conversion fails, and the fake address receives nothing (served from a
-  local test server that records requests);
+- an `.mp4` whose bytes are an HLS playlist, or a DASH manifest, naming another
+  address: the conversion fails, and the fake address receives nothing (served
+  from a local test server that records requests);
 - a real short WMV still converts, through both the watching path and the send
   copy;
 - `rg`-style check: every `"ffmpeg"` / `"ffprobe"` argv in `server/app`

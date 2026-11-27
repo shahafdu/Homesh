@@ -151,7 +151,7 @@ to one goes to the other.
 | 8 · Optional transcode | ❌ overtaken | It was never optional for this library — see §3.2.1 of ARCHITECTURE for what actually happened |
 | 9 · Public release | 🔨 | Public since August. Docs current as of 14 September 2026; screenshots outstanding |
 
-**Tests: 1094 passing, and the web unit tests (`npm test`). Migrations: 030. Lint: clean. CI green.**
+**Tests: 1174 passing, and the web unit tests (`npm test`). Migrations: 030. Lint: clean. CI green.**
 
 ### AI design decisions — agreed, mostly not yet built
 
@@ -313,6 +313,8 @@ Full reasoning in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md). The load-beari
 server/app/       config, db, main, auth, security, people, access, prefs, library,
                   scanner, scanrequest, metadata, dedup, signing, stream, transcode,
                   sendcopy (an old format converted as it is sent, and not kept),
+                  ffinput (what ffmpeg and ffprobe may read; the only place their
+                  command lines are built),
                   documents, docformats, convertclient, converter (runs only in the converter
                   container: LibreOffice walled off from the server's keys),
                   thumbs, sharing, playlists, zones, denon, renderers, discovery,
@@ -433,6 +435,10 @@ TOKEN=$(printf "protocol=https\nhost=github.com\n\n" | git credential fill | gre
 - `item_metadata.origin` distinguishes file / musicbrainz / ai / user
 - Vanished files are marked unavailable, never deleted
 - No media URL is guessable or long-lived
+- **ffmpeg and ffprobe read only what they were given.** A file's bytes decide
+  what they think it is, and some formats name other addresses or files. Every
+  command line comes from `server/app/ffinput.py`, which limits the formats and
+  the protocols; a test refuses either program's name anywhere else
 - No inbound ports at home; agents dial out
 - Path confinement checked *after* symlink resolution
 - **The server reaches only the folders it has been granted.** Each is a
