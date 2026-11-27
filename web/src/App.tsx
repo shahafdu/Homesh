@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, ApiError, type AuthState, type Health } from "./api";
+import Ai from "./Ai";
 import {
   claimDeviceLink,
   dismissUpgrade,
@@ -62,6 +63,8 @@ export default function App() {
   const closeViewer = useCallback(() => setViewing(null), []);
   const [showZones, setShowZones] = useState(false);
   const [showPeople, setShowPeople] = useState(false);
+  const [showAi, setShowAi] = useState(false);
+  const closeAi = useCallback(() => setShowAi(false), []);
   // false, or true for the list of playlists, or the id of one to open. The
   // player bar opens a specific playlist; the toolbar opens all of them.
   const [showPlaylists, setShowPlaylists] = useState<boolean | string>(false);
@@ -217,6 +220,7 @@ export default function App() {
           onOpenZones={() => setShowZones(true)}
           onOpenPlaylists={() => setShowPlaylists(true)}
           onOpenPeople={state.user.is_admin ? () => setShowPeople(true) : undefined}
+          onOpenAi={state.user.is_admin ? () => setShowAi(true) : undefined}
           onActions={(file, siblings, foundAt) => setActionsFor({ file, siblings, foundAt })}
           onPlay={player.play}
           onView={(files, index) => {
@@ -280,6 +284,7 @@ export default function App() {
           </Boundary>
         )}
         {showPeople && <People onClose={() => setShowPeople(false)} />}
+        {showAi && <Ai onClose={closeAi} onStandby={health?.role === "standby"} />}
 
         {showPlaylists && (
           <Playlists

@@ -41,6 +41,11 @@ next answers. With no list, the model in `AI_MODEL` is used, as before. The list
 of what each provider offers is refreshed daily into `ai_models`; it holds
 public information and no key.
 
+The lists are set on the **Assistant and AI** page, by an administrator. A model
+that stops being offered, or starts to cost money while the cap is zero, stays in
+its list and is marked there until somebody removes it; it is never dropped
+silently, and the spend gate judges it at every call all the same.
+
 **Gemini** is offered only when `GEMINI_API_KEY` is set *and*
 `GEMINI_NO_BILLING=true` -- the owner's statement that the key's Google project
 has no billing account. Such a project cannot be charged, which is the rule every
@@ -132,6 +137,8 @@ on demand, never bulk.
 - ✅ `/api/ai/status` — whether it is on, which model, and for an administrator
   what has been spent this month.
 - ✅ `/api/ai/history` — what it has been asked to do.
+- ✅ The **Assistant and AI** page (`web/src/Ai.tsx`): providers, the model list
+  for each task, the night hours, and the record of requests.
 - ✅ The server side of each person's history and the household's audit
   (`/api/assistant/history`, `/api/assistant/audit`; `server/app/aihistory.py`,
   migration 030).

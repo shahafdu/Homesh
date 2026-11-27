@@ -106,15 +106,27 @@ def task_ids(task: str) -> list[str]:
 
 
 def validate_models(update: SettingsUpdate, conn, cap_micros: int) -> None:
-    """Check what the pydantic shape cannot: that ids exist, and what they cost."""
+    """Check what the pydantic shape cannot: that ids exist, and what they cost.
+
+    Only a model being added to a list is judged. One already there was accepted
+    when it was chosen; judging it again once it has started to cost money would
+    refuse every change to that list -- removing it included, when there are
+    two. The spend gate still judges it at every call.
+    """
     if update.tasks is not None:
+        stored = merged(
+            conn.execute(text("SELECT data FROM ai_settings")).scalar_one_or_none() or {}
+        )
         for task in TASKS:
             ids = getattr(update.tasks, task)
             if ids is None:
                 continue
             if len(set(ids)) != len(ids):
                 raise ValueError(f"{task}: a model is listed twice")
+            kept = set(stored["tasks"].get(task) or [])
             for mid in ids:
+                if mid in kept:
+                    continue
                 row = conn.execute(
                     text("SELECT free, tools FROM ai_models WHERE id = :i"), {"i": mid}
                 ).one_or_none()

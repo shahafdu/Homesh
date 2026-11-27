@@ -90,9 +90,17 @@ def _settings_view() -> dict:
                 )
             ]
         spent = ai.spent_this_month(conn)
+        data["listed"] = _listed(conn, data["tasks"])
+    openrouter_key = bool(settings.ai_api_key.strip())
+    openrouter_usable = ai.provider_usable("openrouter")
     gemini_key = bool(settings.gemini_api_key.strip())
     data["providers"] = {
-        "openrouter": {"key": bool(settings.ai_api_key.strip())},
+        "openrouter": {
+            "key": openrouter_key,
+            "usable": openrouter_usable,
+            "why": "AI_PROVIDER is not set"
+            if openrouter_key and not openrouter_usable else None,
+        },
         "gemini": {
             "key": gemini_key,
             "usable": ai.provider_usable("gemini"),
@@ -103,6 +111,36 @@ def _settings_view() -> dict:
     data["cap_micros"] = max(0, settings.ai_monthly_cap_micros)
     data["spent_micros"] = spent
     return data
+
+
+def _listed(conn, tasks: dict) -> dict:
+    """What is known about each model the task lists name.
+
+    `/models` leaves out what cannot be chosen: a model that is gone, one that
+    costs money while nothing may be spent, one whose provider is not set up. A
+    list may still hold any of those, and the page has to name it and say which.
+    """
+    ids = sorted({i for chosen in tasks.values() for i in chosen})
+    if not ids:
+        return {}
+    rows = conn.execute(
+        text(
+            "SELECT id, label, provider, free, tools, gone_at IS NOT NULL AS gone, "
+            "cooling_until FROM ai_models WHERE id = ANY(:ids)"
+        ),
+        {"ids": ids},
+    ).mappings().all()
+    return {
+        r["id"]: {
+            "label": r["label"],
+            "provider": r["provider"],
+            "free": r["free"],
+            "tools": r["tools"],
+            "gone": r["gone"],
+            "cooling_until": r["cooling_until"].isoformat() if r["cooling_until"] else None,
+        }
+        for r in rows
+    }
 
 
 @router.get("/settings")

@@ -432,6 +432,64 @@ class TestTheSettingsRoutes:
         assert client.get("/api/ai/usage").status_code == 403
 
 
+class TestWhatThePageNeeds:
+    def test_every_listed_model_is_described_even_when_it_cannot_be_chosen(
+        self, client, db, monkeypatch
+    ):
+        _env(monkeypatch)
+        _model(db, FREE_A, cooling=True)
+        _model(db, FREE_B, gone=True)
+        _model(db, PAID, free=False)
+        _tasks(db, chat=[FREE_A, FREE_B], bulk=[PAID])
+        listed = client.get("/api/ai/settings").json()["listed"]
+        assert set(listed) == {FREE_A, FREE_B, PAID}
+        assert listed[FREE_A]["cooling_until"] and not listed[FREE_A]["gone"]
+        assert listed[FREE_B]["gone"] is True
+        assert listed[PAID]["free"] is False
+        assert listed[PAID]["label"] == "vendor/gamma"
+
+    def test_nothing_listed_describes_nothing(self, client, db, monkeypatch):
+        _env(monkeypatch)
+        _model(db, FREE_A)
+        assert client.get("/api/ai/settings").json()["listed"] == {}
+
+    def test_openrouter_says_why_it_is_not_used(self, client, db, monkeypatch):
+        _env(monkeypatch, AI_PROVIDER="")
+        found = client.get("/api/ai/settings").json()["providers"]["openrouter"]
+        assert found["key"] is True and found["usable"] is False and found["why"]
+        _env(monkeypatch)
+        found = client.get("/api/ai/settings").json()["providers"]["openrouter"]
+        assert found["usable"] is True and found["why"] is None
+
+    def test_models_that_started_to_cost_money_can_be_removed_one_at_a_time(
+        self, client, db, monkeypatch
+    ):
+        _env(monkeypatch)
+        other = "openrouter:vendor/delta"
+        _model(db, PAID, free=False)
+        _model(db, other, free=False)
+        _model(db, FREE_A)
+        _tasks(db, chat=[PAID, other])
+
+        def put(chat):
+            return client.put("/api/ai/settings", json={"tasks": {"chat": chat}}).status_code
+
+        # Kept and reordered, then one removed while the other is still listed.
+        assert put([PAID, other, FREE_A]) == 200
+        assert put([FREE_A, other]) == 200
+        # Removed is removed: choosing it again is judged like any new choice.
+        assert put([FREE_A, other, PAID]) == 422
+
+    def test_a_paid_model_kept_in_one_list_cannot_be_added_to_another(
+        self, client, db, monkeypatch
+    ):
+        _env(monkeypatch)
+        _model(db, PAID, free=False)
+        _tasks(db, chat=[PAID])
+        r = client.put("/api/ai/settings", json={"tasks": {"bulk": [PAID]}})
+        assert r.status_code == 422
+
+
 class TestWhatTheReviewFound:
     async def test_an_unreachable_provider_hands_over_to_the_next(self, db, user, monkeypatch):
         _env(monkeypatch, GEMINI_API_KEY=GKEY, GEMINI_NO_BILLING="true")

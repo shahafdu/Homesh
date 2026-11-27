@@ -623,11 +623,33 @@ half a backup.
 
 ---
 
-## 17. Not built yet
+## 17. Assistant and AI
 
-- **AI search and tagging.** Designed and agreed — see §7 of the architecture document —
-  and deliberately behind backups, which are what make it safe to let a model write to
-  the catalog.
+The **✦** button, administrators only. It sets who the assistant will ask, and shows what
+has been asked. Asking it things from the app is not built yet.
+
+- **Providers.** Whether OpenRouter and Gemini have a key, a **Test** button that sends one
+  tiny request to a free model, and what has been spent against the monthly limit. Keys are
+  put in the `.env` file on the PC ([how](AI.md)); the page never shows or asks for one.
+- **Which model does what.** A list for each kind of work. Add models, move them up and
+  down, test them. The first one answers; if it is busy or over its free limit, the next
+  does. A model that has stopped being offered, or started to cost money while no limit is
+  set, is marked until you remove it. Paid models can only be chosen once a monthly limit
+  is set.
+- **Night work.** The hours slow jobs may run in, and a pause button. The times are in the
+  time zone of the browser that first saves a setting here. Nothing runs at night yet.
+- **What was done.** The last 50 requests to a provider: when, who, what for, which model,
+  whether it was answered, and how much text it took. Never the question or the answer.
+
+On the standby the page can be read but not changed.
+
+---
+
+## 18. Not built yet
+
+- **Asking the assistant, AI search and tagging.** Designed and agreed — see §7 of the
+  architecture document — and deliberately behind backups, which are what make it safe to
+  let a model write to the catalog.
 - **ReplayGain**, so quiet and loud recordings play at the same level.
 - **Gapless playback on the television and in rooms.** The browser player has it; a
   television or the receiver still starts each track on its own.

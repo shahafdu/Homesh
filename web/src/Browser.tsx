@@ -43,6 +43,8 @@ export default function Browser(props: {
   onOpenPlaylists: () => void;
   onOpenPeople?: () => void;
   onOpenSources?: () => void;
+  /** The "Assistant and AI" page, for administrators. */
+  onOpenAi?: () => void;
   /** Show a folder of photographs, here or in a room. */
   onSlideshow?: (path: string, name: string) => void;
   onPlay: (files: FileEntry[], index: number, folderPath: string) => void;
@@ -55,7 +57,7 @@ export default function Browser(props: {
 }) {
   const {
     view, onViewChange, onOpenSettings, onOpenInbox, unread = 0, onOpenZones, onOpenPlaylists, onOpenPeople,
-    onOpenSources, onSlideshow,
+    onOpenSources, onOpenAi, onSlideshow,
     onPlay, onView, onActions, playingId,
   } = props;
 
@@ -191,6 +193,12 @@ export default function Browser(props: {
           <button className="iconbtn" onClick={onOpenSources} aria-label="Sources"
                   title="Sources">
             ◫
+          </button>
+        )}
+        {onOpenAi && (
+          <button className="iconbtn" onClick={onOpenAi} aria-label="Assistant and AI"
+                  title="Assistant and AI">
+            ✦
           </button>
         )}
         {onOpenInbox && (
