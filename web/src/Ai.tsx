@@ -557,12 +557,13 @@ function TaskBlock(props: {
               <div className="ai-line">
                 {!row.withdrawn && (
                   <>
-                    {/* aria-disabled at the ends, so the button keeps focus when
-                        a model arrives there. */}
+                    {/* aria-disabled at the ends and while a change is saved, so
+                        the button keeps focus when a model arrives there, and a
+                        press that would be ignored looks it. */}
                     <button
                       className="compact"
                       disabled={onStandby}
-                      aria-disabled={i === 0}
+                      aria-disabled={i === 0 || saver.busy}
                       aria-label={`Move ${row.label} up`}
                       onClick={() => i > 0 && void change(moved(ids, i, -1))}
                     >
@@ -571,7 +572,7 @@ function TaskBlock(props: {
                     <button
                       className="compact"
                       disabled={onStandby}
-                      aria-disabled={i === rows.length - 1}
+                      aria-disabled={i === rows.length - 1 || saver.busy}
                       aria-label={`Move ${row.label} down`}
                       onClick={() => i < rows.length - 1 && void change(moved(ids, i, 1))}
                     >
