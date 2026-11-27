@@ -46,8 +46,8 @@ router = APIRouter(prefix="/api/videos", tags=["video"])
 NEEDS_CONVERSION = {
     # MPEG-2 and camcorder containers
     "m2t", "mts", "vob", "mpg", "mpeg", "m1v", "m2v", "mod", "tod", "dv", "mxf",
-    # Windows Media and friends: hundreds of .wmv and .avi files in this library alone, and
-    # no browser has ever played either.
+    # Windows Media and friends: common in any older collection, and no browser
+    # has ever played either.
     "wmv", "avi", "asf", "divx", "xvid", "rm", "rmvb", "flv",
     # Phone video from before H.264 was universal
     "3gp", "3g2",
@@ -352,11 +352,11 @@ async def live_stream(
         # 1080 left no margin over real time on a low-power CPU — a stream
         # that cannot keep up stutters, which is worse than being 720p on a phone.
         #
-        # min() rather than a flat 720: half of these files are camcorder video
+        # min() rather than a flat 720: much camcorder video is
         # smaller than that already, and enlarging one costs encoder time to
         # produce a bigger stream of the same detail. trunc() keeps the result
-        # even, which H.264 requires in 4:2:0 — a 640x415 AVI is not hypothetical
-        # here, and an odd dimension stops x264 from opening at all.
+        # even, which H.264 requires in 4:2:0 — a 640x415 AVI is a real
+        # case, and an odd dimension stops x264 from opening at all.
         "-vf", "yadif,scale=-2:'min(720,trunc(ih/2)*2)'",
         "-c:v", "libx264", "-preset", LIVE_PRESET, "-tune", "zerolatency", "-crf", "26",
         "-pix_fmt", "yuv420p",

@@ -251,9 +251,8 @@ def _duration_from_bitrate(path, true_size: int | None) -> int | None:
 
     A prefix cannot be timed: mutagen reports how long the fragment lasts, which
     for a 70 KB slice of a four-minute song is a few seconds. That is why the
-    duration was being thrown away — and why every track in this library showed
-    no length at all, since everything in it comes from Drive and is read as a
-    prefix.
+    duration was being thrown away — and why every track read from Drive showed no
+    length at all, since a remote file is read as a prefix.
 
     But the bitrate is declared in the first frame, which the prefix does
     contain, and the true size is already in the catalog. Length is the one
@@ -343,7 +342,7 @@ def plausible_length(duration_ms: int | None, true_size: int | None) -> bool:
 # How much of a film to sample when its container will not say how long it is.
 #
 # Chosen by measurement, not by feel. Scaling a fragment's length by how much of
-# the file it is, against eleven lesson videos whose real length was known:
+# the file it is, against eleven videos whose real length was known:
 #   256 KB  within 14%
 #     1 MB  within  3%
 #     4 MB  within  1%, and ten of the eleven within 0.3%
@@ -391,7 +390,7 @@ def _timeable_copy(connector, rel_path: str, filename: str, true_size: int | Non
 
     A prefix cannot be timed, and unlike audio this failed silently: ffprobe
     handed a quarter-megabyte of a film reports how long that quarter-megabyte
-    lasts -- 0.64 seconds of a 1.6 GB lesson -- which is a number, so it was
+    lasts -- 0.64 seconds of a 1.6 GB film -- which is a number, so it was
     stored as the length. Every video in a Drive folder ended up with the
     duration of its own first 256 KB, and a control tower cannot draw a progress
     bar from that: the film ran past the end of the bar in the first second.

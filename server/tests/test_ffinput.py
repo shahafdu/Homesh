@@ -336,6 +336,31 @@ class TestADisguisedFileFetchesNothing:
 
         assert bait.seen
 
+    def test_the_format_list_alone_stops_a_playlist(self, tmp_path, bait):
+        """The HLS cases below would pass on this ffmpeg without the list, since
+        it declines a playlist named .mp4 by itself. Named as one, it follows it
+        with the very protocols a streamed file is given -- and the list stops it."""
+        playlist = tmp_path / "plain.m3u8"
+        playlist.write_text(_playlist(bait.url, "plain"), encoding="utf-8")
+        protocols = "file,http,tcp"
+        options = ["-v", "error", "-rw_timeout", "5000000"]
+
+        bait.seen.clear()
+        subprocess.run(  # noqa: S603
+            ["ffprobe", *options, "-protocol_whitelist", protocols,  # noqa: S607
+             "-i", f"file:{playlist}"],
+            capture_output=True, check=False, timeout=30,
+        )
+        assert bait.seen, "this ffmpeg no longer follows a playlist; the control is void"
+
+        bait.seen.clear()
+        guarded = subprocess.run(  # noqa: S603
+            ffinput.ffprobe_argv(ffinput.Input(protocols, f"file:{playlist}"), options),
+            capture_output=True, check=False, timeout=30,
+        )
+        assert guarded.returncode != 0
+        assert bait.seen == []
+
     @pytest.mark.parametrize("disguise", DISGUISES)
     @pytest.mark.parametrize("ext", ["mp4", "wmv"])
     def test_watching_it_live(self, client, db, user, reading, bait, disguise, ext):
