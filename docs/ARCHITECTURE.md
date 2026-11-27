@@ -284,7 +284,7 @@ does the encoding here, because in Mode A it is the same machine.
 Drive charges about **1.4 seconds before the first byte** of any read, on every
 read. For a film that is paid once at the start and forgotten. For music it is
 paid on every track, and it is precisely the gap between pressing play and
-hearing something -- measured on this library at 1.0-1.2 s per track, and
+hearing something -- about a second per track measured from Drive, and
 nothing in the protocol removes it.
 
 So a track fetched from a remote source is kept on disk (`server/app/audiocache.py`)

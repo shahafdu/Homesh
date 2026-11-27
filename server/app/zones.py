@@ -72,8 +72,8 @@ class ZoneCreate(BaseModel):
 
 
 class PlayRequest(BaseModel):
-    # A folder of songs is a queue, and folders in this library run to fifteen
-    # hundred tracks. Five hundred was a guess that a real folder walked straight
+    # A folder of songs is a queue, and a real folder can run to well over a
+    # thousand tracks. Five hundred was a guess that a real folder walked straight
     # past, and the refusal arrived as a sentence about list validation.
     item_ids: list[UUID] = Field(min_length=1, max_length=5000)
     start_index: int = Field(default=0, ge=0)

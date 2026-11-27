@@ -99,7 +99,7 @@ def fingerprint_local(limit: int = 2000, connectors=None) -> DedupResult:
 
     Smallest first, deliberately. A run that is cut short should have got
     through as many files as possible rather than as many bytes, and the long
-    tail here is a handful of camcorder tapes.
+    tail is a few very large video files.
 
     `connectors` is how a source is turned into something that can be read, and
     is a parameter only so a test can hand over a library that is not mounted

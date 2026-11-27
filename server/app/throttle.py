@@ -13,7 +13,7 @@ LAN, a laptop on the tailnet and the server itself all arrive looking alike.
 app sets it and anybody on the LAN could send one -- trusting it would hand out
 a fresh allowance per forged header, which is worse than counting coarsely.
 
-So in this house the limits are effectively per server, not per caller, and the
+So behind one proxy the limits are effectively per server, not per caller, and the
 numbers are chosen for that: a household signs in a handful of times a day, so
 twenty failed sign-ins in five minutes is far beyond ordinary use and far below
 what guessing needs. Where the real address is visible -- a deployment without

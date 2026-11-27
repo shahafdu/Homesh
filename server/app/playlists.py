@@ -1,6 +1,6 @@
 """Playlists: the ones you make, and the ones already in the library.
 
-Dozens of .m3u files sit in this library, written years ago by Winamp against
+Old .m3u files written by Winamp point at
 paths that stopped being true when the music moved. Their contents are the one
 thing a scanner cannot recreate — somebody chose that order — so importing them
 is worth the trouble of matching lines to files that have since been moved,
@@ -705,7 +705,7 @@ def resolve_entry(conn, raw: str, source_id: UUID, near: str) -> UUID | None:
         if row:
             return row[0]
 
-    # Nothing matched exactly. The commonest reason in this library is not that
+    # Nothing matched exactly. A common reason is not that
     # the file is gone but that its name was mangled on the way into the
     # playlist: "Più che puoi" was written as "Pi? che puoi" by something that
     # could not represent the character. Each ? stands for exactly one lost

@@ -14,7 +14,7 @@
          out of the store listing and, on some launchers, out of the drawer. -->
     <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
 
-    <!-- Declared but not required: the boxes in this house are Android TV, yet
+    <!-- Declared but not required: the target boxes are Android TV, yet
          the same APK should still install on a tablet used as a spare screen. -->
     <uses-feature android:name="android.software.leanback" android:required="false" />
 

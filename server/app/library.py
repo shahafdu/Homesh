@@ -651,8 +651,8 @@ def gather_photos(
     Ordered by folder and then filename so that a run through a year arrives in
     the order it happened.
 
-    Bounded, because this house has 100,000 photographs and the whole list is
-    four megabytes of identifiers to send to a phone. At five seconds each,
+    Bounded, because a large photo library makes the whole list megabytes of
+    identifiers to send to a phone. At five seconds each,
     the cap is still fourteen hours of slideshow.
 
     Shuffling is therefore done *here* when it is asked for, which is the only
@@ -771,7 +771,7 @@ async def search(
 
     `under` narrows it to one folder and its descendants. Searching the whole
     library is the right default — you usually do not know where a thing is —
-    but once you are standing in a folder of 1,500 tracks, "everywhere" is the
+    but once you are standing in a folder of a thousand tracks, "everywhere" is the
     wrong answer to "which of these is the live one".
 
     Semantic search over content arrives in phase 6; this is the literal-filename

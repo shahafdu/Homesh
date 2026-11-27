@@ -70,7 +70,7 @@ export default function Browser(props: {
   const [hits, setHits] = useState<SearchHit[] | null>(null);
   const [query, setQuery] = useState("");
   // Everywhere, or just here. Everywhere is the right default — usually you do
-  // not know where a thing is — but standing in a folder of 1,500 tracks it is
+  // not know where a thing is — but standing in a folder of a thousand tracks it is
   // the wrong answer to "which of these is the live one".
   const [hereOnly, setHereOnly] = useState(false);
   // Not for administering — for naming: the breadcrumbs turn /drive/music into

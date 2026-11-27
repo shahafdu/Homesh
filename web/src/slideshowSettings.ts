@@ -21,7 +21,7 @@ export interface PhotoSet {
 /** Gather a folder's photographs.
  *
  * Shuffling is asked of the server rather than done here, and that is not an
- * optimisation. This house has 100,000 photographs and only ten thousand are
+ * optimisation. A library can hold far more photographs than are
  * sent; shuffling the ones that arrived would be a random ordering of one
  * corner of the library while claiming to be a random ordering of all of it.
  * Only the database can take a sample of everything.

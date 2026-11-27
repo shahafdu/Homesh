@@ -338,7 +338,7 @@ export default function Viewer(props: {
               finding it again. */}
           {/* Cast, when there is anything to cast from.
               Lit for what a Chromecast will play and greyed for what it will
-              not — this library is mostly formats Google's list does not
+              not — many libraries are mostly formats Google's list does not
               include, and a button that starts something doomed to fail on the
               television is worse than one that says so first. */}
           {canCast && file.kind !== "doc" && (

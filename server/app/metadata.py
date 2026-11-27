@@ -187,8 +187,8 @@ READERS = {"audio": read_audio, "photo": read_photo, "video": read_video}
 #
 # The readers below take a path, because that is what mutagen and Pillow want.
 # A Drive file has no path, so a bounded prefix is fetched and written to a
-# temporary one. The point is the bound: a music library is 9,500 files, and
-# fetching all of every one to read three strings would move hundreds of
+# temporary one. The point is the bound: a music library runs to thousands of files,
+# and fetching all of every one to read three strings would move hundreds of
 # gigabytes to learn something that lives in the first few kilobytes.
 
 # Enough for a photo's EXIF, or an ID3 tag carrying cover art.
@@ -315,7 +315,7 @@ def _local_copy(connector, rel_path: str, filename: str):
 # the file was written for streaming. A megabyte reaches all of them.
 _VIDEO_TAIL = 1024 * 1024
 
-# Above this, a length is not believable for anything in this library. UHD from
+# Above this, a length is not believable for anything a library holds. UHD from
 # a telephone peaks near 100 Mbit/s and a Blu-ray remux at 40; a *hundred* times
 # that is not a fast recording, it is a wrong number.
 #
