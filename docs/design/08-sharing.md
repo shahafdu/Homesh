@@ -5,6 +5,7 @@ Read [`README.md`](README.md) first. Needs nothing from the AI tracks.
 | Task | Section |
 |---|---|
 | S1 Convert an old-format file when it is sent | 1 |
+| S2 ffmpeg reads only what it was given | 2 |
 
 What exists today: `web/src/share.ts` sends a file's bytes through the phone's
 share sheet. Its `SHAREABLE` set is Chromium's own list of extensions a page may
@@ -107,3 +108,44 @@ not for mp3, mp4, m4a; the download label changes accordingly.
 ### 1.7 Afterwards
 
 Rebuild the PC (`start-homesh.ps1 -Rebuild`) and redeploy the standby.
+
+---
+
+## 2. S2 - ffmpeg reads only what it was given
+
+Found in S1's review. ffmpeg guesses an input's format from its bytes. A file
+in a granted folder whose bytes are really a playlist (HLS, concat, or
+similar) would make ffmpeg fetch other addresses on its own: a blind request
+from inside the house. The watching conversion (`transcode.py`, both the
+cached conversion and `live.mp4`) has no protocol whitelist at all; the send
+copy (`sendcopy.py`) has one but must allow http, because the source itself
+is served over http.
+
+### 2.1 What changes
+
+- Every ffmpeg and ffprobe call that reads a library file gets
+  `-protocol_whitelist http,tcp` (no `file`, `https`, `crypto`, `data`).
+- It also gets `-format_whitelist` with the demuxers this library needs: the
+  video and audio containers in `NEEDS_CONVERSION`, the share list, and their
+  usual demuxer names. Playlist and indirection demuxers (`hls`,
+  `concat`, `ffconcat`, `image2`, `tee`, `data`, `subfile`) are never on it.
+- The source URL ffmpeg reads is always the server's own streaming endpoint
+  on the loopback address, built by one shared function. A source never
+  names its own URL.
+- One helper builds these input arguments (`server/app/ffinput.py`), used by
+  `transcode.py`, `sendcopy.py` and any later caller. A test makes sure no
+  module calls ffmpeg without it.
+
+### 2.2 Tests (`test_ffinput.py`)
+
+- an `.mp4` whose bytes are an HLS playlist naming another address: the
+  conversion fails, and the fake address receives nothing (served from a
+  local test server that records requests);
+- a real short WMV still converts, through both the watching path and the send
+  copy;
+- `rg`-style check: every `"ffmpeg"` / `"ffprobe"` argv in `server/app`
+  comes from the helper.
+
+### 2.3 Afterwards
+
+Rebuild the PC and redeploy the standby.
